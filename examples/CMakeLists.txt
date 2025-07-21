@@ -1,0 +1,54 @@
+# LibEtude 예제 CMake 설정
+
+# 기본 TTS 예제
+add_executable(basic_tts
+    basic_tts/main.c
+)
+target_link_libraries(basic_tts libetude_static)
+target_include_directories(basic_tts PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+# 스트리밍 예제
+add_executable(streaming_example
+    streaming/main.c
+)
+target_link_libraries(streaming_example libetude_static)
+target_include_directories(streaming_example PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+# C++ 바인딩 예제
+if(LIBETUDE_BUILD_BINDINGS)
+    add_executable(cpp_example
+        cpp_binding/main.cpp
+    )
+    target_link_libraries(cpp_example libetude_static)
+    target_include_directories(cpp_example PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+endif()
+
+# 플러그인 예제
+add_executable(plugin_example
+    plugins/main.c
+)
+target_link_libraries(plugin_example libetude_static)
+target_include_directories(plugin_example PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+# 예제 설치
+install(TARGETS basic_tts streaming_example plugin_example
+    RUNTIME DESTINATION bin/examples
+)
+
+if(LIBETUDE_BUILD_BINDINGS)
+    install(TARGETS cpp_example
+        RUNTIME DESTINATION bin/examples
+    )
+endif()
+
+# 예제 데이터 파일 복사
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/data/
+     DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/data/)
