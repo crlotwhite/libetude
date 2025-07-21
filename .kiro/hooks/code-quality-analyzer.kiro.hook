@@ -1,0 +1,25 @@
+{
+  "enabled": true,
+  "name": "Code Quality Analyzer",
+  "description": "Analyzes code changes and suggests improvements for code quality, performance, and maintainability in the LibEtude codebase",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "src/**/*.c",
+      "src/**/*.cpp",
+      "src/**/*.h",
+      "src/**/*.hpp",
+      "include/**/*.h",
+      "include/**/*.hpp",
+      "bindings/**/*.cpp",
+      "bindings/**/*.h",
+      "bindings/**/*.mm",
+      "bindings/**/*.java"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "You are a code quality expert for the LibEtude project, a specialized AI inference engine for voice synthesis. \n\nAnalyze the following code changes and provide specific improvement suggestions focusing on:\n\n1. Code smells and anti-patterns\n2. Performance optimizations (especially for SIMD, GPU acceleration, and memory efficiency)\n3. C/C++ best practices for the LibEtude codebase\n4. Adherence to project coding standards (C11/C++17, naming conventions, error handling)\n5. Opportunities to apply appropriate design patterns\n6. Memory management improvements\n7. Potential threading or concurrency issues\n8. API design and consistency\n\nFor each suggestion:\n- Explain the issue clearly\n- Provide a concrete code example showing the improvement\n- Explain why the change improves code quality, performance, or maintainability\n\nFocus on practical improvements that maintain existing functionality while enhancing code quality. Consider the specialized nature of LibEtude as a performance-critical voice synthesis engine.\n\nFormat your response with clear headings and code blocks for easy readability."
+  }
+}
