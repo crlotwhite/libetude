@@ -219,6 +219,41 @@ LIBETUDE_API uint32_t libetude_get_hardware_features();
  */
 LIBETUDE_API const char* libetude_get_last_error();
 
+// ============================================================================
+// 로그 관련 함수
+// ============================================================================
+
+/**
+ * @brief 로그 메시지를 출력합니다
+ *
+ * @param level 로그 레벨
+ * @param format 포맷 문자열
+ * @param ... 가변 인수
+ */
+LIBETUDE_API void libetude_log(LibEtudeLogLevel level, const char* format, ...);
+
+/**
+ * @brief 로그 레벨을 설정합니다
+ *
+ * @param level 설정할 로그 레벨
+ */
+LIBETUDE_API void libetude_set_log_level(LibEtudeLogLevel level);
+
+/**
+ * @brief 로그 콜백을 설정합니다
+ *
+ * @param callback 로그 콜백 함수
+ * @param user_data 사용자 데이터
+ */
+LIBETUDE_API void libetude_set_log_callback(LibEtudeLogCallback callback, void* user_data);
+
+/**
+ * @brief 현재 로그 레벨을 반환합니다
+ *
+ * @return 현재 로그 레벨
+ */
+LIBETUDE_API LibEtudeLogLevel libetude_get_log_level();
+
 #ifdef __cplusplus
 }
 #endif

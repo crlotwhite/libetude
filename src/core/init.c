@@ -9,6 +9,7 @@
 #include "libetude/types.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdarg.h>
 
 // 전역 초기화 상태
 static bool g_libetude_initialized = false;

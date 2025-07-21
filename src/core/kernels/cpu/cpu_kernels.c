@@ -10,6 +10,10 @@
 #include <math.h>
 #include <string.h>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 // ============================================================================
 // 기본 수학 연산 커널
 // ============================================================================
@@ -241,9 +245,110 @@ void cpu_apply_mel_filterbank(const float* spectrogram, float* mel_spec,
 /**
  * @brief CPU 커널들을 등록합니다
  */
-void register_cpu_kernels() {
-    // TODO: 커널 레지스트리에 CPU 커널들 등록
-    // kernel_registry_register("vector_add_cpu", cpu_vector_add, LIBETUDE_SIMD_NONE, 0);
-    // kernel_registry_register("vector_mul_cpu", cpu_vector_mul, LIBETUDE_SIMD_NONE, 0);
-    // ... 기타 커널들
+void register_cpu_kernels(void) {
+    // 벡터 연산 커널 등록
+    KernelInfo kernel_info;
+
+    // 벡터 덧셈 커널
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "vector_add_cpu";
+    kernel_info.kernel_func = (void*)cpu_vector_add;
+    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.optimal_size = 0; // 모든 크기에 적합
+    kernel_info.performance_score = 1.0f; // 기본 점수
+    kernel_registry_register(&kernel_info);
+
+    // 벡터 곱셈 커널
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "vector_mul_cpu";
+    kernel_info.kernel_func = (void*)cpu_vector_mul;
+    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.optimal_size = 0;
+    kernel_info.performance_score = 1.0f;
+    kernel_registry_register(&kernel_info);
+
+    // 벡터 스칼라 곱셈 커널
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "vector_scale_cpu";
+    kernel_info.kernel_func = (void*)cpu_vector_scale;
+    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.optimal_size = 0;
+    kernel_info.performance_score = 1.0f;
+    kernel_registry_register(&kernel_info);
+
+    // 행렬 연산 커널 등록
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "matmul_cpu";
+    kernel_info.kernel_func = (void*)cpu_matrix_mul;
+    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.optimal_size = 0;
+    kernel_info.performance_score = 1.0f;
+    kernel_registry_register(&kernel_info);
+
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "matmul_vector_cpu";
+    kernel_info.kernel_func = (void*)cpu_matrix_vector_mul;
+    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.optimal_size = 0;
+    kernel_info.performance_score = 1.0f;
+    kernel_registry_register(&kernel_info);
+
+    // 활성화 함수 커널 등록
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "activation_relu_cpu";
+    kernel_info.kernel_func = (void*)cpu_relu;
+    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.optimal_size = 0;
+    kernel_info.performance_score = 1.0f;
+    kernel_registry_register(&kernel_info);
+
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "activation_sigmoid_cpu";
+    kernel_info.kernel_func = (void*)cpu_sigmoid;
+    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.optimal_size = 0;
+    kernel_info.performance_score = 1.0f;
+    kernel_registry_register(&kernel_info);
+
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "activation_tanh_cpu";
+    kernel_info.kernel_func = (void*)cpu_tanh;
+    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.optimal_size = 0;
+    kernel_info.performance_score = 1.0f;
+    kernel_registry_register(&kernel_info);
+
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "activation_gelu_cpu";
+    kernel_info.kernel_func = (void*)cpu_gelu;
+    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.optimal_size = 0;
+    kernel_info.performance_score = 1.0f;
+    kernel_registry_register(&kernel_info);
+
+    // 소프트맥스 및 정규화 커널 등록
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "softmax_cpu";
+    kernel_info.kernel_func = (void*)cpu_softmax;
+    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.optimal_size = 0;
+    kernel_info.performance_score = 1.0f;
+    kernel_registry_register(&kernel_info);
+
+    // 음성 특화 DSP 커널 등록
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "hann_window_cpu";
+    kernel_info.kernel_func = (void*)cpu_apply_hann_window;
+    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.optimal_size = 0;
+    kernel_info.performance_score = 1.0f;
+    kernel_registry_register(&kernel_info);
+
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "mel_filterbank_cpu";
+    kernel_info.kernel_func = (void*)cpu_apply_mel_filterbank;
+    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.optimal_size = 0;
+    kernel_info.performance_score = 1.0f;
+    kernel_registry_register(&kernel_info);
 }

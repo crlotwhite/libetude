@@ -210,6 +210,42 @@ int test_get_exit_code();
 #define ADD_TEST_WITH_SETUP(suite, test_func, setup_func, teardown_func) \
     test_suite_add_case(suite, #test_func, setup_func, teardown_func, test_func)
 
+/**
+ * @brief 테스트 실행 매크로
+ */
+#define RUN_TEST(test_func) \
+    do { \
+        printf("Running test: %s ... ", #test_func); \
+        fflush(stdout); \
+        test_func(); \
+        printf("PASS\n"); \
+    } while(0)
+
+/**
+ * @brief 테스트 통과 수 반환 함수
+ */
+#define test_framework_get_passed_count() g_passed_tests
+
+/**
+ * @brief 테스트 실패 수 반환 함수
+ */
+#define test_framework_get_failed_count() g_failed_tests
+
+/**
+ * @brief 두 값이 같은지 확인
+ */
+#define TEST_ASSERT_EQUAL(expected, actual) TEST_ASSERT((expected) == (actual))
+
+/**
+ * @brief 두 값이 다른지 확인
+ */
+#define TEST_ASSERT_NOT_EQUAL(expected, actual) TEST_ASSERT((expected) != (actual))
+
+/**
+ * @brief 조건이 참인지 확인
+ */
+#define TEST_ASSERT_TRUE(condition) TEST_ASSERT(condition)
+
 #ifdef __cplusplus
 }
 #endif

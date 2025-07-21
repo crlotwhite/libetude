@@ -6,6 +6,9 @@ set(LIBETUDE_CORE_SOURCES
     core/engine.c
     core/init.c
 
+    # 하드웨어 감지
+    core/hardware/hardware_detect.c
+
     # 커널 시스템
     core/kernels/kernel_registry.c
     core/kernels/cpu/cpu_kernels.c
@@ -140,9 +143,9 @@ endif()
 
 # 링크 라이브러리
 if(WIN32)
-    target_link_libraries(libetude_static PRIVATE winmm dsound)
+    target_link_libraries(libetude_static PRIVATE winmm dsound psapi)
     if(NOT LIBETUDE_MINIMAL)
-        target_link_libraries(libetude_shared PRIVATE winmm dsound)
+        target_link_libraries(libetude_shared PRIVATE winmm dsound psapi)
     endif()
 elseif(APPLE)
     target_link_libraries(libetude_static PRIVATE "-framework AudioToolbox" "-framework CoreAudio")

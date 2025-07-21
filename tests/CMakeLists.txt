@@ -11,6 +11,7 @@ set(UNIT_TEST_SOURCES
     unit/test_kernels.c
     unit/test_tensor.c
     unit/test_memory.c
+    unit/test_hardware.c
 )
 
 # 통합 테스트 소스 파일
@@ -65,10 +66,22 @@ target_include_directories(performance_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
+# 하드웨어 테스트 실행 파일 (독립적으로 실행 가능)
+add_executable(hardware_test unit/test_hardware.c)
+target_link_libraries(hardware_test
+    test_framework
+    libetude_static
+)
+target_include_directories(hardware_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
 # CTest 통합
 add_test(NAME UnitTests COMMAND unit_tests)
 add_test(NAME IntegrationTests COMMAND integration_tests)
 add_test(NAME PerformanceTests COMMAND performance_tests)
+add_test(NAME HardwareTest COMMAND hardware_test)
 
 # 테스트 속성 설정
 set_tests_properties(UnitTests PROPERTIES
@@ -84,6 +97,11 @@ set_tests_properties(IntegrationTests PROPERTIES
 set_tests_properties(PerformanceTests PROPERTIES
     TIMEOUT 300
     LABELS "performance"
+)
+
+set_tests_properties(HardwareTest PROPERTIES
+    TIMEOUT 30
+    LABELS "hardware"
 )
 
 # 테스트 데이터 복사

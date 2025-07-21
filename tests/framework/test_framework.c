@@ -14,8 +14,8 @@
 // 전역 테스트 상태
 static TestSuite* g_current_suite = NULL;
 static int g_total_tests = 0;
-static int g_passed_tests = 0;
-static int g_failed_tests = 0;
+int g_passed_tests = 0;
+int g_failed_tests = 0;
 
 /**
  * @brief 테스트 스위트를 생성합니다
