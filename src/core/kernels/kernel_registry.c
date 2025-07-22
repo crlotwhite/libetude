@@ -171,17 +171,20 @@ LIBETUDE_API LibEtudeErrorCode kernel_registry_init(void) {
     g_kernel_registry.kernel_count = 0;
     g_kernel_registry.capacity = MAX_KERNELS;
 
-    // 하드웨어 정보 감지
-    LibEtudeHardwareInfo hw_info;
-    LibEtudeErrorCode result = libetude_hardware_detect(&hw_info);
-    if (result != LIBETUDE_SUCCESS) {
-        free(g_kernel_registry.kernels);
-        g_kernel_registry.kernels = NULL;
-        return result;
-    }
+    // 하드웨어 기능 감지 (간단한 버전)
+    g_kernel_registry.hardware_features = LIBETUDE_SIMD_NONE;
 
-    // 하드웨어 기능 저장
-    g_kernel_registry.hardware_features = hw_info.cpu.simd_features;
+#ifdef LIBETUDE_HAVE_SSE2
+    g_kernel_registry.hardware_features |= LIBETUDE_SIMD_SSE2;
+#endif
+
+#ifdef LIBETUDE_HAVE_AVX
+    g_kernel_registry.hardware_features |= LIBETUDE_SIMD_AVX;
+#endif
+
+#ifdef LIBETUDE_HAVE_NEON
+    g_kernel_registry.hardware_features |= LIBETUDE_SIMD_NEON;
+#endif
 
     // 기본 CPU 커널 등록
     register_cpu_kernels();
@@ -197,11 +200,6 @@ LIBETUDE_API LibEtudeErrorCode kernel_registry_init(void) {
 
     if (g_kernel_registry.hardware_features & LIBETUDE_SIMD_NEON) {
         register_neon_kernels();
-    }
-
-    // GPU 커널 등록 (GPU 사용 가능 여부에 따라)
-    if (libetude_hardware_is_gpu_available(&hw_info.gpu)) {
-        register_gpu_kernels();
     }
 
     g_kernel_registry.initialized = true;
@@ -370,8 +368,8 @@ LIBETUDE_API void kernel_registry_print_info(void) {
 
     // 하드웨어 기능 출력
     char features_str[256];
-    libetude_hardware_simd_features_to_string(g_kernel_registry.hardware_features,
-                                             features_str, sizeof(features_str));
+    kernel_registry_simd_features_to_string(g_kernel_registry.hardware_features,
+                                           features_str, sizeof(features_str));
     printf("Hardware features: 0x%08X (%s)\n",
            g_kernel_registry.hardware_features, features_str);
 
@@ -395,8 +393,8 @@ LIBETUDE_API void kernel_registry_print_info(void) {
 
                 // SIMD 기능 문자열 변환
                 char simd_str[128];
-                libetude_hardware_simd_features_to_string(kernel->simd_features,
-                                                         simd_str, sizeof(simd_str));
+                kernel_registry_simd_features_to_string(kernel->simd_features,
+                                                       simd_str, sizeof(simd_str));
 
                 // 현재 하드웨어에서 사용 가능한지 표시
                 bool available = (kernel->simd_features & g_kernel_registry.hardware_features) != 0 ||
@@ -432,8 +430,8 @@ LIBETUDE_API void kernel_registry_print_info(void) {
             }
 
             char simd_str[128];
-            libetude_hardware_simd_features_to_string(kernel->simd_features,
-                                                     simd_str, sizeof(simd_str));
+            kernel_registry_simd_features_to_string(kernel->simd_features,
+                                                   simd_str, sizeof(simd_str));
 
             bool available = (kernel->simd_features & g_kernel_registry.hardware_features) != 0 ||
                             kernel->simd_features == LIBETUDE_SIMD_NONE;
@@ -447,4 +445,81 @@ LIBETUDE_API void kernel_registry_print_info(void) {
     }
 
     printf("\n================================\n");
+}
+
+/**
+ * @brief SIMD 기능을 문자열로 변환합니다
+ */
+static void kernel_registry_simd_features_to_string(uint32_t features, char* buffer, size_t buffer_size) {
+    if (!buffer || buffer_size == 0) {
+        return;
+    }
+
+    buffer[0] = '\0';
+    bool first = true;
+
+    if (features == LIBETUDE_SIMD_NONE) {
+        strncpy(buffer, "None", buffer_size - 1);
+        buffer[buffer_size - 1] = '\0';
+        return;
+    }
+
+    if (features & LIBETUDE_SIMD_SSE) {
+        if (!first) strncat(buffer, ", ", buffer_size - strlen(buffer) - 1);
+        strncat(buffer, "SSE", buffer_size - strlen(buffer) - 1);
+        first = false;
+    }
+
+    if (features & LIBETUDE_SIMD_SSE2) {
+        if (!first) strncat(buffer, ", ", buffer_size - strlen(buffer) - 1);
+        strncat(buffer, "SSE2", buffer_size - strlen(buffer) - 1);
+        first = false;
+    }
+
+    if (features & LIBETUDE_SIMD_SSE3) {
+        if (!first) strncat(buffer, ", ", buffer_size - strlen(buffer) - 1);
+        strncat(buffer, "SSE3", buffer_size - strlen(buffer) - 1);
+        first = false;
+    }
+
+    if (features & LIBETUDE_SIMD_SSSE3) {
+        if (!first) strncat(buffer, ", ", buffer_size - strlen(buffer) - 1);
+        strncat(buffer, "SSSE3", buffer_size - strlen(buffer) - 1);
+        first = false;
+    }
+
+    if (features & LIBETUDE_SIMD_SSE4_1) {
+        if (!first) strncat(buffer, ", ", buffer_size - strlen(buffer) - 1);
+        strncat(buffer, "SSE4.1", buffer_size - strlen(buffer) - 1);
+        first = false;
+    }
+
+    if (features & LIBETUDE_SIMD_SSE4_2) {
+        if (!first) strncat(buffer, ", ", buffer_size - strlen(buffer) - 1);
+        strncat(buffer, "SSE4.2", buffer_size - strlen(buffer) - 1);
+        first = false;
+    }
+
+    if (features & LIBETUDE_SIMD_AVX) {
+        if (!first) strncat(buffer, ", ", buffer_size - strlen(buffer) - 1);
+        strncat(buffer, "AVX", buffer_size - strlen(buffer) - 1);
+        first = false;
+    }
+
+    if (features & LIBETUDE_SIMD_AVX2) {
+        if (!first) strncat(buffer, ", ", buffer_size - strlen(buffer) - 1);
+        strncat(buffer, "AVX2", buffer_size - strlen(buffer) - 1);
+        first = false;
+    }
+
+    if (features & LIBETUDE_SIMD_NEON) {
+        if (!first) strncat(buffer, ", ", buffer_size - strlen(buffer) - 1);
+        strncat(buffer, "NEON", buffer_size - strlen(buffer) - 1);
+        first = false;
+    }
+
+    if (first) {
+        strncpy(buffer, "Unknown", buffer_size - 1);
+        buffer[buffer_size - 1] = '\0';
+    }
 }

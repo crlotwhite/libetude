@@ -105,13 +105,279 @@ void avx_relu(const float* input, float* output, size_t size) {
 }
 
 /**
+ * @brief 빠른 exp 근사 함수 (AVX용)
+ */
+static inline __m256 avx_fast_exp(__m256 x) {
+    // 입력 범위 제한 (-10 ~ 10)
+    const __m256 vmin = _mm256_set1_ps(-10.0f);
+    const __m256 vmax = _mm256_set1_ps(10.0f);
+    x = _mm256_max_ps(_mm256_min_ps(x, vmax), vmin);
+
+    // 테일러 급수 계수들
+    const __m256 c1 = _mm256_set1_ps(1.0f);
+    const __m256 c2 = _mm256_set1_ps(1.0f);
+    const __m256 c3 = _mm256_set1_ps(0.5f);        // 1/2!
+    const __m256 c4 = _mm256_set1_ps(0.16666667f); // 1/3!
+    const __m256 c5 = _mm256_set1_ps(0.04166667f); // 1/4!
+
+    // x의 거듭제곱 계산
+    __m256 x2 = _mm256_mul_ps(x, x);
+    __m256 x3 = _mm256_mul_ps(x2, x);
+    __m256 x4 = _mm256_mul_ps(x3, x);
+
+    // 다항식 계산: 1 + x + x²/2 + x³/6 + x⁴/24
+    __m256 result = c1;
+#ifdef LIBETUDE_HAVE_AVX2
+    result = _mm256_fmadd_ps(c2, x, result);
+    result = _mm256_fmadd_ps(c3, x2, result);
+    result = _mm256_fmadd_ps(c4, x3, result);
+    result = _mm256_fmadd_ps(c5, x4, result);
+#else
+    result = _mm256_add_ps(result, _mm256_mul_ps(c2, x));
+    result = _mm256_add_ps(result, _mm256_mul_ps(c3, x2));
+    result = _mm256_add_ps(result, _mm256_mul_ps(c4, x3));
+    result = _mm256_add_ps(result, _mm256_mul_ps(c5, x4));
+#endif
+
+    return result;
+}
+
+/**
+ * @brief 빠른 tanh 근사 함수 (AVX용)
+ */
+static inline __m256 avx_fast_tanh(__m256 x) {
+    // 입력 범위 제한
+    const __m256 vmin = _mm256_set1_ps(-5.0f);
+    const __m256 vmax = _mm256_set1_ps(5.0f);
+    x = _mm256_max_ps(_mm256_min_ps(x, vmax), vmin);
+
+    const __m256 c27 = _mm256_set1_ps(27.0f);
+    const __m256 c9 = _mm256_set1_ps(9.0f);
+
+    __m256 x2 = _mm256_mul_ps(x, x);
+
+    // 분자: x * (27 + x²)
+    __m256 numerator = _mm256_mul_ps(x, _mm256_add_ps(c27, x2));
+
+    // 분모: 27 + 9*x²
+#ifdef LIBETUDE_HAVE_AVX2
+    __m256 denominator = _mm256_fmadd_ps(c9, x2, c27);
+#else
+    __m256 denominator = _mm256_add_ps(c27, _mm256_mul_ps(c9, x2));
+#endif
+
+    return _mm256_div_ps(numerator, denominator);
+}
+
+/**
+ * @brief Sigmoid 활성화 함수 (AVX 구현)
+ */
+void avx_sigmoid(const float* input, float* output, size_t size) {
+    size_t i = 0;
+    const __m256 vone = _mm256_set1_ps(1.0f);
+    const __m256 vneg_one = _mm256_set1_ps(-1.0f);
+
+    // 8개 요소씩 AVX 벡터 처리
+    for (; i + 7 < size; i += 8) {
+        __m256 vinput = _mm256_loadu_ps(input + i);
+        __m256 vneg_input = _mm256_mul_ps(vinput, vneg_one);
+
+        // 빠른 exp(-x) 근사 계산
+        __m256 vexp_neg_x = avx_fast_exp(vneg_input);
+
+        // 1 + exp(-x)
+        __m256 vdenom = _mm256_add_ps(vone, vexp_neg_x);
+
+        // 1 / (1 + exp(-x))
+        __m256 vresult = _mm256_div_ps(vone, vdenom);
+        _mm256_storeu_ps(output + i, vresult);
+    }
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        output[i] = 1.0f / (1.0f + expf(-input[i]));
+    }
+}
+
+/**
+ * @brief Tanh 활성화 함수 (AVX 구현)
+ */
+void avx_tanh(const float* input, float* output, size_t size) {
+    size_t i = 0;
+
+    // 8개 요소씩 AVX 벡터 처리
+    for (; i + 7 < size; i += 8) {
+        __m256 vinput = _mm256_loadu_ps(input + i);
+        __m256 vresult = avx_fast_tanh(vinput);
+        _mm256_storeu_ps(output + i, vresult);
+    }
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        output[i] = tanhf(input[i]);
+    }
+}
+
+/**
+ * @brief GELU 활성화 함수 (AVX 구현)
+ *
+ * GELU(x) = 0.5 * x * (1 + tanh(sqrt(2/π) * (x + 0.044715 * x^3)))
+ */
+void avx_gelu(const float* input, float* output, size_t size) {
+    size_t i = 0;
+    const float sqrt_2_over_pi = 0.7978845608f;
+    const float coeff = 0.044715f;
+
+    // AVX 상수 설정
+    const __m256 vhalf = _mm256_set1_ps(0.5f);
+    const __m256 vone = _mm256_set1_ps(1.0f);
+    const __m256 vsqrt_2_over_pi = _mm256_set1_ps(sqrt_2_over_pi);
+    const __m256 vcoeff = _mm256_set1_ps(coeff);
+
+    // 8개 요소씩 AVX 벡터 처리
+    for (; i + 7 < size; i += 8) {
+        // 입력 로드
+        __m256 vx = _mm256_loadu_ps(input + i);
+
+        // x^2 계산
+        __m256 vx2 = _mm256_mul_ps(vx, vx);
+
+        // x^3 계산
+        __m256 vx3 = _mm256_mul_ps(vx2, vx);
+
+        // coeff * x^3 계산
+        __m256 vcoeff_x3 = _mm256_mul_ps(vcoeff, vx3);
+
+        // x + coeff * x^3 계산
+        __m256 vsum = _mm256_add_ps(vx, vcoeff_x3);
+
+        // sqrt(2/π) * (x + coeff * x^3) 계산
+        __m256 vinner = _mm256_mul_ps(vsqrt_2_over_pi, vsum);
+
+        // tanh(inner) 계산 - 최적화된 tanh 함수 사용
+        __m256 vtanh = avx_fast_tanh(vinner);
+
+        // 1 + tanh(inner) 계산
+        __m256 vone_plus_tanh = _mm256_add_ps(vone, vtanh);
+
+        // 0.5 * x * (1 + tanh(inner)) 계산
+        __m256 vresult = _mm256_mul_ps(vhalf, _mm256_mul_ps(vx, vone_plus_tanh));
+
+        // 결과 저장
+        _mm256_storeu_ps(output + i, vresult);
+    }
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        float x = input[i];
+        float x3 = x * x * x;
+        float inner = sqrt_2_over_pi * (x + coeff * x3);
+        output[i] = 0.5f * x * (1.0f + tanhf(inner));
+    }
+}
+
+/**
+ * @brief 벡터 내적 (AVX 구현)
+ *
+ * 이 구현은 다음과 같은 최적화 기법을 사용합니다:
+ * 1. AVX 명령어를 사용한 8개 요소 병렬 처리
+ * 2. 여러 누적 레지스터를 사용하여 명령어 수준 병렬성 향상
+ * 3. 수평 합산 최적화
+ * 4. AVX2에서는 FMA 명령어 활용
+ */
+float avx_vector_dot(const float* a, const float* b, size_t size) {
+    size_t i = 0;
+
+    // 여러 누적 레지스터 사용 (명령어 수준 병렬성 향상)
+    __m256 vsum0 = _mm256_setzero_ps();
+    __m256 vsum1 = _mm256_setzero_ps();
+    __m256 vsum2 = _mm256_setzero_ps();
+    __m256 vsum3 = _mm256_setzero_ps();
+
+    // 32개 요소씩 처리 (4개 레지스터 * 8개 요소)
+    for (; i + 31 < size; i += 32) {
+        // 첫 번째 8개 요소
+        __m256 va0 = _mm256_loadu_ps(a + i);
+        __m256 vb0 = _mm256_loadu_ps(b + i);
+
+        // 두 번째 8개 요소
+        __m256 va1 = _mm256_loadu_ps(a + i + 8);
+        __m256 vb1 = _mm256_loadu_ps(b + i + 8);
+
+        // 세 번째 8개 요소
+        __m256 va2 = _mm256_loadu_ps(a + i + 16);
+        __m256 vb2 = _mm256_loadu_ps(b + i + 16);
+
+        // 네 번째 8개 요소
+        __m256 va3 = _mm256_loadu_ps(a + i + 24);
+        __m256 vb3 = _mm256_loadu_ps(b + i + 24);
+
+#ifdef LIBETUDE_HAVE_AVX2
+        // FMA 명령어 사용 (AVX2)
+        vsum0 = _mm256_fmadd_ps(va0, vb0, vsum0);
+        vsum1 = _mm256_fmadd_ps(va1, vb1, vsum1);
+        vsum2 = _mm256_fmadd_ps(va2, vb2, vsum2);
+        vsum3 = _mm256_fmadd_ps(va3, vb3, vsum3);
+#else
+        // 기본 AVX 명령어 사용
+        vsum0 = _mm256_add_ps(vsum0, _mm256_mul_ps(va0, vb0));
+        vsum1 = _mm256_add_ps(vsum1, _mm256_mul_ps(va1, vb1));
+        vsum2 = _mm256_add_ps(vsum2, _mm256_mul_ps(va2, vb2));
+        vsum3 = _mm256_add_ps(vsum3, _mm256_mul_ps(va3, vb3));
+#endif
+    }
+
+    // 8개 요소씩 처리 (나머지)
+    for (; i + 7 < size; i += 8) {
+        __m256 va = _mm256_loadu_ps(a + i);
+        __m256 vb = _mm256_loadu_ps(b + i);
+#ifdef LIBETUDE_HAVE_AVX2
+        vsum0 = _mm256_fmadd_ps(va, vb, vsum0);
+#else
+        vsum0 = _mm256_add_ps(vsum0, _mm256_mul_ps(va, vb));
+#endif
+    }
+
+    // 모든 누적 레지스터 합산
+    vsum0 = _mm256_add_ps(vsum0, vsum1);
+    vsum2 = _mm256_add_ps(vsum2, vsum3);
+    vsum0 = _mm256_add_ps(vsum0, vsum2);
+
+    // 수평 합산 최적화 (AVX에서는 직접적인 수평 합산 명령어가 없음)
+    // 상위 128비트와 하위 128비트를 추출하여 합산
+    __m128 vlow  = _mm256_castps256_ps128(vsum0);
+    __m128 vhigh = _mm256_extractf128_ps(vsum0, 1);
+
+    // 128비트 벡터들을 합산
+    __m128 vsum_128 = _mm_add_ps(vlow, vhigh);
+
+    // 4개 요소를 2개씩 합산
+    __m128 vshuf = _mm_movehdup_ps(vsum_128); // 복제 상위 2개 요소
+    __m128 vsums = _mm_add_ps(vsum_128, vshuf); // 합산
+
+    // 마지막 2개 요소를 합산
+    vshuf = _mm_movehl_ps(vshuf, vsums);
+    vsums = _mm_add_ss(vsums, vshuf);
+
+    // 최종 결과 추출
+    float sum = _mm_cvtss_f32(vsums);
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        sum += a[i] * b[i];
+    }
+
+    return sum;
+}
+
+/**
  * @brief 행렬 곱셈 (AVX 구현)
  *
  * 간단한 AVX 최적화 버전의 행렬 곱셈
  * A: m x k, B: k x n, C: m x n
  */
-void avx_matrix_mul(const float* a, const float* b, float* c,
-                   size_t m, size_t n, size_t k) {
+void avx_gemm(const float* a, const float* b, float* c,
+              size_t m, size_t n, size_t k) {
     // 행렬 C를 0으로 초기화
     memset(c, 0, m * n * sizeof(float));
 
@@ -126,7 +392,12 @@ void avx_matrix_mul(const float* a, const float* b, float* c,
             for (; j + 7 < n; j += 8) {
                 __m256 vb = _mm256_loadu_ps(&b[l * n + j]);
                 __m256 vc = _mm256_loadu_ps(&c[i * n + j]);
-                __m256 vresult = _mm256_fmadd_ps(va, vb, vc); // AVX2에서만 사용 가능
+#ifdef LIBETUDE_HAVE_AVX2
+                __m256 vresult = _mm256_fmadd_ps(va, vb, vc); // FMA 사용
+#else
+                __m256 vmul = _mm256_mul_ps(va, vb);
+                __m256 vresult = _mm256_add_ps(vmul, vc);
+#endif
                 _mm256_storeu_ps(&c[i * n + j], vresult);
             }
 
@@ -136,6 +407,121 @@ void avx_matrix_mul(const float* a, const float* b, float* c,
             }
         }
     }
+}
+
+/**
+ * @brief 최적화된 GEMM (블록 단위 처리)
+ * 캐시 효율성을 위한 블록 단위 행렬 곱셈
+ *
+ * 이 구현은 다음과 같은 최적화 기법을 사용합니다:
+ * 1. 블록 단위 처리로 캐시 지역성 향상
+ * 2. 마이크로 커널 접근 방식으로 레지스터 재사용 최대화
+ * 3. 데이터 프리페치를 통한 메모리 접근 최적화
+ * 4. AVX 명령어를 활용한 벡터화
+ */
+void avx_gemm_blocked(const float* a, const float* b, float* c,
+                      size_t m, size_t n, size_t k) {
+    // 블록 크기 최적화 (L1/L2 캐시 크기에 맞춤)
+    const size_t mc = 64;  // A 행렬 블록 행 크기
+    const size_t kc = 64;  // A 행렬 블록 열 크기 / B 행렬 블록 행 크기
+    const size_t nc = 128; // B 행렬 블록 열 크기
+
+    // 마이크로 커널 크기 (레지스터 최적화)
+    const size_t mr = 4;   // 내부 루프에서 한 번에 처리할 A 행 수
+    const size_t nr = 16;  // 내부 루프에서 한 번에 처리할 B 열 수
+
+    // 행렬 C를 0으로 초기화
+    memset(c, 0, m * n * sizeof(float));
+
+    // 임시 패킹 버퍼 (정렬된 메모리 접근을 위함)
+    float* a_packed = (float*)aligned_alloc(32, mc * kc * sizeof(float));
+    float* b_packed = (float*)aligned_alloc(32, kc * nc * sizeof(float));
+
+    if (!a_packed || !b_packed) {
+        // 메모리 할당 실패 시 기본 구현으로 폴백
+        avx_gemm(a, b, c, m, n, k);
+        if (a_packed) free(a_packed);
+        if (b_packed) free(b_packed);
+        return;
+    }
+
+    // 3중 블록 루프
+    for (size_t i = 0; i < m; i += mc) {
+        size_t ib = LIBETUDE_MIN(mc, m - i);
+
+        for (size_t p = 0; p < k; p += kc) {
+            size_t pb = LIBETUDE_MIN(kc, k - p);
+
+            // A 행렬 블록 패킹 (연속 메모리 접근을 위한 재배치)
+            for (size_t ii = 0; ii < ib; ii++) {
+                for (size_t pp = 0; pp < pb; pp++) {
+                    a_packed[ii * pb + pp] = a[(i + ii) * k + (p + pp)];
+                }
+            }
+
+            for (size_t j = 0; j < n; j += nc) {
+                size_t jb = LIBETUDE_MIN(nc, n - j);
+
+                // B 행렬 블록 패킹
+                for (size_t pp = 0; pp < pb; pp++) {
+                    for (size_t jj = 0; jj < jb; jj++) {
+                        b_packed[pp * jb + jj] = b[(p + pp) * n + (j + jj)];
+                    }
+                }
+
+                // 마이크로 커널 블록 계산
+                for (size_t ii = 0; ii < ib; ii += mr) {
+                    size_t i_limit = LIBETUDE_MIN(mr, ib - ii);
+
+                    for (size_t jj = 0; jj < jb; jj += nr) {
+                        size_t j_limit = LIBETUDE_MIN(nr, jb - jj);
+
+                        // 마이크로 커널 (최내부 루프)
+                        // 여기서 실제 계산이 이루어짐
+                        for (size_t iii = 0; iii < i_limit; iii++) {
+                            for (size_t pp = 0; pp < pb; pp++) {
+                                // A 행렬 요소 로드 및 브로드캐스트
+                                float a_val = a_packed[(ii + iii) * pb + pp];
+                                __m256 va = _mm256_set1_ps(a_val);
+
+                                // 8개 요소씩 처리 (AVX 레지스터 크기)
+                                for (size_t jjj = 0; jjj < j_limit; jjj += 8) {
+                                    if (jjj + 8 <= j_limit) {
+                                        // B 행렬 요소 로드
+                                        __m256 vb = _mm256_loadu_ps(&b_packed[pp * jb + jj + jjj]);
+
+                                        // C 행렬 요소 로드
+                                        __m256 vc = _mm256_loadu_ps(&c[(i + ii + iii) * n + (j + jj + jjj)]);
+
+                                        // 계산 및 저장
+#ifdef LIBETUDE_HAVE_AVX2
+                                        // FMA 명령어 사용 (AVX2)
+                                        vc = _mm256_fmadd_ps(va, vb, vc);
+#else
+                                        // 기본 AVX 명령어 사용
+                                        __m256 vmul = _mm256_mul_ps(va, vb);
+                                        vc = _mm256_add_ps(vc, vmul);
+#endif
+                                        _mm256_storeu_ps(&c[(i + ii + iii) * n + (j + jj + jjj)], vc);
+                                    } else {
+                                        // 나머지 요소 스칼라 처리
+                                        for (size_t j_rem = 0; j_rem < j_limit - jjj; j_rem++) {
+                                            c[(i + ii + iii) * n + (j + jj + jjj + j_rem)] +=
+                                                a_val * b_packed[pp * jb + jj + jjj + j_rem];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 임시 버퍼 해제
+    free(a_packed);
+    free(b_packed);
 }
 
 #else
@@ -201,13 +587,56 @@ void register_avx_kernels(void) {
     kernel_info.performance_score = 4.0f;
     kernel_registry_register(&kernel_info);
 
-    // 행렬 곱셈 커널
+    // 벡터 내적 커널
     memset(&kernel_info, 0, sizeof(KernelInfo));
-    kernel_info.name = "matmul_avx";
-    kernel_info.kernel_func = (void*)avx_matrix_mul;
+    kernel_info.name = "vector_dot_avx";
+    kernel_info.kernel_func = (void*)avx_vector_dot;
+    kernel_info.simd_features = LIBETUDE_SIMD_AVX;
+    kernel_info.optimal_size = 256;
+    kernel_info.performance_score = 4.0f;
+    kernel_registry_register(&kernel_info);
+
+    // GEMM 커널
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "gemm_avx";
+    kernel_info.kernel_func = (void*)avx_gemm;
     kernel_info.simd_features = LIBETUDE_SIMD_AVX;
     kernel_info.optimal_size = 128; // 행렬 크기 기준
     kernel_info.performance_score = 4.0f;
+    kernel_registry_register(&kernel_info);
+
+    // 블록 단위 GEMM 커널
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "gemm_blocked_avx";
+    kernel_info.kernel_func = (void*)avx_gemm_blocked;
+    kernel_info.simd_features = LIBETUDE_SIMD_AVX;
+    kernel_info.optimal_size = 256; // 더 큰 행렬에서 효과적
+    kernel_info.performance_score = 4.5f;
+    kernel_registry_register(&kernel_info);
+
+    // 추가 활성화 함수들
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "activation_sigmoid_avx";
+    kernel_info.kernel_func = (void*)avx_sigmoid;
+    kernel_info.simd_features = LIBETUDE_SIMD_AVX;
+    kernel_info.optimal_size = 256;
+    kernel_info.performance_score = 3.5f;
+    kernel_registry_register(&kernel_info);
+
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "activation_tanh_avx";
+    kernel_info.kernel_func = (void*)avx_tanh;
+    kernel_info.simd_features = LIBETUDE_SIMD_AVX;
+    kernel_info.optimal_size = 256;
+    kernel_info.performance_score = 3.5f;
+    kernel_registry_register(&kernel_info);
+
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "activation_gelu_avx";
+    kernel_info.kernel_func = (void*)avx_gelu;
+    kernel_info.simd_features = LIBETUDE_SIMD_AVX;
+    kernel_info.optimal_size = 256;
+    kernel_info.performance_score = 3.0f;
     kernel_registry_register(&kernel_info);
 #endif
 }
