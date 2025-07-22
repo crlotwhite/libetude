@@ -15,7 +15,7 @@
 #include <stdio.h>
 
 // 런타임 할당자 구조체 (설계 문서의 RTAllocator와 호환)
-typedef struct {
+struct RTAllocator {
     void* base_address;         // 기본 메모리 주소
     size_t total_size;          // 총 크기
     size_t used_size;           // 사용된 크기
@@ -32,7 +32,7 @@ typedef struct {
     // 스레드 안전성
     pthread_mutex_t mutex;      // 뮤텍스
     bool thread_safe;           // 스레드 안전성 활성화 여부
-} RTAllocator;
+};
 
 // 내부 함수 선언
 static void rt_lock_allocator(RTAllocator* allocator);
@@ -115,6 +115,11 @@ void* rt_alloc(RTAllocator* allocator, size_t size) {
 
 void* rt_alloc_aligned(RTAllocator* allocator, size_t size, size_t alignment) {
     if (allocator == NULL || size == 0 || alignment == 0) {
+        return NULL;
+    }
+
+    // 정렬이 2의 거듭제곱인지 확인
+    if ((alignment & (alignment - 1)) != 0) {
         return NULL;
     }
 
@@ -388,3 +393,97 @@ static void rt_update_stats(RTAllocator* allocator, size_t size, bool is_alloc) 
         allocator->used_size = stats.used_size;
     }
 }
+
+// =============================================================================
+// 메모리 누수 감지 및 추적 기능
+// =============================================================================
+
+void rt_enable_leak_detection(RTAllocator* allocator, bool enable) {
+    if (allocator == NULL) {
+        return;
+    }
+
+    rt_lock_allocator(allocator);
+    et_enable_leak_detection(allocator->memory_pool, enable);
+    rt_unlock_allocator(allocator);
+}
+
+size_t rt_check_memory_leaks(RTAllocator* allocator, uint64_t leak_threshold_ms) {
+    if (allocator == NULL) {
+        return 0;
+    }
+
+    rt_lock_allocator(allocator);
+    size_t leak_count = et_check_memory_leaks(allocator->memory_pool, leak_threshold_ms);
+    rt_unlock_allocator(allocator);
+
+    return leak_count;
+}
+
+size_t rt_get_memory_leaks(RTAllocator* allocator, ETMemoryLeakInfo* leak_infos, size_t max_infos) {
+    if (allocator == NULL) {
+        return 0;
+    }
+
+    rt_lock_allocator(allocator);
+    size_t leak_count = et_get_memory_leaks(allocator->memory_pool, leak_infos, max_infos);
+    rt_unlock_allocator(allocator);
+
+    return leak_count;
+}
+
+void rt_print_memory_leak_report(RTAllocator* allocator, const char* output_file) {
+    if (allocator == NULL) {
+        return;
+    }
+
+    rt_lock_allocator(allocator);
+    et_print_memory_leak_report(allocator->memory_pool, output_file);
+    rt_unlock_allocator(allocator);
+}
+
+size_t rt_check_memory_corruption(RTAllocator* allocator) {
+    if (allocator == NULL) {
+        return 0;
+    }
+
+    rt_lock_allocator(allocator);
+    size_t corruption_count = et_check_memory_corruption(allocator->memory_pool);
+    rt_unlock_allocator(allocator);
+
+    return corruption_count;
+}
+
+// 디버그 모드 할당자 함수
+#ifdef ET_DEBUG_MEMORY
+void* rt_alloc_debug(RTAllocator* allocator, size_t size, const char* file, int line, const char* function) {
+    if (allocator == NULL || size == 0) {
+        return NULL;
+    }
+
+    rt_lock_allocator(allocator);
+
+    void* ptr = et_alloc_from_pool_debug(allocator->memory_pool, size, file, line, function);
+
+    if (ptr != NULL) {
+        rt_update_stats(allocator, size, true);
+    }
+
+    rt_unlock_allocator(allocator);
+
+    return ptr;
+}
+
+void rt_free_debug(RTAllocator* allocator, void* ptr, const char* file, int line, const char* function) {
+    if (allocator == NULL || ptr == NULL) {
+        return;
+    }
+
+    rt_lock_allocator(allocator);
+
+    et_free_to_pool_debug(allocator->memory_pool, ptr, file, line, function);
+    rt_update_stats(allocator, 0, false);
+
+    rt_unlock_allocator(allocator);
+}
+#endif

@@ -12,6 +12,7 @@ set(UNIT_TEST_SOURCES
     unit/test_tensor.c
     unit/test_memory.c
     unit/test_hardware.c
+    unit/test_memory_allocator.c
 )
 
 # 통합 테스트 소스 파일
@@ -77,11 +78,23 @@ target_include_directories(hardware_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
+# 메모리 할당자 테스트 실행 파일 (독립적으로 실행 가능)
+add_executable(memory_allocator_test unit/test_memory_allocator.c)
+target_link_libraries(memory_allocator_test
+    test_framework
+    libetude_static
+)
+target_include_directories(memory_allocator_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
 # CTest 통합
 add_test(NAME UnitTests COMMAND unit_tests)
 add_test(NAME IntegrationTests COMMAND integration_tests)
 add_test(NAME PerformanceTests COMMAND performance_tests)
 add_test(NAME HardwareTest COMMAND hardware_test)
+add_test(NAME MemoryAllocatorTest COMMAND memory_allocator_test)
 
 # 테스트 속성 설정
 set_tests_properties(UnitTests PROPERTIES
@@ -102,6 +115,11 @@ set_tests_properties(PerformanceTests PROPERTIES
 set_tests_properties(HardwareTest PROPERTIES
     TIMEOUT 30
     LABELS "hardware"
+)
+
+set_tests_properties(MemoryAllocatorTest PROPERTIES
+    TIMEOUT 60
+    LABELS "memory"
 )
 
 # 테스트 데이터 복사

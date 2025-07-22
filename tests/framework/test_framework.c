@@ -189,3 +189,46 @@ void test_pass() {
 int test_get_exit_code() {
     return g_failed_tests > 0 ? 1 : 0;
 }
+
+/**
+ * @brief 현재 실행 중인 테스트 케이스를 가져옵니다
+ */
+static TestCase* get_current_test_case() {
+    if (!g_current_suite || g_current_suite->num_test_cases == 0) {
+        return NULL;
+    }
+
+    // 현재 실행 중인 테스트 케이스 찾기
+    for (int i = 0; i < g_current_suite->num_test_cases; i++) {
+        TestCase* test_case = &g_current_suite->test_cases[i];
+        if (!test_case->passed && test_case->error_message[0] == '\0') {
+            return test_case;
+        }
+    }
+
+    return NULL;
+}
+
+/**
+ * @brief 테스트 실패를 기록합니다 (개선된 버전)
+ */
+void test_fail_improved(const char* message) {
+    TestCase* current_test = get_current_test_case();
+    if (current_test) {
+        current_test->passed = false;
+        if (message) {
+            strncpy(current_test->error_message, message, sizeof(current_test->error_message) - 1);
+            current_test->error_message[sizeof(current_test->error_message) - 1] = '\0';
+        }
+    }
+}
+
+/**
+ * @brief 테스트 성공을 기록합니다 (개선된 버전)
+ */
+void test_pass_improved() {
+    TestCase* current_test = get_current_test_case();
+    if (current_test) {
+        current_test->passed = true;
+    }
+}

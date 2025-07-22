@@ -246,6 +246,44 @@ int test_get_exit_code();
  */
 #define TEST_ASSERT_TRUE(condition) TEST_ASSERT(condition)
 
+// LibEtude 테스트 프레임워크 호환성 매크로
+#define ETTestCase TestCase
+#define ETTestSuite TestSuite
+#define ET_TEST_ASSERT(condition, message) \
+    do { \
+        if (!(condition)) { \
+            char msg[512]; \
+            snprintf(msg, sizeof(msg), "%s: %s (at %s:%d)", \
+                    message, #condition, __FILE__, __LINE__); \
+            test_fail(msg); \
+            return; \
+        } \
+    } while(0)
+
+#define et_run_test_suite(suite) \
+    do { \
+        (suite)->passed_count = 0; \
+        (suite)->failed_count = 0; \
+        for (int i = 0; i < (suite)->num_test_cases; i++) { \
+            printf("Running %s ... ", (suite)->test_cases[i].name); \
+            fflush(stdout); \
+            if ((suite)->test_cases[i].setup) { \
+                (suite)->test_cases[i].setup(); \
+            } \
+            (suite)->test_cases[i].test_func(); \
+            if ((suite)->test_cases[i].teardown) { \
+                (suite)->test_cases[i].teardown(); \
+            } \
+            if ((suite)->test_cases[i].passed) { \
+                printf("PASS\n"); \
+                (suite)->passed_count++; \
+            } else { \
+                printf("FAIL: %s\n", (suite)->test_cases[i].error_message); \
+                (suite)->failed_count++; \
+            } \
+        } \
+    } while(0)
+
 #ifdef __cplusplus
 }
 #endif
