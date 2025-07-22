@@ -391,6 +391,120 @@ static void test_performance_benchmark(void) {
     free(result);
 }
 
+/**
+ * @brief 모바일 특화 함수 테스트
+ */
+static void test_mobile_functions(void) {
+    printf("Testing mobile-specific functions...\n");
+
+    const size_t size = 1000;
+    float* input = (float*)malloc(size * sizeof(float));
+    float* output = (float*)malloc(size * sizeof(float));
+    float* envelope = (float*)malloc(size * sizeof(float));
+
+    generate_test_vector(input, size, -1.0f, 1.0f);
+    generate_test_vector(envelope, size, 0.5f, 1.5f);
+
+    // 배터리 효율적인 벡터 덧셈 테스트
+    float* a = (float*)malloc(size * sizeof(float));
+    float* b = (float*)malloc(size * sizeof(float));
+    float* result_power = (float*)malloc(size * sizeof(float));
+    float* result_ref = (float*)malloc(size * sizeof(float));
+
+    generate_test_vector(a, size, -2.0f, 2.0f);
+    generate_test_vector(b, size, -1.0f, 1.0f);
+
+    simd_vector_add_power_efficient(a, b, result_power, size);
+
+    // 참조 구현
+    for (size_t i = 0; i < size; i++) {
+        result_ref[i] = a[i] + b[i];
+    }
+
+    bool power_test_passed = vector_equals(result_power, result_ref, size, TEST_EPSILON);
+    printf("  Power Efficient Vector Add: %s\n", power_test_passed ? "PASS" : "FAIL");
+
+    // 온도 인식 벡터 덧셈 테스트
+    float* result_thermal = (float*)malloc(size * sizeof(float));
+    simd_vector_add_thermal_aware(a, b, result_thermal, size);
+
+    bool thermal_test_passed = vector_equals(result_thermal, result_ref, size, TEST_EPSILON);
+    printf("  Thermal Aware Vector Add: %s\n", thermal_test_passed ? "PASS" : "FAIL");
+
+    // 피치 시프팅 테스트
+    float* pitch_output = (float*)malloc(size * sizeof(float));
+    simd_pitch_shift_mobile(input, pitch_output, size, 1.2f); // 20% 높은 피치
+
+    // 기본적인 유효성 검사 (출력이 0이 아닌지 확인)
+    bool pitch_test_passed = true;
+    float sum = 0.0f;
+    for (size_t i = 0; i < size; i++) {
+        sum += fabsf(pitch_output[i]);
+    }
+    if (sum < 1e-6f) {
+        pitch_test_passed = false;
+    }
+    printf("  Pitch Shift Mobile: %s\n", pitch_test_passed ? "PASS" : "FAIL");
+
+    // 스펙트럴 엔벨로프 테스트
+    float* spectral_output = (float*)malloc(size * sizeof(float));
+    simd_spectral_envelope_mobile(input, envelope, spectral_output, size);
+
+    // 참조 구현과 비교
+    float* spectral_ref = (float*)malloc(size * sizeof(float));
+    for (size_t i = 0; i < size; i++) {
+        spectral_ref[i] = input[i] * envelope[i];
+    }
+
+    bool spectral_test_passed = vector_equals(spectral_output, spectral_ref, size, TEST_EPSILON);
+    printf("  Spectral Envelope Mobile: %s\n", spectral_test_passed ? "PASS" : "FAIL");
+
+    // 노이즈 게이트 테스트
+    float* gate_output = (float*)malloc(size * sizeof(float));
+    simd_noise_gate_mobile(input, gate_output, size, 0.5f, 0.1f);
+
+    // 기본적인 유효성 검사
+    bool gate_test_passed = true;
+    for (size_t i = 0; i < size; i++) {
+        float abs_input = fabsf(input[i]);
+        float abs_output = fabsf(gate_output[i]);
+
+        if (abs_input > 0.5f) {
+            // 임계값 이상이면 원본과 같아야 함
+            if (!float_equals(gate_output[i], input[i], TEST_EPSILON)) {
+                gate_test_passed = false;
+                break;
+            }
+        } else {
+            // 임계값 이하면 감쇠되어야 함
+            if (abs_output > abs_input) {
+                gate_test_passed = false;
+                break;
+            }
+        }
+    }
+    printf("  Noise Gate Mobile: %s\n", gate_test_passed ? "PASS" : "FAIL");
+
+    // 메모리 정리
+    free(input);
+    free(output);
+    free(envelope);
+    free(a);
+    free(b);
+    free(result_power);
+    free(result_ref);
+    free(result_thermal);
+    free(pitch_output);
+    free(spectral_output);
+    free(spectral_ref);
+    free(gate_output);
+
+    if (!power_test_passed || !thermal_test_passed || !pitch_test_passed ||
+        !spectral_test_passed || !gate_test_passed) {
+        TEST_FAIL("Mobile-specific function tests failed");
+    }
+}
+
 // ============================================================================
 // 메인 테스트 함수
 // ============================================================================
@@ -421,6 +535,7 @@ void run_simd_kernel_tests(void) {
     test_relu();
     test_sigmoid();
     test_tanh();
+    test_mobile_functions();
     test_performance_benchmark();
 
     // 정리

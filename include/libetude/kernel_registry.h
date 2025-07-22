@@ -65,6 +65,7 @@ typedef struct {
     size_t kernel_count;            /**< 등록된 커널 수 */
     size_t capacity;                /**< 배열 용량 */
     uint32_t hardware_features;     /**< 현재 하드웨어 기능 */
+    bool initialized;               /**< 초기화 상태 */
 } KernelRegistry;
 
 // ============================================================================

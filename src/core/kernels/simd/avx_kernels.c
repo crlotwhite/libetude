@@ -434,14 +434,32 @@ void avx_gemm_blocked(const float* a, const float* b, float* c,
     memset(c, 0, m * n * sizeof(float));
 
     // 임시 패킹 버퍼 (정렬된 메모리 접근을 위함)
-    float* a_packed = (float*)aligned_alloc(32, mc * kc * sizeof(float));
-    float* b_packed = (float*)aligned_alloc(32, kc * nc * sizeof(float));
+    // 32바이트 정렬로 AVX 최적화
+    float* a_packed = NULL;
+    float* b_packed = NULL;
+
+    // 메모리 할당 시도
+    const size_t a_size = mc * kc * sizeof(float);
+    const size_t b_size = kc * nc * sizeof(float);
+
+#ifdef _WIN32
+    a_packed = (float*)_aligned_malloc(a_size, 32);
+    b_packed = (float*)_aligned_malloc(b_size, 32);
+#else
+    if (posix_memalign((void**)&a_packed, 32, a_size) != 0) a_packed = NULL;
+    if (posix_memalign((void**)&b_packed, 32, b_size) != 0) b_packed = NULL;
+#endif
 
     if (!a_packed || !b_packed) {
-        // 메모리 할당 실패 시 기본 구현으로 폴백
-        avx_gemm(a, b, c, m, n, k);
+        // 메모리 할당 실패 시 정리 후 폴백
+#ifdef _WIN32
+        if (a_packed) _aligned_free(a_packed);
+        if (b_packed) _aligned_free(b_packed);
+#else
         if (a_packed) free(a_packed);
         if (b_packed) free(b_packed);
+#endif
+        avx_gemm(a, b, c, m, n, k);
         return;
     }
 

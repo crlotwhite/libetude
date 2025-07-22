@@ -49,7 +49,7 @@
     - 활성화 함수 SIMD 최적화
     - _Requirements: 1.1, 1.2, 5.2_
 
-  - [ ] 2.4 ARM NEON 커널 구현
+  - [x] 2.4 ARM NEON 커널 구현
     - NEON 기반 벡터 연산 구현
     - 모바일 최적화 커널
     - _Requirements: 1.1, 4.4_

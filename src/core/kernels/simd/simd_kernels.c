@@ -41,6 +41,21 @@ extern void avx_sigmoid(const float* input, float* output, size_t size);
 extern void avx_tanh(const float* input, float* output, size_t size);
 extern void avx_gelu(const float* input, float* output, size_t size);
 
+// NEON 커널 함수들
+extern void register_neon_kernels(void);
+extern void neon_vector_add(const float* a, const float* b, float* result, size_t size);
+extern void neon_vector_mul(const float* a, const float* b, float* result, size_t size);
+extern void neon_vector_scale(const float* input, float scale, float* result, size_t size);
+extern float neon_vector_dot(const float* a, const float* b, size_t size);
+extern void neon_gemm(const float* a, const float* b, float* c, size_t m, size_t n, size_t k);
+extern void neon_gemm_blocked(const float* a, const float* b, float* c, size_t m, size_t n, size_t k);
+extern void neon_relu(const float* input, float* output, size_t size);
+extern void neon_sigmoid(const float* input, float* output, size_t size);
+extern void neon_tanh(const float* input, float* output, size_t size);
+extern void neon_gelu(const float* input, float* output, size_t size);
+extern void neon_vector_add_power_efficient(const float* a, const float* b, float* result, size_t size);
+extern void neon_gemm_memory_optimized(const float* a, const float* b, float* c, size_t m, size_t n, size_t k);
+
 // CPU 기본 커널 함수들 (fallback)
 extern void register_cpu_kernels(void);
 
@@ -253,6 +268,146 @@ void simd_gelu_optimal(const float* input, float* output, size_t size) {
             float inner = sqrt_2_over_pi * (x + coeff * x3);
             output[i] = 0.5f * x * (1.0f + tanhf(inner));
         }
+    }
+}
+
+// ============================================================================
+// 음성 합성 특화 SIMD 인터페이스 함수들
+// ============================================================================
+
+/**
+ * @brief 최적화된 Mel 필터뱅크 적용
+ */
+void simd_apply_mel_filterbank_optimal(const float* spectrogram, const float* mel_filters,
+                                      float* mel_output, size_t n_fft, size_t n_mels, size_t n_frames) {
+    typedef void (*MelFilterbankKernel)(const float*, const float*, float*, size_t, size_t, size_t);
+    size_t total_size = n_fft * n_mels * n_frames;
+    MelFilterbankKernel kernel = (MelFilterbankKernel)kernel_registry_select_optimal("mel_filterbank", total_size);
+
+    if (kernel) {
+        kernel(spectrogram, mel_filters, mel_output, n_fft, n_mels, n_frames);
+    } else {
+        // fallback: 기본 구현
+        for (size_t mel = 0; mel < n_mels; mel++) {
+            const float* filter = &mel_filters[mel * n_fft];
+            for (size_t frame = 0; frame < n_frames; frame++) {
+                const float* spec_frame = &spectrogram[frame * n_fft];
+                float sum = 0.0f;
+                for (size_t i = 0; i < n_fft; i++) {
+                    sum += spec_frame[i] * filter[i];
+                }
+                mel_output[frame * n_mels + mel] = sum;
+            }
+        }
+    }
+}
+
+/**
+ * @brief 최적화된 윈도우 함수 적용
+ */
+void simd_apply_window_optimal(const float* input, const float* window, float* output, size_t size) {
+    typedef void (*WindowKernel)(const float*, const float*, float*, size_t);
+    WindowKernel kernel = (WindowKernel)kernel_registry_select_optimal("window_function", size);
+
+    if (kernel) {
+        kernel(input, window, output, size);
+    } else {
+        // fallback: 기본 구현
+        for (size_t i = 0; i < size; i++) {
+            output[i] = input[i] * window[i];
+        }
+    }
+}
+
+/**
+ * @brief 최적화된 복소수 곱셈
+ */
+void simd_complex_multiply_optimal(const float* a_real, const float* a_imag,
+                                  const float* b_real, const float* b_imag,
+                                  float* result_real, float* result_imag, size_t size) {
+    typedef void (*ComplexMulKernel)(const float*, const float*, const float*, const float*, float*, float*, size_t);
+    ComplexMulKernel kernel = (ComplexMulKernel)kernel_registry_select_optimal("complex_multiply", size);
+
+    if (kernel) {
+        kernel(a_real, a_imag, b_real, b_imag, result_real, result_imag, size);
+    } else {
+        // fallback: 기본 구현
+        for (size_t i = 0; i < size; i++) {
+            float ac = a_real[i] * b_real[i];
+            float bd = a_imag[i] * b_imag[i];
+            float ad = a_real[i] * b_imag[i];
+            float bc = a_imag[i] * b_real[i];
+            result_real[i] = ac - bd;
+            result_imag[i] = ad + bc;
+        }
+    }
+}
+
+/**
+ * @brief 최적화된 복소수 크기 계산
+ */
+void simd_complex_magnitude_optimal(const float* real, const float* imag, float* magnitude, size_t size) {
+    typedef void (*ComplexMagKernel)(const float*, const float*, float*, size_t);
+    ComplexMagKernel kernel = (ComplexMagKernel)kernel_registry_select_optimal("complex_magnitude", size);
+
+    if (kernel) {
+        kernel(real, imag, magnitude, size);
+    } else {
+        // fallback: 기본 구현
+        for (size_t i = 0; i < size; i++) {
+            magnitude[i] = sqrtf(real[i] * real[i] + imag[i] * imag[i]);
+        }
+    }
+}
+
+/**
+ * @brief 최적화된 로그 스펙트럼 계산
+ */
+void simd_log_spectrum_optimal(const float* magnitude, float* log_spectrum, size_t size, float epsilon) {
+    typedef void (*LogSpectrumKernel)(const float*, float*, size_t, float);
+    LogSpectrumKernel kernel = (LogSpectrumKernel)kernel_registry_select_optimal("log_spectrum", size);
+
+    if (kernel) {
+        kernel(magnitude, log_spectrum, size, epsilon);
+    } else {
+        // fallback: 기본 구현
+        for (size_t i = 0; i < size; i++) {
+            log_spectrum[i] = logf(magnitude[i] + epsilon);
+        }
+    }
+}
+
+/**
+ * @brief 배터리 효율적인 벡터 덧셈
+ */
+void simd_vector_add_power_efficient(const float* a, const float* b, float* result, size_t size) {
+    VectorAddKernel kernel = (VectorAddKernel)kernel_registry_select_optimal("vector_add_power_efficient", size);
+
+    if (kernel) {
+        kernel(a, b, result, size);
+    } else {
+        // fallback: 기본 구현 (작은 청크로 처리)
+        const size_t CHUNK_SIZE = 64;
+        for (size_t i = 0; i < size; i += CHUNK_SIZE) {
+            size_t chunk_end = (i + CHUNK_SIZE < size) ? i + CHUNK_SIZE : size;
+            for (size_t j = i; j < chunk_end; j++) {
+                result[j] = a[j] + b[j];
+            }
+        }
+    }
+}
+
+/**
+ * @brief 적응형 성능 조절 벡터 덧셈
+ */
+void simd_vector_add_adaptive(const float* a, const float* b, float* result, size_t size) {
+    VectorAddKernel kernel = (VectorAddKernel)kernel_registry_select_optimal("vector_add_adaptive", size);
+
+    if (kernel) {
+        kernel(a, b, result, size);
+    } else {
+        // fallback: 기본 구현
+        simd_vector_add_optimal(a, b, result, size);
     }
 }
 
