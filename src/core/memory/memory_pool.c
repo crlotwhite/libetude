@@ -33,8 +33,7 @@ static ETMemoryBlock* et_split_block(ETMemoryBlock* block, size_t size);
 static void et_merge_free_blocks(ETMemoryPool* pool);
 static void et_init_fixed_pool(ETMemoryPool* pool, size_t block_size, size_t num_blocks);
 static void et_init_dynamic_pool(ETMemoryPool* pool, size_t min_block_size);
-static void et_lock_pool(ETMemoryPool* pool);
-static void et_unlock_pool(ETMemoryPool* pool);
+// et_lock_pool과 et_unlock_pool은 헤더에서 선언되고 아래에서 구현됨
 static uint64_t et_get_current_time_ms(void);
 static void et_add_active_block(ETMemoryPool* pool, ETMemoryBlock* block);
 static void et_remove_active_block(ETMemoryPool* pool, ETMemoryBlock* block);
@@ -722,13 +721,13 @@ static void et_merge_free_blocks(ETMemoryPool* pool) {
     }
 }
 
-static void et_lock_pool(ETMemoryPool* pool) {
+void et_lock_pool(ETMemoryPool* pool) {
     if (pool->thread_safe) {
         pthread_mutex_lock(&pool->mutex);
     }
 }
 
-static void et_unlock_pool(ETMemoryPool* pool) {
+void et_unlock_pool(ETMemoryPool* pool) {
     if (pool->thread_safe) {
         pthread_mutex_unlock(&pool->mutex);
     }

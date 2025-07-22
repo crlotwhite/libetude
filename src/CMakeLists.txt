@@ -24,6 +24,7 @@ set(LIBETUDE_CORE_SOURCES
     # 메모리 관리
     core/memory/memory_pool.c
     core/memory/allocator.c
+    core/memory/memory_optimization.c
 
     # 수학 라이브러리
     core/math/fast_math.c

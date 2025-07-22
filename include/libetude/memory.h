@@ -239,6 +239,18 @@ bool et_is_aligned(const void* ptr, size_t alignment);
  */
 bool et_validate_memory_pool(ETMemoryPool* pool);
 
+/**
+ * @brief 메모리 풀 락 (내부 사용)
+ * @param pool 메모리 풀
+ */
+void et_lock_pool(ETMemoryPool* pool);
+
+/**
+ * @brief 메모리 풀 언락 (내부 사용)
+ * @param pool 메모리 풀
+ */
+void et_unlock_pool(ETMemoryPool* pool);
+
 // =============================================================================
 // 메모리 누수 감지 함수
 // =============================================================================
