@@ -14,6 +14,7 @@ set(UNIT_TEST_SOURCES
     unit/test_hardware.c
     unit/test_memory_allocator.c
     unit/test_memory_optimization.c
+    unit/test_fast_math.c
 )
 
 # 통합 테스트 소스 파일
@@ -101,6 +102,17 @@ target_include_directories(memory_optimization_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
+# 고속 수학 함수 테스트 실행 파일 (독립적으로 실행 가능)
+add_executable(fast_math_test unit/test_fast_math.c)
+target_link_libraries(fast_math_test
+    test_framework
+    libetude_static
+)
+target_include_directories(fast_math_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
 # CTest 통합
 add_test(NAME UnitTests COMMAND unit_tests)
 add_test(NAME IntegrationTests COMMAND integration_tests)
@@ -108,6 +120,7 @@ add_test(NAME PerformanceTests COMMAND performance_tests)
 add_test(NAME HardwareTest COMMAND hardware_test)
 add_test(NAME MemoryAllocatorTest COMMAND memory_allocator_test)
 add_test(NAME MemoryOptimizationTest COMMAND memory_optimization_test)
+add_test(NAME FastMathTest COMMAND fast_math_test)
 
 # 테스트 속성 설정
 set_tests_properties(UnitTests PROPERTIES
@@ -138,6 +151,11 @@ set_tests_properties(MemoryAllocatorTest PROPERTIES
 set_tests_properties(MemoryOptimizationTest PROPERTIES
     TIMEOUT 90
     LABELS "memory;optimization"
+)
+
+set_tests_properties(FastMathTest PROPERTIES
+    TIMEOUT 60
+    LABELS "math;performance"
 )
 
 # 테스트 데이터 복사
