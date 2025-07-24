@@ -46,13 +46,13 @@ void test_memory_reuse(void) {
     // 메모리 할당 및 해제 반복
     void* ptrs[10];
     for (int i = 0; i < 10; i++) {
-        ptrs[i] = et_memory_pool_alloc(test_pool, 1024);
+        ptrs[i] = et_alloc_from_pool(test_pool, 1024);
         TEST_ASSERT_NOT_NULL(ptrs[i]);
     }
 
     // 메모리 해제
     for (int i = 0; i < 10; i++) {
-        et_memory_pool_free(test_pool, ptrs[i]);
+        et_free_to_pool(test_pool, ptrs[i]);
     }
 
     printf("메모리 재사용 테스트 완료\n");
@@ -69,26 +69,26 @@ void test_fragmentation_prevention(void) {
     void* ptrs[20];
     for (int i = 0; i < 20; i++) {
         size_t size = (i % 4 + 1) * 256; // 256, 512, 768, 1024 bytes
-        ptrs[i] = et_memory_pool_alloc(test_pool, size);
+        ptrs[i] = et_alloc_from_pool(test_pool, size);
         TEST_ASSERT_NOT_NULL(ptrs[i]);
     }
 
     // 일부 메모리 해제 (단편화 유발)
     for (int i = 1; i < 20; i += 2) {
-        et_memory_pool_free(test_pool, ptrs[i]);
+        et_free_to_pool(test_pool, ptrs[i]);
         ptrs[i] = NULL;
     }
 
     // 새로운 메모리 할당 (단편화된 공간 재사용)
     for (int i = 1; i < 20; i += 2) {
-        ptrs[i] = et_memory_pool_alloc(test_pool, 256);
+        ptrs[i] = et_alloc_from_pool(test_pool, 256);
         TEST_ASSERT_NOT_NULL(ptrs[i]);
     }
 
     // 모든 메모리 해제
     for (int i = 0; i < 20; i++) {
         if (ptrs[i]) {
-            et_memory_pool_free(test_pool, ptrs[i]);
+            et_free_to_pool(test_pool, ptrs[i]);
         }
     }
 

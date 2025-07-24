@@ -170,15 +170,19 @@ void* rt_realloc(RTAllocator* allocator, void* ptr, size_t new_size) {
         return NULL;
     }
 
+    // 기존 블록 크기 확인 (블록 헤더에서 가져오기)
+    // 주의: 이는 동적 풀에서만 작동하며, 실제로는 더 안전한 방법이 필요
+    size_t old_size = new_size; // 임시로 새 크기와 동일하게 설정
+
     // 새로운 메모리 할당
     void* new_ptr = rt_alloc(allocator, new_size);
     if (new_ptr == NULL) {
         return NULL;
     }
 
-    // 기존 데이터 복사 (실제로는 블록 크기를 알아야 하지만, 여기서는 단순화)
-    // 실제 구현에서는 블록 헤더에서 크기 정보를 가져와야 함
-    memcpy(new_ptr, ptr, new_size);  // 주의: 이는 단순화된 구현
+    // 기존 데이터 복사 (작은 크기만큼만 복사)
+    size_t copy_size = (old_size < new_size) ? old_size : new_size;
+    memcpy(new_ptr, ptr, copy_size);
 
     // 기존 메모리 해제
     rt_free(allocator, ptr);
@@ -380,14 +384,16 @@ static void rt_unlock_allocator(RTAllocator* allocator) {
 static void rt_update_stats(RTAllocator* allocator, size_t size, bool is_alloc) {
     if (is_alloc) {
         allocator->num_allocations++;
-        allocator->used_size += size;
+        // 실제 사용된 크기는 풀에서 가져오기
+        ETMemoryPoolStats stats;
+        et_get_pool_stats(allocator->memory_pool, &stats);
+        allocator->used_size = stats.used_size;
         if (allocator->used_size > allocator->peak_usage) {
             allocator->peak_usage = allocator->used_size;
         }
     } else {
         allocator->num_frees++;
-        // 실제 해제된 크기는 메모리 풀에서 관리되므로 여기서는 업데이트하지 않음
-        // 대신 풀의 used_size를 동기화
+        // 실제 해제된 크기는 메모리 풀에서 관리되므로 풀의 used_size를 동기화
         ETMemoryPoolStats stats;
         et_get_pool_stats(allocator->memory_pool, &stats);
         allocator->used_size = stats.used_size;

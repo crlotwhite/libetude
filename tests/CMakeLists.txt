@@ -149,12 +149,22 @@ endif()
 
 # 개별 테스트 실행 파일들 (독립적으로 실행 가능)
 create_unity_test(fast_math_test "unit/test_fast_math.c")
+create_unity_test(memory_test "unit/test_memory.c")
+create_unity_test(memory_optimization_test "unit/test_memory_optimization.c")
+create_unity_test(memory_allocator_test "unit/test_memory_allocator.c")
+create_unity_test(hardware_test "unit/test_hardware.c")
+create_unity_test(kernel_registry_test "unit/test_kernel_registry.c")
 
 # Unity CTest 통합
 include(CTest)
 
 # 테스트 등록
 add_test(NAME TensorTest COMMAND tensor_test)
+add_test(NAME MemoryTest COMMAND memory_test)
+add_test(NAME MemoryOptimizationTest COMMAND memory_optimization_test)
+add_test(NAME MemoryAllocatorTest COMMAND memory_allocator_test)
+add_test(NAME HardwareTest COMMAND hardware_test)
+add_test(NAME KernelRegistryTest COMMAND kernel_registry_test)
 
 # 테스트 등록 (새로운 독립적인 테스트들)
 if(TARGET test_unity_simple)

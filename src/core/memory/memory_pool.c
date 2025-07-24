@@ -72,8 +72,16 @@ ETMemoryPool* et_create_memory_pool_with_options(size_t size, const ETMemoryPool
     // 정렬된 크기 계산
     size_t aligned_size = et_align_size(size, options->alignment);
 
-    // 메모리 할당
-    pool->base = aligned_alloc(options->alignment, aligned_size);
+    // 메모리 할당 (aligned_alloc이 없는 시스템을 위한 대체)
+    #if defined(__APPLE__) || defined(__linux__)
+        pool->base = aligned_alloc(options->alignment, aligned_size);
+    #else
+        // POSIX 호환 할당
+        if (posix_memalign(&pool->base, options->alignment, aligned_size) != 0) {
+            pool->base = NULL;
+        }
+    #endif
+
     if (pool->base == NULL) {
         free(pool);
         return NULL;
@@ -1092,6 +1100,24 @@ void et_free_to_pool_debug(ETMemoryPool* pool, void* ptr, const char* file, int 
             return;
         }
 
+        et_free_dynamic_block(pool, ptr);
+    }
+
+    pool->num_frees++;
+
+    et_unlock_pool(pool);
+}
+
+void et_free_to_pool_debug(ETMemoryPool* pool, void* ptr, const char* file, int line, const char* function) {
+    if (pool == NULL || ptr == NULL) {
+        return;
+    }
+
+    et_lock_pool(pool);
+
+    if (pool->pool_type == ET_POOL_FIXED) {
+        et_free_fixed_block(pool, ptr);
+    } else {
         et_free_dynamic_block(pool, ptr);
     }
 
