@@ -13,32 +13,6 @@ FetchContent_MakeAvailable(unity)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# 단위 테스트 소스 파일 (C로 변환)
-set(UNIT_TEST_SOURCES
-    unit/test_engine.c
-    unit/test_kernels.c
-    unit/test_tensor.c
-    unit/test_memory.c
-    unit/test_hardware.c
-    unit/test_memory_allocator.c
-    unit/test_memory_optimization.c
-    unit/test_fast_math.c
-    unit/test_simd_kernels.c
-    unit/test_kernel_registry.c
-)
-
-# 통합 테스트 소스 파일 (C로 변환)
-set(INTEGRATION_TEST_SOURCES
-    integration/test_pipeline.c
-    integration/test_streaming.c
-)
-
-# 성능 테스트 소스 파일 (C로 변환)
-set(PERFORMANCE_TEST_SOURCES
-    performance/benchmark_kernels.c
-    performance/benchmark_inference.c
-)
-
 # Unity 테스트 러너 생성 함수
 function(create_unity_test test_name test_sources)
     add_executable(${test_name} ${test_sources})
@@ -58,14 +32,8 @@ function(create_unity_test test_name test_sources)
     )
 endfunction()
 
-# 단위 테스트 실행 파일
-create_unity_test(unit_tests "${UNIT_TEST_SOURCES}")
-
-# 통합 테스트 실행 파일
-create_unity_test(integration_tests "${INTEGRATION_TEST_SOURCES}")
-
-# 성능 테스트 실행 파일
-create_unity_test(performance_tests "${PERFORMANCE_TEST_SOURCES}")
+# 개별 텐서 테스트
+create_unity_test(tensor_test "unit/test_tensor.c")
 
 # 독립적인 테스트들 (libetude 의존성 없음)
 
@@ -137,6 +105,7 @@ target_compile_definitions(test_simd_math_functions PRIVATE
 # 윈도우에서 수학 라이브러리 링크
 if(NOT WIN32)
     target_link_libraries(test_simd_math_functions m)
+    target_link_libraries(tensor_test m)
 endif()
 
 # 레거시 테스트 (호환성을 위해 유지)
@@ -179,15 +148,13 @@ if(NOT WIN32)
 endif()
 
 # 개별 테스트 실행 파일들 (독립적으로 실행 가능)
-# create_unity_test(hardware_test "unit/test_hardware.c")
-# create_unity_test(memory_allocator_test "unit/test_memory_allocator.c")
-# create_unity_test(memory_optimization_test "unit/test_memory_optimization.c")
 create_unity_test(fast_math_test "unit/test_fast_math.c")
-# create_unity_test(simd_kernels_test "unit/test_simd_kernels.c")
-# create_unity_test(kernel_registry_test "unit/test_kernel_registry.c")
 
 # Unity CTest 통합
 include(CTest)
+
+# 테스트 등록
+add_test(NAME TensorTest COMMAND tensor_test)
 
 # 테스트 등록 (새로운 독립적인 테스트들)
 if(TARGET test_unity_simple)
@@ -206,12 +173,13 @@ add_test(NAME SimpleUnityTest COMMAND simple_unity_test)
 add_test(NAME MathSimpleTest COMMAND math_simple_test)
 add_test(NAME FastMathMinimalTest COMMAND fast_math_minimal_test)
 
-# 주석 처리된 테스트들 (libetude 의존성 문제로 인해)
-# add_test(NAME UnitTests COMMAND unit_tests)
-# add_test(NAME IntegrationTests COMMAND integration_tests)
-# add_test(NAME PerformanceTests COMMAND performance_tests)
-
 # 새로운 테스트 속성 설정
+set_tests_properties(TensorTest PROPERTIES
+    TIMEOUT 60
+    LABELS "tensor;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
 if(TARGET test_unity_simple)
     set_tests_properties(UnityBasicTest PROPERTIES
         TIMEOUT 30
@@ -265,8 +233,16 @@ file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/data/
 # 크로스 플랫폼 테스트 실행 타겟
 add_custom_target(run_all_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS test_unity_simple test_math_simple test_fast_math_minimal
+    DEPENDS tensor_test test_unity_simple test_math_simple test_fast_math_minimal
     COMMENT "모든 독립적인 테스트 실행"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# 텐서 테스트 실행 타겟
+add_custom_target(run_tensor_test
+    COMMAND tensor_test
+    DEPENDS tensor_test
+    COMMENT "텐서 테스트 실행"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
@@ -318,6 +294,7 @@ add_custom_target(run_fast_math
 add_custom_target(test_info
     COMMAND ${CMAKE_COMMAND} -E echo "=== LibEtude 테스트 정보 ==="
     COMMAND ${CMAKE_COMMAND} -E echo "사용 가능한 테스트 타겟:"
+    COMMAND ${CMAKE_COMMAND} -E echo "  - run_tensor_test: 텐서 시스템 테스트"
     COMMAND ${CMAKE_COMMAND} -E echo "  - run_all_tests: 모든 독립적인 테스트 실행"
     COMMAND ${CMAKE_COMMAND} -E echo "  - run_unity_tests: Unity 프레임워크 테스트"
     COMMAND ${CMAKE_COMMAND} -E echo "  - run_math_tests: 수학 함수 테스트"
@@ -328,6 +305,7 @@ add_custom_target(test_info
     COMMAND ${CMAKE_COMMAND} -E echo ""
     COMMAND ${CMAKE_COMMAND} -E echo "CTest 명령어:"
     COMMAND ${CMAKE_COMMAND} -E echo "  - ctest: 모든 테스트 실행"
+    COMMAND ${CMAKE_COMMAND} -E echo "  - ctest -L tensor: 텐서 테스트만"
     COMMAND ${CMAKE_COMMAND} -E echo "  - ctest -L standalone: 독립적인 테스트만"
     COMMAND ${CMAKE_COMMAND} -E echo "  - ctest -L math: 수학 관련 테스트만"
     COMMAND ${CMAKE_COMMAND} -E echo "  - ctest --verbose: 상세한 출력"
@@ -339,6 +317,8 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT MSVC)
     option(ENABLE_COVERAGE "Enable code coverage" OFF)
     if(ENABLE_COVERAGE)
         # 독립적인 테스트들에 커버리지 적용
+        target_compile_options(tensor_test PRIVATE --coverage)
+        target_link_options(tensor_test PRIVATE --coverage)
         target_compile_options(test_unity_simple PRIVATE --coverage)
         target_link_options(test_unity_simple PRIVATE --coverage)
         target_compile_options(test_math_simple PRIVATE --coverage)
