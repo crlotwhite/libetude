@@ -11,6 +11,9 @@
 #include <stdio.h>
 #include <stdarg.h>
 
+// 로그 함수 전방 선언
+LIBETUDE_API void libetude_log(LibEtudeLogLevel level, const char* format, ...);
+
 // 전역 초기화 상태
 static bool g_libetude_initialized = false;
 static LibEtudeLogCallback g_log_callback = NULL;

@@ -27,6 +27,9 @@ extern void register_gpu_kernels(void);
 // 전역 커널 레지스트리
 static KernelRegistry g_kernel_registry = {0};
 
+// 내부 함수 전방 선언
+static void kernel_registry_simd_features_to_string(uint32_t features, char* buffer, size_t buffer_size);
+
 /**
  * @brief 커널 벤치마크 함수
  *

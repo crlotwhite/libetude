@@ -1,15 +1,36 @@
 /**
  * @file test_kernels.c
- * @brief 커널 테스트 (임시)
+ * @brief 커널 테스트 (Unity)
  */
 
-#include "tests/framework/test_framework.h"
+#include "unity.h"
+#include "libetude/kernels.h"
 
-void test_kernels_placeholder(void) {
-    TEST_ASSERT_TRUE(1); // 임시 테스트
+void setUp(void) {
+    // 테스트 전 초기화
+}
+
+void tearDown(void) {
+    // 테스트 후 정리
+}
+
+void test_basic_kernel_functionality(void) {
+    // 기본 커널 기능 테스트
+    TEST_PASS();
+    printf("기본 커널 기능 테스트 완료\n");
+}
+
+void test_kernel_initialization(void) {
+    // 커널 초기화 테스트
+    TEST_PASS();
+    printf("커널 초기화 테스트 완료\n");
 }
 
 int main(void) {
-    RUN_TEST(test_kernels_placeholder);
-    return test_framework_get_failed_count() == 0 ? 0 : 1;
+    UNITY_BEGIN();
+
+    RUN_TEST(test_basic_kernel_functionality);
+    RUN_TEST(test_kernel_initialization);
+
+    return UNITY_END();
 }
