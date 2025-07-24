@@ -16,6 +16,7 @@ set(LIBETUDE_CORE_SOURCES
     # 텐서 시스템
     core/tensor/tensor.c
     core/tensor/tensor_ops.c
+    core/tensor/quantization.c
 
     # 그래프 시스템
     core/graph/graph.c

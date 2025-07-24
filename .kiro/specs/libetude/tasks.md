@@ -106,7 +106,7 @@
     - 변환 연산 (reshape, transpose 등)
     - _Requirements: 5.2_
 
-  - [ ] 5.3 양자화 지원 구현
+  - [x] 5.3 양자화 지원 구현
     - BF16 양자화 구현
     - INT8/INT4 양자화 구현
     - 동적 양자화 지원

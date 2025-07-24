@@ -184,7 +184,12 @@ ETTensor* et_create_tensor_named(ETMemoryPool* pool, ETDataType dtype, size_t nd
 
     // 총 요소 수 및 데이터 크기 계산
     tensor->size = et_compute_size(shape, ndim);
-    tensor->data_size = tensor->size * et_dtype_size(dtype);
+    if (dtype == ET_INT4) {
+        // INT4는 2개 요소당 1바이트이므로 특별 계산
+        tensor->data_size = (tensor->size + 1) / 2;
+    } else {
+        tensor->data_size = tensor->size * et_dtype_size(dtype);
+    }
 
     // 데이터 메모리 할당
     if (tensor->data_size > 0) {
@@ -248,7 +253,12 @@ ETTensor* et_create_tensor_from_data(void* data, ETDataType dtype, size_t ndim, 
 
     // 총 요소 수 및 데이터 크기 계산
     tensor->size = et_compute_size(shape, ndim);
-    tensor->data_size = tensor->size * et_dtype_size(dtype);
+    if (dtype == ET_INT4) {
+        // INT4는 2개 요소당 1바이트이므로 특별 계산
+        tensor->data_size = (tensor->size + 1) / 2;
+    } else {
+        tensor->data_size = tensor->size * et_dtype_size(dtype);
+    }
 
     return tensor;
 }
@@ -734,7 +744,15 @@ float et_get_float(const ETTensor* tensor, const size_t* indices) {
             return (float)(*(int32_t*)ptr);
         case ET_INT64:
             return (float)(*(int64_t*)ptr);
-        // TODO: FLOAT16, BFLOAT16, INT4 변환 구현
+        case ET_BFLOAT16: {
+            uint16_t bf16_val = *(uint16_t*)ptr;
+            return et_bfloat16_to_float32(bf16_val);
+        }
+        case ET_INT4: {
+            // INT4는 패킹되어 있으므로 특별 처리 필요
+            // 여기서는 기본값 반환 (실제 사용시 별도 함수 사용)
+            return 0.0f;
+        }
         default:
             return 0.0f;
     }
@@ -763,7 +781,16 @@ void et_set_float(ETTensor* tensor, const size_t* indices, float value) {
         case ET_INT64:
             *(int64_t*)ptr = (int64_t)value;
             break;
-        // TODO: FLOAT16, BFLOAT16, INT4 변환 구현
+        case ET_BFLOAT16: {
+            uint16_t bf16_val = et_float32_to_bfloat16(value);
+            *(uint16_t*)ptr = bf16_val;
+            break;
+        }
+        case ET_INT4: {
+            // INT4는 패킹되어 있으므로 특별 처리 필요
+            // 여기서는 아무것도 하지 않음 (실제 사용시 별도 함수 사용)
+            break;
+        }
         default:
             break;
     }

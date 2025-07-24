@@ -154,6 +154,7 @@ create_unity_test(memory_optimization_test "unit/test_memory_optimization.c")
 create_unity_test(memory_allocator_test "unit/test_memory_allocator.c")
 create_unity_test(hardware_test "unit/test_hardware.c")
 create_unity_test(kernel_registry_test "unit/test_kernel_registry.c")
+create_unity_test(quantization_test "unit/test_quantization.c")
 
 # Unity CTest 통합
 include(CTest)
@@ -165,6 +166,7 @@ add_test(NAME MemoryOptimizationTest COMMAND memory_optimization_test)
 add_test(NAME MemoryAllocatorTest COMMAND memory_allocator_test)
 add_test(NAME HardwareTest COMMAND hardware_test)
 add_test(NAME KernelRegistryTest COMMAND kernel_registry_test)
+add_test(NAME QuantizationTest COMMAND quantization_test)
 
 # 테스트 등록 (새로운 독립적인 테스트들)
 if(TARGET test_unity_simple)

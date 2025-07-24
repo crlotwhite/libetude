@@ -562,6 +562,150 @@ ETTensor* et_exp(const ETTensor* input, ETTensor* out, const ETTensorOpOptions* 
 ETTensor* et_log(const ETTensor* input, ETTensor* out, const ETTensorOpOptions* options);
 
 // =============================================================================
+// 양자화 지원 구조체 및 함수
+// =============================================================================
+
+// 양자화 파라미터 구조체
+typedef struct {
+    float scale;                   // 스케일 팩터
+    int32_t zero_point;           // 제로 포인트
+    float min_val;                // 최소값
+    float max_val;                // 최대값
+} ETQuantizationParams;
+
+// 양자화 타입
+typedef enum {
+    ET_QUANT_NONE = 0,            // 양자화 없음
+    ET_QUANT_DYNAMIC = 1,         // 동적 양자화
+    ET_QUANT_STATIC = 2           // 정적 양자화
+} ETQuantizationType;
+
+// 양자화된 텐서 정보
+typedef struct {
+    ETQuantizationType quant_type; // 양자화 타입
+    ETQuantizationParams params;   // 양자화 파라미터
+    ETDataType original_dtype;     // 원본 데이터 타입
+} ETQuantizationInfo;
+
+/**
+ * @brief BF16 값을 float32로 변환
+ * @param bf16_val BF16 값 (uint16_t로 저장)
+ * @return float32 값
+ */
+float et_bfloat16_to_float32(uint16_t bf16_val);
+
+/**
+ * @brief float32 값을 BF16으로 변환
+ * @param float_val float32 값
+ * @return BF16 값 (uint16_t로 저장)
+ */
+uint16_t et_float32_to_bfloat16(float float_val);
+
+/**
+ * @brief 텐서를 BF16으로 양자화
+ * @param input 입력 텐서 (float32)
+ * @param output 출력 텐서 (BF16, NULL이면 새로 생성)
+ * @param pool 메모리 풀
+ * @return 양자화된 텐서, 실패시 NULL
+ */
+ETTensor* et_quantize_to_bfloat16(const ETTensor* input, ETTensor* output, ETMemoryPool* pool);
+
+/**
+ * @brief BF16 텐서를 float32로 역양자화
+ * @param input 입력 텐서 (BF16)
+ * @param output 출력 텐서 (float32, NULL이면 새로 생성)
+ * @param pool 메모리 풀
+ * @return 역양자화된 텐서, 실패시 NULL
+ */
+ETTensor* et_dequantize_from_bfloat16(const ETTensor* input, ETTensor* output, ETMemoryPool* pool);
+
+/**
+ * @brief 양자화 파라미터 계산 (INT8/INT4용)
+ * @param input 입력 텐서
+ * @param target_dtype 목표 데이터 타입 (ET_INT8 또는 ET_INT4)
+ * @param params 계산된 양자화 파라미터를 저장할 구조체
+ * @return 성공시 true, 실패시 false
+ */
+bool et_compute_quantization_params(const ETTensor* input, ETDataType target_dtype, ETQuantizationParams* params);
+
+/**
+ * @brief 텐서를 INT8로 양자화
+ * @param input 입력 텐서 (float32)
+ * @param output 출력 텐서 (INT8, NULL이면 새로 생성)
+ * @param params 양자화 파라미터 (NULL이면 자동 계산)
+ * @param pool 메모리 풀
+ * @return 양자화된 텐서, 실패시 NULL
+ */
+ETTensor* et_quantize_to_int8(const ETTensor* input, ETTensor* output, const ETQuantizationParams* params, ETMemoryPool* pool);
+
+/**
+ * @brief INT8 텐서를 float32로 역양자화
+ * @param input 입력 텐서 (INT8)
+ * @param output 출력 텐서 (float32, NULL이면 새로 생성)
+ * @param params 양자화 파라미터
+ * @param pool 메모리 풀
+ * @return 역양자화된 텐서, 실패시 NULL
+ */
+ETTensor* et_dequantize_from_int8(const ETTensor* input, ETTensor* output, const ETQuantizationParams* params, ETMemoryPool* pool);
+
+/**
+ * @brief 텐서를 INT4로 양자화 (패킹됨)
+ * @param input 입력 텐서 (float32)
+ * @param output 출력 텐서 (INT4, NULL이면 새로 생성)
+ * @param params 양자화 파라미터 (NULL이면 자동 계산)
+ * @param pool 메모리 풀
+ * @return 양자화된 텐서, 실패시 NULL
+ */
+ETTensor* et_quantize_to_int4(const ETTensor* input, ETTensor* output, const ETQuantizationParams* params, ETMemoryPool* pool);
+
+/**
+ * @brief INT4 텐서를 float32로 역양자화
+ * @param input 입력 텐서 (INT4)
+ * @param output 출력 텐서 (float32, NULL이면 새로 생성)
+ * @param params 양자화 파라미터
+ * @param pool 메모리 풀
+ * @return 역양자화된 텐서, 실패시 NULL
+ */
+ETTensor* et_dequantize_from_int4(const ETTensor* input, ETTensor* output, const ETQuantizationParams* params, ETMemoryPool* pool);
+
+/**
+ * @brief 동적 양자화 수행
+ * @param input 입력 텐서 (float32)
+ * @param target_dtype 목표 데이터 타입 (ET_INT8 또는 ET_INT4)
+ * @param output 출력 텐서 (NULL이면 새로 생성)
+ * @param quant_info 양자화 정보를 저장할 구조체
+ * @param pool 메모리 풀
+ * @return 양자화된 텐서, 실패시 NULL
+ */
+ETTensor* et_dynamic_quantize(const ETTensor* input, ETDataType target_dtype, ETTensor* output, ETQuantizationInfo* quant_info, ETMemoryPool* pool);
+
+/**
+ * @brief 동적 양자화된 텐서를 역양자화
+ * @param input 입력 텐서 (양자화됨)
+ * @param output 출력 텐서 (float32, NULL이면 새로 생성)
+ * @param quant_info 양자화 정보
+ * @param pool 메모리 풀
+ * @return 역양자화된 텐서, 실패시 NULL
+ */
+ETTensor* et_dynamic_dequantize(const ETTensor* input, ETTensor* output, const ETQuantizationInfo* quant_info, ETMemoryPool* pool);
+
+/**
+ * @brief INT4 값 패킹 (2개 값을 1바이트에 저장)
+ * @param val1 첫 번째 4비트 값 (0-15)
+ * @param val2 두 번째 4비트 값 (0-15)
+ * @return 패킹된 바이트
+ */
+uint8_t et_pack_int4(uint8_t val1, uint8_t val2);
+
+/**
+ * @brief INT4 값 언패킹 (1바이트에서 2개 값 추출)
+ * @param packed 패킹된 바이트
+ * @param val1 첫 번째 4비트 값을 저장할 포인터
+ * @param val2 두 번째 4비트 값을 저장할 포인터
+ */
+void et_unpack_int4(uint8_t packed, uint8_t* val1, uint8_t* val2);
+
+// =============================================================================
 // 인플레이스 연산 함수
 // =============================================================================
 
