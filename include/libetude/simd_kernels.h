@@ -112,6 +112,40 @@ LIBETUDE_API void simd_tanh_optimal(const float* input, float* output, size_t si
  */
 LIBETUDE_API void simd_gelu_optimal(const float* input, float* output, size_t size);
 
+/**
+ * @brief 최적화된 소프트맥스 함수
+ *
+ * @param input 입력 벡터
+ * @param output 출력 벡터
+ * @param size 벡터 크기
+ */
+LIBETUDE_API void simd_softmax_optimal(const float* input, float* output, size_t size);
+
+/**
+ * @brief 최적화된 레이어 정규화 함수
+ *
+ * @param input 입력 벡터
+ * @param output 출력 벡터
+ * @param size 벡터 크기
+ * @param epsilon 수치 안정성을 위한 작은 값
+ */
+LIBETUDE_API void simd_layer_norm_optimal(const float* input, float* output, size_t size, float epsilon);
+
+/**
+ * @brief 최적화된 배치 정규화 함수
+ *
+ * @param input 입력 벡터
+ * @param output 출력 벡터
+ * @param size 벡터 크기
+ * @param mean 평균값
+ * @param variance 분산값
+ * @param gamma 스케일 파라미터
+ * @param beta 시프트 파라미터
+ * @param epsilon 수치 안정성을 위한 작은 값
+ */
+LIBETUDE_API void simd_batch_norm_optimal(const float* input, float* output, size_t size,
+                                         float mean, float variance, float gamma, float beta, float epsilon);
+
 // ============================================================================
 // 음성 합성 특화 SIMD 함수들
 // ============================================================================

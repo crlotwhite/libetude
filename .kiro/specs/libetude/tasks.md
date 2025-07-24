@@ -80,7 +80,7 @@
     - 활성화 함수 최적화
     - _Requirements: 5.1, 5.4_
 
-  - [ ] 4.2 SIMD 벡터화된 수학 함수 구현
+  - [x] 4.2 SIMD 벡터화된 수학 함수 구현
     - 벡터화된 활성화 함수 (tanh, sigmoid, GELU)
     - 벡터화된 소프트맥스, 정규화 함수
     - _Requirements: 5.2_

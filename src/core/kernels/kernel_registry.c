@@ -19,9 +19,19 @@
 
 // 외부 함수 선언
 extern void register_cpu_kernels(void);
+
+#ifdef LIBETUDE_HAVE_SSE2
 extern void register_sse_kernels(void);
+#endif
+
+#ifdef LIBETUDE_HAVE_AVX
 extern void register_avx_kernels(void);
+#endif
+
+#ifdef LIBETUDE_HAVE_NEON
 extern void register_neon_kernels(void);
+#endif
+
 extern void register_gpu_kernels(void);
 
 // 전역 커널 레지스트리
@@ -193,17 +203,23 @@ LIBETUDE_API LibEtudeErrorCode kernel_registry_init(void) {
     register_cpu_kernels();
 
     // SIMD 커널 등록 (하드웨어 지원 여부에 따라)
+#ifdef LIBETUDE_HAVE_SSE2
     if (g_kernel_registry.hardware_features & LIBETUDE_SIMD_SSE2) {
         register_sse_kernels();
     }
+#endif
 
+#ifdef LIBETUDE_HAVE_AVX
     if (g_kernel_registry.hardware_features & LIBETUDE_SIMD_AVX) {
         register_avx_kernels();
     }
+#endif
 
+#ifdef LIBETUDE_HAVE_NEON
     if (g_kernel_registry.hardware_features & LIBETUDE_SIMD_NEON) {
         register_neon_kernels();
     }
+#endif
 
     g_kernel_registry.initialized = true;
     return LIBETUDE_SUCCESS;

@@ -277,6 +277,175 @@ void avx_gelu(const float* input, float* output, size_t size) {
 }
 
 /**
+ * @brief 소프트맥스 함수 (AVX 구현)
+ */
+void avx_softmax(const float* input, float* output, size_t size) {
+    size_t i = 0;
+
+    // 1. 최댓값 찾기 (수치 안정성을 위해)
+    float max_val = input[0];
+    for (i = 1; i < size; i++) {
+        if (input[i] > max_val) {
+            max_val = input[i];
+        }
+    }
+
+    __m256 vmax = _mm256_set1_ps(max_val);
+    __m256 vsum = _mm256_setzero_ps();
+
+    // 2. exp(x - max) 계산 및 합계 구하기 (AVX 벡터화)
+    i = 0;
+    for (; i + 7 < size; i += 8) {
+        __m256 vinput = _mm256_loadu_ps(input + i);
+        __m256 vshifted = _mm256_sub_ps(vinput, vmax);
+
+        // 빠른 exp 근사 사용
+        __m256 vexp = avx_fast_exp(vshifted);
+        _mm256_storeu_ps(output + i, vexp);
+        vsum = _mm256_add_ps(vsum, vexp);
+    }
+
+    // 벡터 내 요소들을 합산
+    __m128 vlow = _mm256_castps256_ps128(vsum);
+    __m128 vhigh = _mm256_extractf128_ps(vsum, 1);
+    __m128 vsum_128 = _mm_add_ps(vlow, vhigh);
+
+    float sum_array[4];
+    _mm_storeu_ps(sum_array, vsum_128);
+    float sum = sum_array[0] + sum_array[1] + sum_array[2] + sum_array[3];
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        output[i] = expf(input[i] - max_val);
+        sum += output[i];
+    }
+
+    // 3. 정규화 (AVX 벡터화)
+    __m256 vinv_sum = _mm256_set1_ps(1.0f / sum);
+    i = 0;
+    for (; i + 7 < size; i += 8) {
+        __m256 voutput = _mm256_loadu_ps(output + i);
+        __m256 vnormalized = _mm256_mul_ps(voutput, vinv_sum);
+        _mm256_storeu_ps(output + i, vnormalized);
+    }
+
+    // 나머지 요소 처리
+    float inv_sum = 1.0f / sum;
+    for (; i < size; i++) {
+        output[i] *= inv_sum;
+    }
+}
+
+/**
+ * @brief 레이어 정규화 함수 (AVX 구현)
+ */
+void avx_layer_norm(const float* input, float* output, size_t size, float epsilon) {
+    size_t i = 0;
+
+    // 1. 평균 계산 (AVX 벡터화)
+    __m256 vsum = _mm256_setzero_ps();
+    for (; i + 7 < size; i += 8) {
+        __m256 vinput = _mm256_loadu_ps(input + i);
+        vsum = _mm256_add_ps(vsum, vinput);
+    }
+
+    // 벡터 내 요소들을 합산
+    __m128 vlow = _mm256_castps256_ps128(vsum);
+    __m128 vhigh = _mm256_extractf128_ps(vsum, 1);
+    __m128 vsum_128 = _mm_add_ps(vlow, vhigh);
+
+    float sum_array[4];
+    _mm_storeu_ps(sum_array, vsum_128);
+    float sum = sum_array[0] + sum_array[1] + sum_array[2] + sum_array[3];
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        sum += input[i];
+    }
+
+    float mean = sum / (float)size;
+    __m256 vmean = _mm256_set1_ps(mean);
+
+    // 2. 분산 계산 (AVX 벡터화)
+    __m256 vvar_sum = _mm256_setzero_ps();
+    i = 0;
+    for (; i + 7 < size; i += 8) {
+        __m256 vinput = _mm256_loadu_ps(input + i);
+        __m256 vdiff = _mm256_sub_ps(vinput, vmean);
+        __m256 vdiff_sq = _mm256_mul_ps(vdiff, vdiff);
+        vvar_sum = _mm256_add_ps(vvar_sum, vdiff_sq);
+    }
+
+    // 벡터 내 요소들을 합산
+    vlow = _mm256_castps256_ps128(vvar_sum);
+    vhigh = _mm256_extractf128_ps(vvar_sum, 1);
+    vsum_128 = _mm_add_ps(vlow, vhigh);
+
+    _mm_storeu_ps(sum_array, vsum_128);
+    float var_sum = sum_array[0] + sum_array[1] + sum_array[2] + sum_array[3];
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        float diff = input[i] - mean;
+        var_sum += diff * diff;
+    }
+
+    float variance = var_sum / (float)size;
+    float inv_std = 1.0f / sqrtf(variance + epsilon);
+    __m256 vinv_std = _mm256_set1_ps(inv_std);
+
+    // 3. 정규화 (AVX 벡터화)
+    i = 0;
+    for (; i + 7 < size; i += 8) {
+        __m256 vinput = _mm256_loadu_ps(input + i);
+        __m256 vdiff = _mm256_sub_ps(vinput, vmean);
+        __m256 vnormalized = _mm256_mul_ps(vdiff, vinv_std);
+        _mm256_storeu_ps(output + i, vnormalized);
+    }
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        output[i] = (input[i] - mean) * inv_std;
+    }
+}
+
+/**
+ * @brief 배치 정규화 함수 (AVX 구현)
+ */
+void avx_batch_norm(const float* input, float* output, size_t size,
+                   float mean, float variance, float gamma, float beta, float epsilon) {
+    size_t i = 0;
+    float inv_std = 1.0f / sqrtf(variance + epsilon);
+
+    __m256 vmean = _mm256_set1_ps(mean);
+    __m256 vinv_std = _mm256_set1_ps(inv_std);
+    __m256 vgamma = _mm256_set1_ps(gamma);
+    __m256 vbeta = _mm256_set1_ps(beta);
+
+    // AVX 벡터화된 배치 정규화
+    for (; i + 7 < size; i += 8) {
+        __m256 vinput = _mm256_loadu_ps(input + i);
+
+        // (input - mean) * inv_std
+        __m256 vnormalized = _mm256_mul_ps(_mm256_sub_ps(vinput, vmean), vinv_std);
+
+        // gamma * normalized + beta
+#ifdef LIBETUDE_HAVE_AVX2
+        __m256 vresult = _mm256_fmadd_ps(vgamma, vnormalized, vbeta);
+#else
+        __m256 vresult = _mm256_add_ps(_mm256_mul_ps(vgamma, vnormalized), vbeta);
+#endif
+
+        _mm256_storeu_ps(output + i, vresult);
+    }
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        output[i] = gamma * (input[i] - mean) * inv_std + beta;
+    }
+}
+
+/**
  * @brief 벡터 내적 (AVX 구현)
  *
  * 이 구현은 다음과 같은 최적화 기법을 사용합니다:
@@ -655,6 +824,33 @@ void register_avx_kernels(void) {
     kernel_info.simd_features = LIBETUDE_SIMD_AVX;
     kernel_info.optimal_size = 256;
     kernel_info.performance_score = 3.0f;
+    kernel_registry_register(&kernel_info);
+
+    // 소프트맥스 커널
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "softmax_avx";
+    kernel_info.kernel_func = (void*)avx_softmax;
+    kernel_info.simd_features = LIBETUDE_SIMD_AVX;
+    kernel_info.optimal_size = 256;
+    kernel_info.performance_score = 3.5f;
+    kernel_registry_register(&kernel_info);
+
+    // 레이어 정규화 커널
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "layer_norm_avx";
+    kernel_info.kernel_func = (void*)avx_layer_norm;
+    kernel_info.simd_features = LIBETUDE_SIMD_AVX;
+    kernel_info.optimal_size = 256;
+    kernel_info.performance_score = 3.8f;
+    kernel_registry_register(&kernel_info);
+
+    // 배치 정규화 커널
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "batch_norm_avx";
+    kernel_info.kernel_func = (void*)avx_batch_norm;
+    kernel_info.simd_features = LIBETUDE_SIMD_AVX;
+    kernel_info.optimal_size = 256;
+    kernel_info.performance_score = 4.0f;
     kernel_registry_register(&kernel_info);
 #endif
 }

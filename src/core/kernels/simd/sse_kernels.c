@@ -295,6 +295,159 @@ void sse_gelu(const float* input, float* output, size_t size) {
     }
 }
 
+/**
+ * @brief 소프트맥스 함수 (SSE 구현)
+ */
+void sse_softmax(const float* input, float* output, size_t size) {
+    size_t i = 0;
+
+    // 1. 최댓값 찾기 (수치 안정성을 위해)
+    float max_val = input[0];
+    for (i = 1; i < size; i++) {
+        if (input[i] > max_val) {
+            max_val = input[i];
+        }
+    }
+
+    __m128 vmax = _mm_set1_ps(max_val);
+    __m128 vsum = _mm_setzero_ps();
+
+    // 2. exp(x - max) 계산 및 합계 구하기 (SSE 벡터화)
+    i = 0;
+    for (; i + 3 < size; i += 4) {
+        __m128 vinput = _mm_loadu_ps(input + i);
+        __m128 vshifted = _mm_sub_ps(vinput, vmax);
+
+        // 빠른 exp 근사 사용
+        __m128 vexp = sse_fast_exp(vshifted);
+        _mm_storeu_ps(output + i, vexp);
+        vsum = _mm_add_ps(vsum, vexp);
+    }
+
+    // 벡터 내 요소들을 합산
+    float sum_array[4];
+    _mm_storeu_ps(sum_array, vsum);
+    float sum = sum_array[0] + sum_array[1] + sum_array[2] + sum_array[3];
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        output[i] = expf(input[i] - max_val);
+        sum += output[i];
+    }
+
+    // 3. 정규화 (SSE 벡터화)
+    __m128 vinv_sum = _mm_set1_ps(1.0f / sum);
+    i = 0;
+    for (; i + 3 < size; i += 4) {
+        __m128 voutput = _mm_loadu_ps(output + i);
+        __m128 vnormalized = _mm_mul_ps(voutput, vinv_sum);
+        _mm_storeu_ps(output + i, vnormalized);
+    }
+
+    // 나머지 요소 처리
+    float inv_sum = 1.0f / sum;
+    for (; i < size; i++) {
+        output[i] *= inv_sum;
+    }
+}
+
+/**
+ * @brief 레이어 정규화 함수 (SSE 구현)
+ */
+void sse_layer_norm(const float* input, float* output, size_t size, float epsilon) {
+    size_t i = 0;
+
+    // 1. 평균 계산 (SSE 벡터화)
+    __m128 vsum = _mm_setzero_ps();
+    for (; i + 3 < size; i += 4) {
+        __m128 vinput = _mm_loadu_ps(input + i);
+        vsum = _mm_add_ps(vsum, vinput);
+    }
+
+    // 벡터 내 요소들을 합산
+    float sum_array[4];
+    _mm_storeu_ps(sum_array, vsum);
+    float sum = sum_array[0] + sum_array[1] + sum_array[2] + sum_array[3];
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        sum += input[i];
+    }
+
+    float mean = sum / (float)size;
+    __m128 vmean = _mm_set1_ps(mean);
+
+    // 2. 분산 계산 (SSE 벡터화)
+    __m128 vvar_sum = _mm_setzero_ps();
+    i = 0;
+    for (; i + 3 < size; i += 4) {
+        __m128 vinput = _mm_loadu_ps(input + i);
+        __m128 vdiff = _mm_sub_ps(vinput, vmean);
+        __m128 vdiff_sq = _mm_mul_ps(vdiff, vdiff);
+        vvar_sum = _mm_add_ps(vvar_sum, vdiff_sq);
+    }
+
+    // 벡터 내 요소들을 합산
+    _mm_storeu_ps(sum_array, vvar_sum);
+    float var_sum = sum_array[0] + sum_array[1] + sum_array[2] + sum_array[3];
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        float diff = input[i] - mean;
+        var_sum += diff * diff;
+    }
+
+    float variance = var_sum / (float)size;
+    float inv_std = 1.0f / sqrtf(variance + epsilon);
+    __m128 vinv_std = _mm_set1_ps(inv_std);
+
+    // 3. 정규화 (SSE 벡터화)
+    i = 0;
+    for (; i + 3 < size; i += 4) {
+        __m128 vinput = _mm_loadu_ps(input + i);
+        __m128 vdiff = _mm_sub_ps(vinput, vmean);
+        __m128 vnormalized = _mm_mul_ps(vdiff, vinv_std);
+        _mm_storeu_ps(output + i, vnormalized);
+    }
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        output[i] = (input[i] - mean) * inv_std;
+    }
+}
+
+/**
+ * @brief 배치 정규화 함수 (SSE 구현)
+ */
+void sse_batch_norm(const float* input, float* output, size_t size,
+                   float mean, float variance, float gamma, float beta, float epsilon) {
+    size_t i = 0;
+    float inv_std = 1.0f / sqrtf(variance + epsilon);
+
+    __m128 vmean = _mm_set1_ps(mean);
+    __m128 vinv_std = _mm_set1_ps(inv_std);
+    __m128 vgamma = _mm_set1_ps(gamma);
+    __m128 vbeta = _mm_set1_ps(beta);
+
+    // SSE 벡터화된 배치 정규화
+    for (; i + 3 < size; i += 4) {
+        __m128 vinput = _mm_loadu_ps(input + i);
+
+        // (input - mean) * inv_std
+        __m128 vnormalized = _mm_mul_ps(_mm_sub_ps(vinput, vmean), vinv_std);
+
+        // gamma * normalized + beta
+        __m128 vresult = _mm_add_ps(_mm_mul_ps(vgamma, vnormalized), vbeta);
+
+        _mm_storeu_ps(output + i, vresult);
+    }
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        output[i] = gamma * (input[i] - mean) * inv_std + beta;
+    }
+}
+
 #else
 // SSE를 지원하지 않는 경우 CPU 구현으로 대체
 extern void cpu_vector_add(const float* a, const float* b, float* result, size_t size);
@@ -396,6 +549,33 @@ void register_sse_kernels(void) {
     kernel_info.simd_features = LIBETUDE_SIMD_SSE2;
     kernel_info.optimal_size = 128;
     kernel_info.performance_score = 1.8f;
+    kernel_registry_register(&kernel_info);
+
+    // 소프트맥스 커널
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "softmax_sse";
+    kernel_info.kernel_func = (void*)sse_softmax;
+    kernel_info.simd_features = LIBETUDE_SIMD_SSE2;
+    kernel_info.optimal_size = 128;
+    kernel_info.performance_score = 2.0f;
+    kernel_registry_register(&kernel_info);
+
+    // 레이어 정규화 커널
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "layer_norm_sse";
+    kernel_info.kernel_func = (void*)sse_layer_norm;
+    kernel_info.simd_features = LIBETUDE_SIMD_SSE2;
+    kernel_info.optimal_size = 128;
+    kernel_info.performance_score = 2.2f;
+    kernel_registry_register(&kernel_info);
+
+    // 배치 정규화 커널
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "batch_norm_sse";
+    kernel_info.kernel_func = (void*)sse_batch_norm;
+    kernel_info.simd_features = LIBETUDE_SIMD_SSE2;
+    kernel_info.optimal_size = 128;
+    kernel_info.performance_score = 2.3f;
     kernel_registry_register(&kernel_info);
 #endif
 }

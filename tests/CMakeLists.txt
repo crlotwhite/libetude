@@ -70,46 +70,73 @@ create_unity_test(performance_tests "${PERFORMANCE_TEST_SOURCES}")
 # 독립적인 테스트들 (libetude 의존성 없음)
 
 # Unity 기본 테스트
-add_executable(test_unity_simple ../test_unity_simple.c)
-target_link_libraries(test_unity_simple unity)
-target_include_directories(test_unity_simple PRIVATE
-    ${unity_SOURCE_DIR}/src
-)
-target_compile_definitions(test_unity_simple PRIVATE
-    UNITY_INCLUDE_DOUBLE
-    UNITY_INCLUDE_FLOAT
-)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../test_unity_simple.c)
+    add_executable(test_unity_simple ../test_unity_simple.c)
+    target_link_libraries(test_unity_simple unity)
+    target_include_directories(test_unity_simple PRIVATE
+        ${unity_SOURCE_DIR}/src
+    )
+    target_compile_definitions(test_unity_simple PRIVATE
+        UNITY_INCLUDE_DOUBLE
+        UNITY_INCLUDE_FLOAT
+    )
+endif()
 
 # 수학 함수 테스트
-add_executable(test_math_simple ../test_math_simple.c)
-target_link_libraries(test_math_simple unity)
-target_include_directories(test_math_simple PRIVATE
-    ${unity_SOURCE_DIR}/src
-)
-target_compile_definitions(test_math_simple PRIVATE
-    UNITY_INCLUDE_DOUBLE
-    UNITY_INCLUDE_FLOAT
-)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../test_math_simple.c)
+    add_executable(test_math_simple ../test_math_simple.c)
+    target_link_libraries(test_math_simple unity)
+    target_include_directories(test_math_simple PRIVATE
+        ${unity_SOURCE_DIR}/src
+    )
+    target_compile_definitions(test_math_simple PRIVATE
+        UNITY_INCLUDE_DOUBLE
+        UNITY_INCLUDE_FLOAT
+    )
 
-# 윈도우에서 수학 라이브러리 링크
-if(NOT WIN32)
-    target_link_libraries(test_math_simple m)
+    # 윈도우에서 수학 라이브러리 링크
+    if(NOT WIN32)
+        target_link_libraries(test_math_simple m)
+    endif()
 endif()
 
 # 고속 수학 함수 테스트
-add_executable(test_fast_math_minimal ../test_fast_math_minimal.c)
-target_link_libraries(test_fast_math_minimal unity)
-target_include_directories(test_fast_math_minimal PRIVATE
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../test_fast_math_minimal.c)
+    add_executable(test_fast_math_minimal ../test_fast_math_minimal.c)
+    target_link_libraries(test_fast_math_minimal unity)
+    target_include_directories(test_fast_math_minimal PRIVATE
+        ${unity_SOURCE_DIR}/src
+    )
+    target_compile_definitions(test_fast_math_minimal PRIVATE
+        UNITY_INCLUDE_DOUBLE
+        UNITY_INCLUDE_FLOAT
+    )
+
+    # 윈도우에서 수학 라이브러리 링크
+    if(NOT WIN32)
+        target_link_libraries(test_fast_math_minimal m)
+    endif()
+endif()
+
+# SIMD 벡터화된 수학 함수 테스트
+add_executable(test_simd_math_functions unit/test_simd_math_functions.c)
+target_link_libraries(test_simd_math_functions
+    unity
+    libetude_static
+)
+target_include_directories(test_simd_math_functions PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
     ${unity_SOURCE_DIR}/src
 )
-target_compile_definitions(test_fast_math_minimal PRIVATE
+target_compile_definitions(test_simd_math_functions PRIVATE
     UNITY_INCLUDE_DOUBLE
     UNITY_INCLUDE_FLOAT
 )
 
 # 윈도우에서 수학 라이브러리 링크
 if(NOT WIN32)
-    target_link_libraries(test_fast_math_minimal m)
+    target_link_libraries(test_simd_math_functions m)
 endif()
 
 # 레거시 테스트 (호환성을 위해 유지)
@@ -163,9 +190,16 @@ endif()
 include(CTest)
 
 # 테스트 등록 (새로운 독립적인 테스트들)
-add_test(NAME UnityBasicTest COMMAND test_unity_simple)
-add_test(NAME MathFunctionsTest COMMAND test_math_simple)
-add_test(NAME FastMathTest COMMAND test_fast_math_minimal)
+if(TARGET test_unity_simple)
+    add_test(NAME UnityBasicTest COMMAND test_unity_simple)
+endif()
+if(TARGET test_math_simple)
+    add_test(NAME MathFunctionsTest COMMAND test_math_simple)
+endif()
+if(TARGET test_fast_math_minimal)
+    add_test(NAME FastMathTest COMMAND test_fast_math_minimal)
+endif()
+add_test(NAME SIMDMathFunctionsTest COMMAND test_simd_math_functions)
 
 # 레거시 테스트 등록 (호환성을 위해 유지)
 add_test(NAME SimpleUnityTest COMMAND simple_unity_test)
@@ -178,21 +212,33 @@ add_test(NAME FastMathMinimalTest COMMAND fast_math_minimal_test)
 # add_test(NAME PerformanceTests COMMAND performance_tests)
 
 # 새로운 테스트 속성 설정
-set_tests_properties(UnityBasicTest PROPERTIES
-    TIMEOUT 30
-    LABELS "unity;basic;standalone"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-)
+if(TARGET test_unity_simple)
+    set_tests_properties(UnityBasicTest PROPERTIES
+        TIMEOUT 30
+        LABELS "unity;basic;standalone"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+endif()
 
-set_tests_properties(MathFunctionsTest PROPERTIES
-    TIMEOUT 30
-    LABELS "math;functions;standalone"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-)
+if(TARGET test_math_simple)
+    set_tests_properties(MathFunctionsTest PROPERTIES
+        TIMEOUT 30
+        LABELS "math;functions;standalone"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+endif()
 
-set_tests_properties(FastMathTest PROPERTIES
-    TIMEOUT 30
-    LABELS "math;fast;standalone"
+if(TARGET test_fast_math_minimal)
+    set_tests_properties(FastMathTest PROPERTIES
+        TIMEOUT 30
+        LABELS "math;fast;standalone"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+endif()
+
+set_tests_properties(SIMDMathFunctionsTest PROPERTIES
+    TIMEOUT 60
+    LABELS "math;simd;vectorized"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 

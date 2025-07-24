@@ -13,11 +13,7 @@
 #include "libetude/kernel_registry.h"
 #include <string.h>
 #include <math.h>
-
-// 성능 측정이 필요한 경우에만 time.h 포함
-#ifdef LIBETUDE_ENABLE_PROFILING
 #include <time.h>
-#endif
 
 #ifdef LIBETUDE_HAVE_NEON
 #include <arm_neon.h>
@@ -391,6 +387,163 @@ void neon_gelu(const float* input, float* output, size_t size) {
         float x3 = x * x * x;
         float inner = sqrt_2_over_pi * (x + coeff * x3);
         output[i] = 0.5f * x * (1.0f + tanhf(inner));
+    }
+}
+
+/**
+ * @brief 소프트맥스 함수 (NEON 구현)
+ */
+void neon_softmax(const float* input, float* output, size_t size) {
+    size_t i = 0;
+
+    // 1. 최댓값 찾기 (수치 안정성을 위해)
+    float max_val = input[0];
+    for (i = 1; i < size; i++) {
+        if (input[i] > max_val) {
+            max_val = input[i];
+        }
+    }
+
+    float32x4_t vmax = vdupq_n_f32(max_val);
+    float32x4_t vsum = vdupq_n_f32(0.0f);
+
+    // 2. exp(x - max) 계산 및 합계 구하기 (NEON 벡터화)
+    i = 0;
+    for (; i + 3 < size; i += 4) {
+        float32x4_t vinput = vld1q_f32(input + i);
+        float32x4_t vshifted = vsubq_f32(vinput, vmax);
+
+        // 빠른 exp 근사 사용
+        float32x4_t vexp = neon_fast_exp(vshifted);
+        vst1q_f32(output + i, vexp);
+        vsum = vaddq_f32(vsum, vexp);
+    }
+
+    // 벡터 내 요소들을 합산
+    float32x2_t vsum_low = vget_low_f32(vsum);
+    float32x2_t vsum_high = vget_high_f32(vsum);
+    float32x2_t vsum_pair = vadd_f32(vsum_low, vsum_high);
+    float sum = vget_lane_f32(vsum_pair, 0) + vget_lane_f32(vsum_pair, 1);
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        output[i] = expf(input[i] - max_val);
+        sum += output[i];
+    }
+
+    // 3. 정규화 (NEON 벡터화)
+    float32x4_t vinv_sum = vdupq_n_f32(1.0f / sum);
+    i = 0;
+    for (; i + 3 < size; i += 4) {
+        float32x4_t voutput = vld1q_f32(output + i);
+        float32x4_t vnormalized = vmulq_f32(voutput, vinv_sum);
+        vst1q_f32(output + i, vnormalized);
+    }
+
+    // 나머지 요소 처리
+    float inv_sum = 1.0f / sum;
+    for (; i < size; i++) {
+        output[i] *= inv_sum;
+    }
+}
+
+/**
+ * @brief 레이어 정규화 함수 (NEON 구현)
+ */
+void neon_layer_norm(const float* input, float* output, size_t size, float epsilon) {
+    size_t i = 0;
+
+    // 1. 평균 계산 (NEON 벡터화)
+    float32x4_t vsum = vdupq_n_f32(0.0f);
+    for (; i + 3 < size; i += 4) {
+        float32x4_t vinput = vld1q_f32(input + i);
+        vsum = vaddq_f32(vsum, vinput);
+    }
+
+    // 벡터 내 요소들을 합산
+    float32x2_t vsum_low = vget_low_f32(vsum);
+    float32x2_t vsum_high = vget_high_f32(vsum);
+    float32x2_t vsum_pair = vadd_f32(vsum_low, vsum_high);
+    float sum = vget_lane_f32(vsum_pair, 0) + vget_lane_f32(vsum_pair, 1);
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        sum += input[i];
+    }
+
+    float mean = sum / (float)size;
+    float32x4_t vmean = vdupq_n_f32(mean);
+
+    // 2. 분산 계산 (NEON 벡터화)
+    float32x4_t vvar_sum = vdupq_n_f32(0.0f);
+    i = 0;
+    for (; i + 3 < size; i += 4) {
+        float32x4_t vinput = vld1q_f32(input + i);
+        float32x4_t vdiff = vsubq_f32(vinput, vmean);
+        float32x4_t vdiff_sq = vmulq_f32(vdiff, vdiff);
+        vvar_sum = vaddq_f32(vvar_sum, vdiff_sq);
+    }
+
+    // 벡터 내 요소들을 합산
+    vsum_low = vget_low_f32(vvar_sum);
+    vsum_high = vget_high_f32(vvar_sum);
+    vsum_pair = vadd_f32(vsum_low, vsum_high);
+    float var_sum = vget_lane_f32(vsum_pair, 0) + vget_lane_f32(vsum_pair, 1);
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        float diff = input[i] - mean;
+        var_sum += diff * diff;
+    }
+
+    float variance = var_sum / (float)size;
+    float inv_std = 1.0f / sqrtf(variance + epsilon);
+    float32x4_t vinv_std = vdupq_n_f32(inv_std);
+
+    // 3. 정규화 (NEON 벡터화)
+    i = 0;
+    for (; i + 3 < size; i += 4) {
+        float32x4_t vinput = vld1q_f32(input + i);
+        float32x4_t vdiff = vsubq_f32(vinput, vmean);
+        float32x4_t vnormalized = vmulq_f32(vdiff, vinv_std);
+        vst1q_f32(output + i, vnormalized);
+    }
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        output[i] = (input[i] - mean) * inv_std;
+    }
+}
+
+/**
+ * @brief 배치 정규화 함수 (NEON 구현)
+ */
+void neon_batch_norm(const float* input, float* output, size_t size,
+                    float mean, float variance, float gamma, float beta, float epsilon) {
+    size_t i = 0;
+    float inv_std = 1.0f / sqrtf(variance + epsilon);
+
+    float32x4_t vmean = vdupq_n_f32(mean);
+    float32x4_t vinv_std = vdupq_n_f32(inv_std);
+    float32x4_t vgamma = vdupq_n_f32(gamma);
+    float32x4_t vbeta = vdupq_n_f32(beta);
+
+    // NEON 벡터화된 배치 정규화
+    for (; i + 3 < size; i += 4) {
+        float32x4_t vinput = vld1q_f32(input + i);
+
+        // (input - mean) * inv_std
+        float32x4_t vnormalized = vmulq_f32(vsubq_f32(vinput, vmean), vinv_std);
+
+        // gamma * normalized + beta
+        float32x4_t vresult = vmlaq_f32(vbeta, vgamma, vnormalized);
+
+        vst1q_f32(output + i, vresult);
+    }
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        output[i] = gamma * (input[i] - mean) * inv_std + beta;
     }
 }
 
@@ -844,10 +997,15 @@ void neon_pitch_shift_mobile(const float* input, float* output, size_t size,
 
         // 보간을 위한 값들 로드 (경계 검사 포함)
         float samples[4];
+        int32_t indices[4];
+        float fracs[4];
+        vst1q_s32(indices, vint_indices);
+        vst1q_f32(fracs, vfrac);
+
         for (int j = 0; j < 4; j++) {
-            int idx = vgetq_lane_s32(vint_indices, j);
+            int idx = indices[j];
             if (idx >= 0 && idx < (int)size - 1) {
-                float frac = vgetq_lane_f32(vfrac, j);
+                float frac = fracs[j];
                 samples[j] = input[idx] * (1.0f - frac) + input[idx + 1] * frac;
             } else if (idx >= 0 && idx < (int)size) {
                 samples[j] = input[idx];
@@ -913,7 +1071,6 @@ void neon_noise_gate_mobile(const float* input, float* output, size_t size,
                            float threshold, float ratio) {
     const float32x4_t vthreshold = vdupq_n_f32(threshold);
     const float32x4_t vratio = vdupq_n_f32(ratio);
-    const float32x4_t vzero = vdupq_n_f32(0.0f);
 
     size_t i = 0;
 
@@ -1272,6 +1429,33 @@ void register_neon_kernels(void) {
     kernel_info.simd_features = LIBETUDE_SIMD_NEON;
     kernel_info.optimal_size = 64;
     kernel_info.performance_score = 2.6f; // 조건부 연산 포함
+    kernel_registry_register(&kernel_info);
+
+    // 소프트맥스 커널
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "softmax_neon";
+    kernel_info.kernel_func = (void*)neon_softmax;
+    kernel_info.simd_features = LIBETUDE_SIMD_NEON;
+    kernel_info.optimal_size = 128;
+    kernel_info.performance_score = 2.0f;
+    kernel_registry_register(&kernel_info);
+
+    // 레이어 정규화 커널
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "layer_norm_neon";
+    kernel_info.kernel_func = (void*)neon_layer_norm;
+    kernel_info.simd_features = LIBETUDE_SIMD_NEON;
+    kernel_info.optimal_size = 128;
+    kernel_info.performance_score = 2.2f;
+    kernel_registry_register(&kernel_info);
+
+    // 배치 정규화 커널
+    memset(&kernel_info, 0, sizeof(KernelInfo));
+    kernel_info.name = "batch_norm_neon";
+    kernel_info.kernel_func = (void*)neon_batch_norm;
+    kernel_info.simd_features = LIBETUDE_SIMD_NEON;
+    kernel_info.optimal_size = 128;
+    kernel_info.performance_score = 2.3f;
     kernel_registry_register(&kernel_info);
 #endif
 }

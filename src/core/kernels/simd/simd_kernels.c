@@ -11,6 +11,7 @@
 #include "libetude/types.h"
 #include "libetude/kernel_registry.h"
 #include <string.h>
+#include <math.h>
 
 // ============================================================================
 // 외부 커널 함수 선언
@@ -267,6 +268,111 @@ void simd_gelu_optimal(const float* input, float* output, size_t size) {
             float x3 = x * x * x;
             float inner = sqrt_2_over_pi * (x + coeff * x3);
             output[i] = 0.5f * x * (1.0f + tanhf(inner));
+        }
+    }
+}
+
+/**
+ * @brief 최적화된 소프트맥스 함수
+ *
+ * @param input 입력 벡터
+ * @param output 출력 벡터
+ * @param size 벡터 크기
+ */
+void simd_softmax_optimal(const float* input, float* output, size_t size) {
+    typedef void (*SoftmaxKernel)(const float*, float*, size_t);
+    SoftmaxKernel kernel = (SoftmaxKernel)kernel_registry_select_optimal("softmax", size);
+
+    if (kernel) {
+        kernel(input, output, size);
+    } else {
+        // fallback: 기본 구현 (수치적으로 안정한 소프트맥스)
+        // 1. 최댓값 찾기 (수치 안정성을 위해)
+        float max_val = input[0];
+        for (size_t i = 1; i < size; i++) {
+            if (input[i] > max_val) {
+                max_val = input[i];
+            }
+        }
+
+        // 2. exp(x - max) 계산 및 합계 구하기
+        float sum = 0.0f;
+        for (size_t i = 0; i < size; i++) {
+            output[i] = expf(input[i] - max_val);
+            sum += output[i];
+        }
+
+        // 3. 정규화
+        float inv_sum = 1.0f / sum;
+        for (size_t i = 0; i < size; i++) {
+            output[i] *= inv_sum;
+        }
+    }
+}
+
+/**
+ * @brief 최적화된 레이어 정규화 함수
+ *
+ * @param input 입력 벡터
+ * @param output 출력 벡터
+ * @param size 벡터 크기
+ * @param epsilon 수치 안정성을 위한 작은 값
+ */
+void simd_layer_norm_optimal(const float* input, float* output, size_t size, float epsilon) {
+    typedef void (*LayerNormKernel)(const float*, float*, size_t, float);
+    LayerNormKernel kernel = (LayerNormKernel)kernel_registry_select_optimal("layer_norm", size);
+
+    if (kernel) {
+        kernel(input, output, size, epsilon);
+    } else {
+        // fallback: 기본 구현
+        // 1. 평균 계산
+        float mean = 0.0f;
+        for (size_t i = 0; i < size; i++) {
+            mean += input[i];
+        }
+        mean /= (float)size;
+
+        // 2. 분산 계산
+        float variance = 0.0f;
+        for (size_t i = 0; i < size; i++) {
+            float diff = input[i] - mean;
+            variance += diff * diff;
+        }
+        variance /= (float)size;
+
+        // 3. 정규화
+        float inv_std = 1.0f / sqrtf(variance + epsilon);
+        for (size_t i = 0; i < size; i++) {
+            output[i] = (input[i] - mean) * inv_std;
+        }
+    }
+}
+
+/**
+ * @brief 최적화된 배치 정규화 함수
+ *
+ * @param input 입력 벡터
+ * @param output 출력 벡터
+ * @param size 벡터 크기
+ * @param mean 평균값
+ * @param variance 분산값
+ * @param gamma 스케일 파라미터
+ * @param beta 시프트 파라미터
+ * @param epsilon 수치 안정성을 위한 작은 값
+ */
+void simd_batch_norm_optimal(const float* input, float* output, size_t size,
+                            float mean, float variance, float gamma, float beta, float epsilon) {
+    typedef void (*BatchNormKernel)(const float*, float*, size_t, float, float, float, float, float);
+    BatchNormKernel kernel = (BatchNormKernel)kernel_registry_select_optimal("batch_norm", size);
+
+    if (kernel) {
+        kernel(input, output, size, mean, variance, gamma, beta, epsilon);
+    } else {
+        // fallback: 기본 구현
+        float inv_std = 1.0f / sqrtf(variance + epsilon);
+        for (size_t i = 0; i < size; i++) {
+            output[i] = gamma * (input[i] - mean) * inv_std + beta;
         }
     }
 }

@@ -7,6 +7,7 @@
 
 #include "libetude/config.h"
 #include "libetude/types.h"
+#include "libetude/kernel_registry.h"
 #include <math.h>
 #include <string.h>
 
