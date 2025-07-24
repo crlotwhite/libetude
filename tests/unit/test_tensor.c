@@ -385,6 +385,200 @@ static void test_reduction_operations() {
 }
 
 // =============================================================================
+// 새로운 축소 연산 테스트 (max, min)
+// =============================================================================
+
+static void test_new_reduction_operations() {
+    print_test_header("새로운 축소 연산 테스트 (max, min)");
+
+    ETMemoryPool* pool = et_create_memory_pool(1024 * 1024, ET_DEFAULT_ALIGNMENT);
+
+    // 테스트용 텐서 생성 (2x3)
+    size_t shape[] = {2, 3};
+    ETTensor* tensor = et_create_tensor(pool, ET_FLOAT32, 2, shape);
+
+    // 데이터 초기화: [[1, 5, 3], [4, 2, 6]]
+    et_set_float(tensor, (size_t[]){0, 0}, 1.0f);
+    et_set_float(tensor, (size_t[]){0, 1}, 5.0f);
+    et_set_float(tensor, (size_t[]){0, 2}, 3.0f);
+    et_set_float(tensor, (size_t[]){1, 0}, 4.0f);
+    et_set_float(tensor, (size_t[]){1, 1}, 2.0f);
+    et_set_float(tensor, (size_t[]){1, 2}, 6.0f);
+
+    // 전체 최대값 테스트
+    ETTensor* total_max = et_max(tensor, NULL, -1, false, NULL);
+    TEST_ASSERT(total_max != NULL, "전체 최대값 성공");
+    float val = et_get_float(total_max, (size_t[]){0});
+    TEST_ASSERT(FLOAT_EQUAL(val, 6.0f), "전체 최대값 결과 확인");
+
+    // 전체 최소값 테스트
+    ETTensor* total_min = et_min(tensor, NULL, -1, false, NULL);
+    TEST_ASSERT(total_min != NULL, "전체 최소값 성공");
+    val = et_get_float(total_min, (size_t[]){0});
+    TEST_ASSERT(FLOAT_EQUAL(val, 1.0f), "전체 최소값 결과 확인");
+
+    // 축 0 방향 최대값 테스트
+    ETTensor* max_axis0 = et_max(tensor, NULL, 0, false, NULL);
+    TEST_ASSERT(max_axis0 != NULL, "축 0 최대값 성공");
+    val = et_get_float(max_axis0, (size_t[]){0});
+    TEST_ASSERT(FLOAT_EQUAL(val, 4.0f), "축 0 최대값 결과 확인 [0]"); // max(1,4) = 4
+    val = et_get_float(max_axis0, (size_t[]){1});
+    TEST_ASSERT(FLOAT_EQUAL(val, 5.0f), "축 0 최대값 결과 확인 [1]"); // max(5,2) = 5
+    val = et_get_float(max_axis0, (size_t[]){2});
+    TEST_ASSERT(FLOAT_EQUAL(val, 6.0f), "축 0 최대값 결과 확인 [2]"); // max(3,6) = 6
+
+    // 축 1 방향 최소값 테스트
+    ETTensor* min_axis1 = et_min(tensor, NULL, 1, false, NULL);
+    TEST_ASSERT(min_axis1 != NULL, "축 1 최소값 성공");
+    val = et_get_float(min_axis1, (size_t[]){0});
+    TEST_ASSERT(FLOAT_EQUAL(val, 1.0f), "축 1 최소값 결과 확인 [0]"); // min(1,5,3) = 1
+    val = et_get_float(min_axis1, (size_t[]){1});
+    TEST_ASSERT(FLOAT_EQUAL(val, 2.0f), "축 1 최소값 결과 확인 [1]"); // min(4,2,6) = 2
+
+    et_destroy_tensor(tensor);
+    et_destroy_tensor(total_max);
+    et_destroy_tensor(total_min);
+    et_destroy_tensor(max_axis0);
+    et_destroy_tensor(min_axis1);
+    et_destroy_memory_pool(pool);
+}
+
+// =============================================================================
+// 단항 연산 테스트
+// =============================================================================
+
+static void test_unary_operations() {
+    print_test_header("단항 연산 테스트");
+
+    ETMemoryPool* pool = et_create_memory_pool(1024 * 1024, ET_DEFAULT_ALIGNMENT);
+
+    // 테스트용 텐서 생성
+    size_t shape[] = {2, 2};
+    ETTensor* tensor = et_create_tensor(pool, ET_FLOAT32, 2, shape);
+
+    // 데이터 초기화: [[-2, 4], [9, 1]]
+    et_set_float(tensor, (size_t[]){0, 0}, -2.0f);
+    et_set_float(tensor, (size_t[]){0, 1}, 4.0f);
+    et_set_float(tensor, (size_t[]){1, 0}, 9.0f);
+    et_set_float(tensor, (size_t[]){1, 1}, 1.0f);
+
+    // 절댓값 테스트
+    ETTensor* abs_result = et_abs(tensor, NULL, NULL);
+    TEST_ASSERT(abs_result != NULL, "절댓값 연산 성공");
+    float val = et_get_float(abs_result, (size_t[]){0, 0});
+    TEST_ASSERT(FLOAT_EQUAL(val, 2.0f), "절댓값 결과 확인 (0,0)");
+    val = et_get_float(abs_result, (size_t[]){0, 1});
+    TEST_ASSERT(FLOAT_EQUAL(val, 4.0f), "절댓값 결과 확인 (0,1)");
+
+    // 제곱 테스트
+    ETTensor* square_result = et_square(tensor, NULL, NULL);
+    TEST_ASSERT(square_result != NULL, "제곱 연산 성공");
+    val = et_get_float(square_result, (size_t[]){0, 0});
+    TEST_ASSERT(FLOAT_EQUAL(val, 4.0f), "제곱 결과 확인 (0,0)"); // (-2)^2 = 4
+    val = et_get_float(square_result, (size_t[]){1, 0});
+    TEST_ASSERT(FLOAT_EQUAL(val, 81.0f), "제곱 결과 확인 (1,0)"); // 9^2 = 81
+
+    // 제곱근 테스트
+    ETTensor* sqrt_result = et_sqrt(square_result, NULL, NULL);
+    TEST_ASSERT(sqrt_result != NULL, "제곱근 연산 성공");
+    val = et_get_float(sqrt_result, (size_t[]){0, 0});
+    TEST_ASSERT(FLOAT_EQUAL(val, 2.0f), "제곱근 결과 확인 (0,0)"); // sqrt(4) = 2
+    val = et_get_float(sqrt_result, (size_t[]){1, 0});
+    TEST_ASSERT(FLOAT_EQUAL(val, 9.0f), "제곱근 결과 확인 (1,0)"); // sqrt(81) = 9
+
+    // 지수 함수 테스트 (작은 값으로)
+    ETTensor* small_tensor = et_create_tensor(pool, ET_FLOAT32, 2, shape);
+    et_set_float(small_tensor, (size_t[]){0, 0}, 0.0f);
+    et_set_float(small_tensor, (size_t[]){0, 1}, 1.0f);
+    et_set_float(small_tensor, (size_t[]){1, 0}, 2.0f);
+    et_set_float(small_tensor, (size_t[]){1, 1}, -1.0f);
+
+    ETTensor* exp_result = et_exp(small_tensor, NULL, NULL);
+    TEST_ASSERT(exp_result != NULL, "지수 함수 연산 성공");
+    val = et_get_float(exp_result, (size_t[]){0, 0});
+    TEST_ASSERT(FLOAT_EQUAL(val, 1.0f), "지수 함수 결과 확인 (0,0)"); // exp(0) = 1
+    val = et_get_float(exp_result, (size_t[]){0, 1});
+    TEST_ASSERT(fabsf(val - 2.718282f) < 0.001f, "지수 함수 결과 확인 (0,1)"); // exp(1) ≈ e
+
+    // 자연 로그 테스트
+    ETTensor* log_result = et_log(exp_result, NULL, NULL);
+    TEST_ASSERT(log_result != NULL, "자연 로그 연산 성공");
+    val = et_get_float(log_result, (size_t[]){0, 0});
+    TEST_ASSERT(FLOAT_EQUAL(val, 0.0f), "자연 로그 결과 확인 (0,0)"); // log(1) = 0
+    val = et_get_float(log_result, (size_t[]){0, 1});
+    TEST_ASSERT(FLOAT_EQUAL(val, 1.0f), "자연 로그 결과 확인 (0,1)"); // log(e) = 1
+
+    et_destroy_tensor(tensor);
+    et_destroy_tensor(abs_result);
+    et_destroy_tensor(square_result);
+    et_destroy_tensor(sqrt_result);
+    et_destroy_tensor(small_tensor);
+    et_destroy_tensor(exp_result);
+    et_destroy_tensor(log_result);
+    et_destroy_memory_pool(pool);
+}
+
+// =============================================================================
+// 고급 변환 연산 테스트
+// =============================================================================
+
+static void test_advanced_transformation() {
+    print_test_header("고급 변환 연산 테스트");
+
+    ETMemoryPool* pool = et_create_memory_pool(1024 * 1024, ET_DEFAULT_ALIGNMENT);
+
+    // 3D 텐서 생성 (2x3x4)
+    size_t shape[] = {2, 3, 4};
+    ETTensor* tensor = et_create_tensor(pool, ET_FLOAT32, 3, shape);
+
+    // 데이터 초기화
+    for (size_t i = 0; i < 2; i++) {
+        for (size_t j = 0; j < 3; j++) {
+            for (size_t k = 0; k < 4; k++) {
+                et_set_float(tensor, (size_t[]){i, j, k}, (float)(i * 12 + j * 4 + k));
+            }
+        }
+    }
+
+    // 차원 순서 변경 테스트 (2x3x4 -> 4x2x3)
+    size_t axes[] = {2, 0, 1}; // (dim2, dim0, dim1)
+    ETTensor* permuted = et_permute_tensor(tensor, axes);
+    TEST_ASSERT(permuted != NULL, "차원 순서 변경 성공");
+    TEST_ASSERT(permuted->shape[0] == 4 && permuted->shape[1] == 2 && permuted->shape[2] == 3,
+                "차원 순서 변경 모양 확인");
+
+    // 차원 확장 테스트 (2x3x4 -> 2x1x3x4)
+    ETTensor* expanded = et_expand_dims(tensor, 1);
+    TEST_ASSERT(expanded != NULL, "차원 확장 성공");
+    TEST_ASSERT(expanded->ndim == 4, "차원 확장 차원 수 확인");
+    TEST_ASSERT(expanded->shape[0] == 2 && expanded->shape[1] == 1 &&
+                expanded->shape[2] == 3 && expanded->shape[3] == 4, "차원 확장 모양 확인");
+
+    // 차원 축소 테스트 (2x1x3x4 -> 2x3x4)
+    ETTensor* squeezed = et_squeeze_tensor(expanded, 1);
+    TEST_ASSERT(squeezed != NULL, "차원 축소 성공");
+    TEST_ASSERT(squeezed->ndim == 3, "차원 축소 차원 수 확인");
+    TEST_ASSERT(et_same_shape(tensor, squeezed), "차원 축소 모양 확인");
+
+    // 모든 크기 1인 차원 제거 테스트
+    size_t shape_with_ones[] = {2, 1, 3, 1, 4};
+    ETTensor* tensor_with_ones = et_create_tensor(pool, ET_FLOAT32, 5, shape_with_ones);
+    ETTensor* all_squeezed = et_squeeze_tensor(tensor_with_ones, -1);
+    TEST_ASSERT(all_squeezed != NULL, "모든 크기 1 차원 제거 성공");
+    TEST_ASSERT(all_squeezed->ndim == 3, "모든 크기 1 차원 제거 차원 수 확인");
+    TEST_ASSERT(all_squeezed->shape[0] == 2 && all_squeezed->shape[1] == 3 && all_squeezed->shape[2] == 4,
+                "모든 크기 1 차원 제거 모양 확인");
+
+    et_destroy_tensor(tensor);
+    et_destroy_tensor(permuted);
+    et_destroy_tensor(expanded);
+    et_destroy_tensor(squeezed);
+    et_destroy_tensor(tensor_with_ones);
+    et_destroy_tensor(all_squeezed);
+    et_destroy_memory_pool(pool);
+}
+
+// =============================================================================
 // 인플레이스 연산 테스트
 // =============================================================================
 
@@ -444,6 +638,9 @@ int main() {
     test_tensor_manipulation();
     test_tensor_operations();
     test_reduction_operations();
+    test_new_reduction_operations();
+    test_unary_operations();
+    test_advanced_transformation();
     test_inplace_operations();
 
     print_test_summary();

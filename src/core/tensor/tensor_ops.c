@@ -475,6 +475,299 @@ ETTensor* et_mean(const ETTensor* input, ETTensor* out, int axis, bool keepdims,
     return sum_tensor;
 }
 
+ETTensor* et_max(const ETTensor* input, ETTensor* out, int axis, bool keepdims, const ETTensorOpOptions* options) {
+    if (!et_validate_tensor(input)) return NULL;
+
+    // 전체 최대값 (axis == -1)
+    if (axis == -1) {
+        ETMemoryPool* pool = options && options->output_pool ? options->output_pool : input->pool;
+        size_t out_shape[1] = {1};
+        if (!out) {
+            out = et_create_tensor(pool, input->dtype, keepdims ? input->ndim : 1,
+                                 keepdims ? NULL : out_shape);
+            if (!out) return NULL;
+
+            if (keepdims) {
+                // 모든 차원을 1로 설정
+                for (size_t i = 0; i < input->ndim; i++) {
+                    out->shape[i] = 1;
+                }
+                et_compute_strides(out->shape, out->ndim, out->dtype, out->strides);
+                out->size = 1;
+            }
+        }
+
+        float max_val = -INFINITY;
+        size_t indices[ET_MAX_TENSOR_DIMS] = {0};
+
+        for (size_t i = 0; i < input->size; i++) {
+            float val = et_get_float(input, indices);
+            if (val > max_val) max_val = val;
+
+            // 다음 인덱스 계산
+            for (int j = (int)input->ndim - 1; j >= 0; j--) {
+                indices[j]++;
+                if (indices[j] < input->shape[j]) break;
+                indices[j] = 0;
+            }
+        }
+
+        if (keepdims) {
+            size_t zero_indices[ET_MAX_TENSOR_DIMS] = {0};
+            et_set_float(out, zero_indices, max_val);
+        } else {
+            et_set_float(out, (size_t[]){0}, max_val);
+        }
+
+        return out;
+    }
+
+    // 특정 축에 대한 최대값
+    if (axis < 0) axis += (int)input->ndim;
+    if (axis < 0 || axis >= (int)input->ndim) return NULL;
+
+    // 출력 모양 계산
+    size_t out_ndim = keepdims ? input->ndim : input->ndim - 1;
+    size_t out_shape[ET_MAX_TENSOR_DIMS];
+
+    if (keepdims) {
+        memcpy(out_shape, input->shape, input->ndim * sizeof(size_t));
+        out_shape[axis] = 1;
+    } else {
+        size_t out_idx = 0;
+        for (size_t i = 0; i < input->ndim; i++) {
+            if (i != (size_t)axis) {
+                out_shape[out_idx++] = input->shape[i];
+            }
+        }
+    }
+
+    // 출력 텐서 생성
+    if (!out) {
+        ETMemoryPool* pool = options && options->output_pool ? options->output_pool : input->pool;
+        out = et_create_tensor(pool, input->dtype, out_ndim, out_shape);
+        if (!out) return NULL;
+    }
+
+    // 최대값으로 초기화
+    et_fill_tensor(out, -INFINITY);
+
+    size_t indices[ET_MAX_TENSOR_DIMS] = {0};
+    for (size_t i = 0; i < input->size; i++) {
+        // 출력 인덱스 계산
+        size_t out_indices[ET_MAX_TENSOR_DIMS];
+        if (keepdims) {
+            memcpy(out_indices, indices, input->ndim * sizeof(size_t));
+            out_indices[axis] = 0;
+        } else {
+            size_t out_idx = 0;
+            for (size_t j = 0; j < input->ndim; j++) {
+                if (j != (size_t)axis) {
+                    out_indices[out_idx++] = indices[j];
+                }
+            }
+        }
+
+        float input_val = et_get_float(input, indices);
+        float current_max = et_get_float(out, out_indices);
+        if (input_val > current_max) {
+            et_set_float(out, out_indices, input_val);
+        }
+
+        // 다음 인덱스 계산
+        for (int j = (int)input->ndim - 1; j >= 0; j--) {
+            indices[j]++;
+            if (indices[j] < input->shape[j]) break;
+            indices[j] = 0;
+        }
+    }
+
+    return out;
+}
+
+ETTensor* et_min(const ETTensor* input, ETTensor* out, int axis, bool keepdims, const ETTensorOpOptions* options) {
+    if (!et_validate_tensor(input)) return NULL;
+
+    // 전체 최소값 (axis == -1)
+    if (axis == -1) {
+        ETMemoryPool* pool = options && options->output_pool ? options->output_pool : input->pool;
+        size_t out_shape[1] = {1};
+        if (!out) {
+            out = et_create_tensor(pool, input->dtype, keepdims ? input->ndim : 1,
+                                 keepdims ? NULL : out_shape);
+            if (!out) return NULL;
+
+            if (keepdims) {
+                // 모든 차원을 1로 설정
+                for (size_t i = 0; i < input->ndim; i++) {
+                    out->shape[i] = 1;
+                }
+                et_compute_strides(out->shape, out->ndim, out->dtype, out->strides);
+                out->size = 1;
+            }
+        }
+
+        float min_val = INFINITY;
+        size_t indices[ET_MAX_TENSOR_DIMS] = {0};
+
+        for (size_t i = 0; i < input->size; i++) {
+            float val = et_get_float(input, indices);
+            if (val < min_val) min_val = val;
+
+            // 다음 인덱스 계산
+            for (int j = (int)input->ndim - 1; j >= 0; j--) {
+                indices[j]++;
+                if (indices[j] < input->shape[j]) break;
+                indices[j] = 0;
+            }
+        }
+
+        if (keepdims) {
+            size_t zero_indices[ET_MAX_TENSOR_DIMS] = {0};
+            et_set_float(out, zero_indices, min_val);
+        } else {
+            et_set_float(out, (size_t[]){0}, min_val);
+        }
+
+        return out;
+    }
+
+    // 특정 축에 대한 최소값
+    if (axis < 0) axis += (int)input->ndim;
+    if (axis < 0 || axis >= (int)input->ndim) return NULL;
+
+    // 출력 모양 계산
+    size_t out_ndim = keepdims ? input->ndim : input->ndim - 1;
+    size_t out_shape[ET_MAX_TENSOR_DIMS];
+
+    if (keepdims) {
+        memcpy(out_shape, input->shape, input->ndim * sizeof(size_t));
+        out_shape[axis] = 1;
+    } else {
+        size_t out_idx = 0;
+        for (size_t i = 0; i < input->ndim; i++) {
+            if (i != (size_t)axis) {
+                out_shape[out_idx++] = input->shape[i];
+            }
+        }
+    }
+
+    // 출력 텐서 생성
+    if (!out) {
+        ETMemoryPool* pool = options && options->output_pool ? options->output_pool : input->pool;
+        out = et_create_tensor(pool, input->dtype, out_ndim, out_shape);
+        if (!out) return NULL;
+    }
+
+    // 최소값으로 초기화
+    et_fill_tensor(out, INFINITY);
+
+    size_t indices[ET_MAX_TENSOR_DIMS] = {0};
+    for (size_t i = 0; i < input->size; i++) {
+        // 출력 인덱스 계산
+        size_t out_indices[ET_MAX_TENSOR_DIMS];
+        if (keepdims) {
+            memcpy(out_indices, indices, input->ndim * sizeof(size_t));
+            out_indices[axis] = 0;
+        } else {
+            size_t out_idx = 0;
+            for (size_t j = 0; j < input->ndim; j++) {
+                if (j != (size_t)axis) {
+                    out_indices[out_idx++] = indices[j];
+                }
+            }
+        }
+
+        float input_val = et_get_float(input, indices);
+        float current_min = et_get_float(out, out_indices);
+        if (input_val < current_min) {
+            et_set_float(out, out_indices, input_val);
+        }
+
+        // 다음 인덱스 계산
+        for (int j = (int)input->ndim - 1; j >= 0; j--) {
+            indices[j]++;
+            if (indices[j] < input->shape[j]) break;
+            indices[j] = 0;
+        }
+    }
+
+    return out;
+}
+
+// =============================================================================
+// 단항 연산 함수
+// =============================================================================
+
+/**
+ * @brief 단항 연산 수행 (일반적인 구현)
+ */
+typedef float (*UnaryOp)(float x);
+
+static ETTensor* unary_op(const ETTensor* input, ETTensor* out, UnaryOp op, const ETTensorOpOptions* options) {
+    if (!et_validate_tensor(input)) return NULL;
+
+    // 출력 텐서 생성 또는 검증
+    bool created_output = false;
+    if (!out) {
+        ETMemoryPool* pool = options && options->output_pool ? options->output_pool : input->pool;
+        out = et_create_tensor(pool, input->dtype, input->ndim, input->shape);
+        if (!out) return NULL;
+        created_output = true;
+    } else {
+        // 출력 텐서 모양 검증
+        if (!et_same_shape(input, out)) {
+            if (created_output) et_destroy_tensor(out);
+            return NULL;
+        }
+    }
+
+    // 단항 연산 수행
+    size_t indices[ET_MAX_TENSOR_DIMS] = {0};
+
+    for (size_t i = 0; i < input->size; i++) {
+        float val = et_get_float(input, indices);
+        float result = op(val);
+        et_set_float(out, indices, result);
+
+        // 다음 인덱스 계산
+        for (int j = (int)input->ndim - 1; j >= 0; j--) {
+            indices[j]++;
+            if (indices[j] < input->shape[j]) break;
+            indices[j] = 0;
+        }
+    }
+
+    return out;
+}
+
+// 단항 연산 함수들
+static float abs_op(float x) { return fabsf(x); }
+static float square_op(float x) { return x * x; }
+static float sqrt_op(float x) { return sqrtf(x); }
+static float exp_op(float x) { return expf(x); }
+static float log_op(float x) { return logf(x); }
+
+ETTensor* et_abs(const ETTensor* input, ETTensor* out, const ETTensorOpOptions* options) {
+    return unary_op(input, out, abs_op, options);
+}
+
+ETTensor* et_square(const ETTensor* input, ETTensor* out, const ETTensorOpOptions* options) {
+    return unary_op(input, out, square_op, options);
+}
+
+ETTensor* et_sqrt(const ETTensor* input, ETTensor* out, const ETTensorOpOptions* options) {
+    return unary_op(input, out, sqrt_op, options);
+}
+
+ETTensor* et_exp(const ETTensor* input, ETTensor* out, const ETTensorOpOptions* options) {
+    return unary_op(input, out, exp_op, options);
+}
+
+ETTensor* et_log(const ETTensor* input, ETTensor* out, const ETTensorOpOptions* options) {
+    return unary_op(input, out, log_op, options);
+}
+
 // =============================================================================
 // 인플레이스 연산 함수
 // =============================================================================

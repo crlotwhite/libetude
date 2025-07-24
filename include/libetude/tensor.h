@@ -494,6 +494,73 @@ ETTensor* et_sum(const ETTensor* input, ETTensor* out, int axis, bool keepdims, 
  */
 ETTensor* et_mean(const ETTensor* input, ETTensor* out, int axis, bool keepdims, const ETTensorOpOptions* options);
 
+/**
+ * @brief 텐서 최대값
+ * @param input 입력 텐서
+ * @param out 출력 텐서 (NULL이면 새로 생성)
+ * @param axis 최대값을 계산할 축 (-1이면 전체 최대값)
+ * @param keepdims 차원 유지 여부
+ * @param options 연산 옵션
+ * @return 결과 텐서, 실패시 NULL
+ */
+ETTensor* et_max(const ETTensor* input, ETTensor* out, int axis, bool keepdims, const ETTensorOpOptions* options);
+
+/**
+ * @brief 텐서 최소값
+ * @param input 입력 텐서
+ * @param out 출력 텐서 (NULL이면 새로 생성)
+ * @param axis 최소값을 계산할 축 (-1이면 전체 최소값)
+ * @param keepdims 차원 유지 여부
+ * @param options 연산 옵션
+ * @return 결과 텐서, 실패시 NULL
+ */
+ETTensor* et_min(const ETTensor* input, ETTensor* out, int axis, bool keepdims, const ETTensorOpOptions* options);
+
+/**
+ * @brief 텐서 절댓값
+ * @param input 입력 텐서
+ * @param out 출력 텐서 (NULL이면 새로 생성)
+ * @param options 연산 옵션
+ * @return 결과 텐서, 실패시 NULL
+ */
+ETTensor* et_abs(const ETTensor* input, ETTensor* out, const ETTensorOpOptions* options);
+
+/**
+ * @brief 텐서 제곱
+ * @param input 입력 텐서
+ * @param out 출력 텐서 (NULL이면 새로 생성)
+ * @param options 연산 옵션
+ * @return 결과 텐서, 실패시 NULL
+ */
+ETTensor* et_square(const ETTensor* input, ETTensor* out, const ETTensorOpOptions* options);
+
+/**
+ * @brief 텐서 제곱근
+ * @param input 입력 텐서
+ * @param out 출력 텐서 (NULL이면 새로 생성)
+ * @param options 연산 옵션
+ * @return 결과 텐서, 실패시 NULL
+ */
+ETTensor* et_sqrt(const ETTensor* input, ETTensor* out, const ETTensorOpOptions* options);
+
+/**
+ * @brief 텐서 지수 함수
+ * @param input 입력 텐서
+ * @param out 출력 텐서 (NULL이면 새로 생성)
+ * @param options 연산 옵션
+ * @return 결과 텐서, 실패시 NULL
+ */
+ETTensor* et_exp(const ETTensor* input, ETTensor* out, const ETTensorOpOptions* options);
+
+/**
+ * @brief 텐서 자연 로그
+ * @param input 입력 텐서
+ * @param out 출력 텐서 (NULL이면 새로 생성)
+ * @param options 연산 옵션
+ * @return 결과 텐서, 실패시 NULL
+ */
+ETTensor* et_log(const ETTensor* input, ETTensor* out, const ETTensorOpOptions* options);
+
 // =============================================================================
 // 인플레이스 연산 함수
 // =============================================================================

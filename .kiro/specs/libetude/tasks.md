@@ -100,7 +100,7 @@
     - 메모리 레이아웃 최적화
     - _Requirements: 6.2_
 
-  - [ ] 5.2 텐서 연산 구현
+  - [x] 5.2 텐서 연산 구현
     - 요소별 연산 (add, mul, div 등)
     - 축소 연산 (sum, mean, max 등)
     - 변환 연산 (reshape, transpose 등)

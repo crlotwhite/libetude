@@ -188,7 +188,7 @@ ETTensor* et_create_tensor_named(ETMemoryPool* pool, ETDataType dtype, size_t nd
 
     // 데이터 메모리 할당
     if (tensor->data_size > 0) {
-        tensor->data = et_alloc_aligned_from_pool(pool, tensor->data_size, ET_DEFAULT_ALIGNMENT);
+        tensor->data = et_alloc_from_pool(pool, tensor->data_size);
         if (!tensor->data) {
             et_free_to_pool(pool, tensor->strides);
             et_free_to_pool(pool, tensor->shape);
@@ -461,6 +461,147 @@ ETTensor* et_transpose_tensor(ETTensor* tensor) {
     tensor->ref_count++;
 
     return transposed;
+}
+
+ETTensor* et_permute_tensor(ETTensor* tensor, const size_t* axes) {
+    if (!validate_tensor_internal(tensor) || !axes) {
+        return NULL;
+    }
+
+    // 축 순서 유효성 검사
+    bool used[ET_MAX_TENSOR_DIMS] = {false};
+    for (size_t i = 0; i < tensor->ndim; i++) {
+        if (axes[i] >= tensor->ndim || used[axes[i]]) {
+            return NULL; // 잘못된 축 순서
+        }
+        used[axes[i]] = true;
+    }
+
+    // 새로운 모양과 스트라이드 계산
+    size_t new_shape[ET_MAX_TENSOR_DIMS];
+    size_t new_strides[ET_MAX_TENSOR_DIMS];
+
+    for (size_t i = 0; i < tensor->ndim; i++) {
+        new_shape[i] = tensor->shape[axes[i]];
+        new_strides[i] = tensor->strides[axes[i]];
+    }
+
+    ETTensor* permuted = et_create_tensor_from_data(tensor->data, tensor->dtype, tensor->ndim, new_shape, new_strides);
+    if (!permuted) return NULL;
+
+    // 연속성 검사
+    size_t expected_strides[ET_MAX_TENSOR_DIMS];
+    et_compute_strides(new_shape, tensor->ndim, tensor->dtype, expected_strides);
+    permuted->is_contiguous = (memcmp(new_strides, expected_strides, tensor->ndim * sizeof(size_t)) == 0);
+
+    tensor->ref_count++;
+    return permuted;
+}
+
+ETTensor* et_expand_dims(ETTensor* tensor, int axis) {
+    if (!validate_tensor_internal(tensor)) return NULL;
+
+    size_t new_ndim = tensor->ndim + 1;
+    if (new_ndim > ET_MAX_TENSOR_DIMS) return NULL;
+
+    // 축 정규화
+    if (axis < 0) axis += (int)new_ndim;
+    if (axis < 0 || axis >= (int)new_ndim) return NULL;
+
+    // 새로운 모양과 스트라이드 계산
+    size_t new_shape[ET_MAX_TENSOR_DIMS];
+    size_t new_strides[ET_MAX_TENSOR_DIMS];
+
+    for (size_t i = 0, j = 0; i < new_ndim; i++) {
+        if (i == (size_t)axis) {
+            new_shape[i] = 1;
+            new_strides[i] = (i < new_ndim - 1) ? tensor->strides[j] : et_dtype_size(tensor->dtype);
+        } else {
+            new_shape[i] = tensor->shape[j];
+            new_strides[i] = tensor->strides[j];
+            j++;
+        }
+    }
+
+    ETTensor* expanded = et_create_tensor_from_data(tensor->data, tensor->dtype, new_ndim, new_shape, new_strides);
+    if (!expanded) return NULL;
+
+    expanded->is_contiguous = false; // 차원 확장된 텐서는 일반적으로 비연속
+    tensor->ref_count++;
+
+    return expanded;
+}
+
+ETTensor* et_squeeze_tensor(ETTensor* tensor, int axis) {
+    if (!validate_tensor_internal(tensor)) return NULL;
+
+    if (axis == -1) {
+        // 모든 크기 1인 차원 제거
+        size_t new_shape[ET_MAX_TENSOR_DIMS];
+        size_t new_strides[ET_MAX_TENSOR_DIMS];
+        size_t new_ndim = 0;
+
+        for (size_t i = 0; i < tensor->ndim; i++) {
+            if (tensor->shape[i] != 1) {
+                new_shape[new_ndim] = tensor->shape[i];
+                new_strides[new_ndim] = tensor->strides[i];
+                new_ndim++;
+            }
+        }
+
+        if (new_ndim == 0) {
+            // 모든 차원이 1이면 스칼라 (1차원, 크기 1)
+            new_ndim = 1;
+            new_shape[0] = 1;
+            new_strides[0] = et_dtype_size(tensor->dtype);
+        }
+
+        ETTensor* squeezed = et_create_tensor_from_data(tensor->data, tensor->dtype, new_ndim, new_shape, new_strides);
+        if (!squeezed) return NULL;
+
+        // 연속성 검사
+        size_t expected_strides[ET_MAX_TENSOR_DIMS];
+        et_compute_strides(new_shape, new_ndim, tensor->dtype, expected_strides);
+        squeezed->is_contiguous = (memcmp(new_strides, expected_strides, new_ndim * sizeof(size_t)) == 0);
+
+        tensor->ref_count++;
+        return squeezed;
+    } else {
+        // 특정 축 제거
+        if (axis < 0) axis += (int)tensor->ndim;
+        if (axis < 0 || axis >= (int)tensor->ndim) return NULL;
+        if (tensor->shape[axis] != 1) return NULL; // 크기가 1이 아니면 제거 불가
+
+        size_t new_shape[ET_MAX_TENSOR_DIMS];
+        size_t new_strides[ET_MAX_TENSOR_DIMS];
+        size_t new_ndim = tensor->ndim - 1;
+
+        for (size_t i = 0, j = 0; i < tensor->ndim; i++) {
+            if (i != (size_t)axis) {
+                new_shape[j] = tensor->shape[i];
+                new_strides[j] = tensor->strides[i];
+                j++;
+            }
+        }
+
+        if (new_ndim == 0) {
+            // 스칼라가 되면 1차원, 크기 1로 설정
+            new_ndim = 1;
+            new_shape[0] = 1;
+            new_strides[0] = et_dtype_size(tensor->dtype);
+        }
+
+        ETTensor* squeezed = et_create_tensor_from_data(tensor->data, tensor->dtype, new_ndim, new_shape, new_strides);
+        if (!squeezed) return NULL;
+
+        // 연속성 검사
+        size_t expected_strides[ET_MAX_TENSOR_DIMS];
+        et_compute_strides(new_shape, new_ndim, tensor->dtype, expected_strides);
+        squeezed->is_contiguous = (memcmp(new_strides, expected_strides, new_ndim * sizeof(size_t)) == 0);
+
+        tensor->ref_count++;
+        return squeezed;
+    }
 }
 
 // =============================================================================
