@@ -182,7 +182,7 @@ endif()
 # create_unity_test(hardware_test "unit/test_hardware.c")
 # create_unity_test(memory_allocator_test "unit/test_memory_allocator.c")
 # create_unity_test(memory_optimization_test "unit/test_memory_optimization.c")
-# create_unity_test(fast_math_test "unit/test_fast_math.c")
+create_unity_test(fast_math_test "unit/test_fast_math.c")
 # create_unity_test(simd_kernels_test "unit/test_simd_kernels.c")
 # create_unity_test(kernel_registry_test "unit/test_kernel_registry.c")
 

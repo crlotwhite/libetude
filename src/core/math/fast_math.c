@@ -60,8 +60,6 @@ float et_fast_exp(float x) {
 
     // 2^f 근사 (f는 [0, 1) 범위)
     // 2^f ≈ 1 + f * (0.693147 + f * (0.240226 + f * 0.0520143))
-    float f2 = f * f;
-    float f3 = f2 * f;
     float approx_2_f = 1.0f + f * (0.693147f + f * (0.240226f + f * 0.0520143f));
 
     // 2^i * 2^f
@@ -307,4 +305,264 @@ void et_fast_math_cleanup(void) {
         sin_table = NULL;
     }
     fast_math_initialized = 0;
+}
+
+// =============================================================================
+// 음성 특화 수학 함수들 구현 (Voice-Specific Math Functions Implementation)
+// =============================================================================
+
+// Hz를 Mel 스케일로 변환
+float et_hz_to_mel(float hz) {
+    if (hz <= 0.0f) return 0.0f;
+
+    // mel = 2595 * log10(1 + hz / 700)
+    return 2595.0f * et_fast_log10(1.0f + hz / 700.0f);
+}
+
+// Mel 스케일을 Hz로 변환
+float et_mel_to_hz(float mel) {
+    if (mel <= 0.0f) return 0.0f;
+
+    // hz = 700 * (10^(mel / 2595) - 1)
+    return 700.0f * (et_fast_pow(10.0f, mel / 2595.0f) - 1.0f);
+}
+
+// Mel 필터뱅크 생성
+int et_create_mel_filterbank(int n_fft, int n_mels, float sample_rate,
+                            float fmin, float fmax, float* mel_filters) {
+    if (!mel_filters || n_fft <= 0 || n_mels <= 0 || sample_rate <= 0.0f) {
+        return -1; // 잘못된 파라미터
+    }
+
+    int n_freqs = n_fft / 2 + 1;
+
+    // 모든 필터를 0으로 초기화
+    memset(mel_filters, 0, n_mels * n_freqs * sizeof(float));
+
+    // Mel 스케일에서의 최소/최대 주파수
+    float mel_fmin = et_hz_to_mel(fmin);
+    float mel_fmax = et_hz_to_mel(fmax);
+
+    // Mel 스케일에서 균등하게 분포된 점들 생성
+    float* mel_points = (float*)malloc((n_mels + 2) * sizeof(float));
+    if (!mel_points) return -1;
+
+    for (int i = 0; i < n_mels + 2; i++) {
+        mel_points[i] = mel_fmin + (mel_fmax - mel_fmin) * i / (n_mels + 1);
+    }
+
+    // Mel 점들을 Hz로 변환
+    float* hz_points = (float*)malloc((n_mels + 2) * sizeof(float));
+    if (!hz_points) {
+        free(mel_points);
+        return -1;
+    }
+
+    for (int i = 0; i < n_mels + 2; i++) {
+        hz_points[i] = et_mel_to_hz(mel_points[i]);
+    }
+
+    // Hz를 FFT 빈 인덱스로 변환
+    int* bin_points = (int*)malloc((n_mels + 2) * sizeof(int));
+    if (!bin_points) {
+        free(mel_points);
+        free(hz_points);
+        return -1;
+    }
+
+    for (int i = 0; i < n_mels + 2; i++) {
+        bin_points[i] = (int)(hz_points[i] * n_fft / sample_rate + 0.5f);
+        if (bin_points[i] >= n_freqs) bin_points[i] = n_freqs - 1;
+    }
+
+    // 삼각형 필터 생성
+    for (int m = 0; m < n_mels; m++) {
+        int left = bin_points[m];
+        int center = bin_points[m + 1];
+        int right = bin_points[m + 2];
+
+        // 왼쪽 기울기 (상승)
+        for (int k = left; k < center; k++) {
+            if (center > left) {
+                mel_filters[m * n_freqs + k] = (float)(k - left) / (center - left);
+            }
+        }
+
+        // 오른쪽 기울기 (하강)
+        for (int k = center; k < right; k++) {
+            if (right > center) {
+                mel_filters[m * n_freqs + k] = (float)(right - k) / (right - center);
+            }
+        }
+    }
+
+    free(mel_points);
+    free(hz_points);
+    free(bin_points);
+
+    return 0;
+}
+
+// 스펙트로그램을 Mel 스펙트로그램으로 변환
+void et_spectrogram_to_mel(const float* spectrogram, const float* mel_filters,
+                          float* mel_spectrogram, int n_frames, int n_freqs, int n_mels) {
+    // 각 시간 프레임에 대해
+    for (int t = 0; t < n_frames; t++) {
+        // 각 Mel 필터에 대해
+        for (int m = 0; m < n_mels; m++) {
+            float mel_value = 0.0f;
+
+            // 필터와 스펙트로그램의 내적 계산
+            for (int f = 0; f < n_freqs; f++) {
+                mel_value += spectrogram[t * n_freqs + f] * mel_filters[m * n_freqs + f];
+            }
+
+            mel_spectrogram[t * n_mels + m] = mel_value;
+        }
+    }
+}
+
+// 피치 시프팅을 위한 주파수 스케일링
+float et_pitch_shift_frequency(float frequency, float pitch_shift) {
+    if (frequency <= 0.0f || pitch_shift <= 0.0f) return frequency;
+    return frequency * pitch_shift;
+}
+
+// 세미톤을 주파수 비율로 변환
+float et_semitones_to_ratio(float semitones) {
+    // 1 세미톤 = 2^(1/12) 비율
+    return et_fast_pow(2.0f, semitones / 12.0f);
+}
+
+// 주파수 비율을 세미톤으로 변환
+float et_ratio_to_semitones(float ratio) {
+    if (ratio <= 0.0f) return 0.0f;
+    // semitones = 12 * log2(ratio)
+    return 12.0f * et_fast_log2(ratio);
+}
+
+// 해밍 윈도우 생성
+void et_hamming_window(float* window, int size) {
+    if (!window || size <= 0) return;
+
+    for (int i = 0; i < size; i++) {
+        // Hamming: w(n) = 0.54 - 0.46 * cos(2π * n / (N-1))
+        float angle = ET_2_PI * i / (size - 1);
+        window[i] = 0.54f - 0.46f * et_fast_cos(angle);
+    }
+}
+
+// 한 윈도우 생성
+void et_hann_window(float* window, int size) {
+    if (!window || size <= 0) return;
+
+    for (int i = 0; i < size; i++) {
+        // Hann: w(n) = 0.5 * (1 - cos(2π * n / (N-1)))
+        float angle = ET_2_PI * i / (size - 1);
+        window[i] = 0.5f * (1.0f - et_fast_cos(angle));
+    }
+}
+
+// 블랙만 윈도우 생성
+void et_blackman_window(float* window, int size) {
+    if (!window || size <= 0) return;
+
+    for (int i = 0; i < size; i++) {
+        // Blackman: w(n) = 0.42 - 0.5*cos(2π*n/(N-1)) + 0.08*cos(4π*n/(N-1))
+        float angle1 = ET_2_PI * i / (size - 1);
+        float angle2 = 2.0f * angle1;
+        window[i] = 0.42f - 0.5f * et_fast_cos(angle1) + 0.08f * et_fast_cos(angle2);
+    }
+}
+
+// 오디오 신호의 RMS 계산
+float et_audio_rms(const float* signal, int size) {
+    if (!signal || size <= 0) return 0.0f;
+
+    float sum_squares = 0.0f;
+    for (int i = 0; i < size; i++) {
+        sum_squares += signal[i] * signal[i];
+    }
+
+    return et_fast_sqrt(sum_squares / size);
+}
+
+// 오디오 신호 정규화
+void et_normalize_audio(float* signal, int size, float target_max) {
+    if (!signal || size <= 0 || target_max <= 0.0f) return;
+
+    float peak = et_find_peak(signal, size);
+    if (peak <= 0.0f) return;
+
+    float scale = target_max / peak;
+    for (int i = 0; i < size; i++) {
+        signal[i] *= scale;
+    }
+}
+
+// 오디오 신호의 피크 값 찾기
+float et_find_peak(const float* signal, int size) {
+    if (!signal || size <= 0) return 0.0f;
+
+    float peak = 0.0f;
+    for (int i = 0; i < size; i++) {
+        float abs_val = fabsf(signal[i]);
+        if (abs_val > peak) {
+            peak = abs_val;
+        }
+    }
+
+    return peak;
+}
+
+// 선형 보간
+float et_lerp(float a, float b, float t) {
+    // 범위 제한
+    if (t <= 0.0f) return a;
+    if (t >= 1.0f) return b;
+
+    return a + t * (b - a);
+}
+
+// 코사인 보간
+float et_cosine_interp(float a, float b, float t) {
+    // 범위 제한
+    if (t <= 0.0f) return a;
+    if (t >= 1.0f) return b;
+
+    // 코사인 곡선을 사용한 부드러운 보간
+    float cos_t = (1.0f - et_fast_cos(t * ET_PI)) * 0.5f;
+    return et_lerp(a, b, cos_t);
+}
+
+// 3차 스플라인 보간
+float et_cubic_interp(float p0, float p1, float p2, float p3, float t) {
+    // 범위 제한
+    if (t <= 0.0f) return p1;
+    if (t >= 1.0f) return p2;
+
+    // 3차 스플라인 계수 계산
+    float a0 = p3 - p2 - p0 + p1;
+    float a1 = p0 - p1 - a0;
+    float a2 = p2 - p0;
+    float a3 = p1;
+
+    float t2 = t * t;
+    float t3 = t2 * t;
+
+    return a0 * t3 + a1 * t2 + a2 * t + a3;
+}
+
+// dB를 선형 스케일로 변환
+float et_db_to_linear(float db) {
+    // linear = 10^(db/20)
+    return et_fast_pow(10.0f, db / 20.0f);
+}
+
+// 선형 스케일을 dB로 변환
+float et_linear_to_db(float linear) {
+    if (linear <= 0.0f) return -INFINITY;
+
+    // db = 20 * log10(linear)
+    return 20.0f * et_fast_log10(linear);
 }
