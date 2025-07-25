@@ -186,13 +186,23 @@ int et_disconnect_nodes(ETNode* src, ETNode* dst);
 int et_topological_sort(ETGraph* graph);
 
 /**
- * @brief 그래프를 실행합니다
+ * @brief 그래프를 실행합니다 (순차 또는 병렬 자동 선택)
  * @param graph 실행할 그래프
  * @param inputs 입력 텐서 배열
  * @param outputs 출력 텐서 배열
  * @return 성공시 0, 실패시 음수 에러 코드
  */
 int et_execute_graph(ETGraph* graph, ETTensor** inputs, ETTensor** outputs);
+
+/**
+ * @brief 그래프를 병렬로 실행합니다
+ * @param graph 실행할 그래프
+ * @param inputs 입력 텐서 배열
+ * @param outputs 출력 텐서 배열
+ * @param num_threads 사용할 스레드 수 (0이면 자동 결정)
+ * @return 성공시 0, 실패시 음수 에러 코드
+ */
+int et_execute_graph_parallel_explicit(ETGraph* graph, ETTensor** inputs, ETTensor** outputs, size_t num_threads);
 
 /**
  * @brief 그래프의 특정 노드까지만 실행합니다
