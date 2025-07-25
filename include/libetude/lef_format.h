@@ -261,6 +261,221 @@ typedef enum {
 // 에러 메시지 함수
 const char* lef_get_error_string(LEFErrorCode error);
 
+// ============================================================================
+// 모델 로더 관련 구조체 및 함수들
+// ============================================================================
+
+/**
+ * 로드된 모델 구조체
+ * 메모리에 로드된 LEF 모델의 정보를 포함
+ */
+typedef struct {
+    LEFHeader header;                  // 파일 헤더
+    LEFModelMeta meta;                 // 모델 메타데이터
+    LEFLayerHeader* layer_headers;     // 레이어 헤더 배열
+    LEFLayerIndexEntry* layer_index;   // 레이어 인덱스 배열
+    void** layer_data;                 // 레이어 데이터 포인터 배열
+    size_t num_layers;                 // 레이어 수
+
+    // 메모리 관리
+    void* file_data;                   // 전체 파일 데이터 (메모리 매핑 시)
+    size_t file_size;                  // 파일 크기
+    bool owns_memory;                  // 메모리 소유권 여부
+    bool memory_mapped;                // 메모리 매핑 여부
+
+    // 파일 정보
+    char* file_path;                   // 파일 경로 (복사본)
+    FILE* file_handle;                 // 파일 핸들 (스트리밍 시)
+} LEFModel;
+
+/**
+ * 스트리밍 로더 구조체
+ * 대용량 모델의 점진적 로딩을 위한 구조체
+ */
+typedef struct {
+    FILE* file;                        // 파일 핸들
+    LEFHeader header;                  // 파일 헤더
+    LEFModelMeta meta;                 // 모델 메타데이터
+    LEFLayerIndexEntry* layer_index;   // 레이어 인덱스 배열
+
+    // 스트리밍 상태
+    int current_layer;                 // 현재 로드된 레이어 인덱스
+    bool* layers_loaded;               // 레이어 로드 상태 배열
+    void** layer_cache;                // 레이어 캐시 배열
+    size_t cache_size;                 // 캐시 크기 제한
+    size_t cache_used;                 // 현재 사용된 캐시 크기
+
+    // LRU 캐시 관리
+    int* lru_order;                    // LRU 순서 배열
+    int lru_head;                      // LRU 헤드 인덱스
+
+    // 비동기 로딩 (향후 확장용)
+    bool async_loading;                // 비동기 로딩 활성화 여부
+    void* async_context;               // 비동기 컨텍스트
+} LEFStreamingLoader;
+
+/**
+ * 메모리 매핑 컨텍스트
+ * 플랫폼별 메모리 매핑 구현을 위한 구조체
+ */
+typedef struct {
+    void* mapped_memory;               // 매핑된 메모리 주소
+    size_t mapped_size;                // 매핑된 크기
+    int file_descriptor;               // 파일 디스크립터 (Unix)
+    void* file_mapping;                // 파일 매핑 핸들 (Windows)
+    bool read_only;                    // 읽기 전용 여부
+} LEFMemoryMapping;
+
+// ============================================================================
+// 기본 모델 로딩 함수들
+// ============================================================================
+
+/**
+ * 파일에서 모델 로드
+ * @param path 모델 파일 경로
+ * @return 로드된 모델 포인터 (실패 시 NULL)
+ */
+LEFModel* lef_load_model(const char* path);
+
+/**
+ * 메모리에서 모델 로드
+ * @param data 모델 데이터 포인터
+ * @param size 데이터 크기
+ * @return 로드된 모델 포인터 (실패 시 NULL)
+ */
+LEFModel* lef_load_model_from_memory(const void* data, size_t size);
+
+/**
+ * 모델 언로드 및 메모리 해제
+ * @param model 해제할 모델 포인터
+ */
+void lef_unload_model(LEFModel* model);
+
+/**
+ * 특정 레이어 데이터 가져오기
+ * @param model 모델 포인터
+ * @param layer_id 레이어 ID
+ * @return 레이어 데이터 포인터 (실패 시 NULL)
+ */
+void* lef_get_layer_data(LEFModel* model, uint16_t layer_id);
+
+/**
+ * 레이어 헤더 가져오기
+ * @param model 모델 포인터
+ * @param layer_id 레이어 ID
+ * @return 레이어 헤더 포인터 (실패 시 NULL)
+ */
+const LEFLayerHeader* lef_get_layer_header(LEFModel* model, uint16_t layer_id);
+
+// ============================================================================
+// 메모리 매핑 기반 로더 함수들
+// ============================================================================
+
+/**
+ * 메모리 매핑을 사용하여 모델 로드
+ * @param path 모델 파일 경로
+ * @return 로드된 모델 포인터 (실패 시 NULL)
+ */
+LEFModel* lef_load_model_mmap(const char* path);
+
+/**
+ * 메모리 매핑 생성
+ * @param path 파일 경로
+ * @param read_only 읽기 전용 여부
+ * @return 메모리 매핑 컨텍스트 (실패 시 NULL)
+ */
+LEFMemoryMapping* lef_create_memory_mapping(const char* path, bool read_only);
+
+/**
+ * 메모리 매핑 해제
+ * @param mapping 메모리 매핑 컨텍스트
+ */
+void lef_destroy_memory_mapping(LEFMemoryMapping* mapping);
+
+// ============================================================================
+// 스트리밍 로더 함수들
+// ============================================================================
+
+/**
+ * 스트리밍 로더 생성
+ * @param path 모델 파일 경로
+ * @param cache_size 캐시 크기 제한 (바이트)
+ * @return 스트리밍 로더 포인터 (실패 시 NULL)
+ */
+LEFStreamingLoader* lef_create_streaming_loader(const char* path, size_t cache_size);
+
+/**
+ * 스트리밍 로더 해제
+ * @param loader 스트리밍 로더 포인터
+ */
+void lef_destroy_streaming_loader(LEFStreamingLoader* loader);
+
+/**
+ * 온디맨드 레이어 로딩
+ * @param loader 스트리밍 로더
+ * @param layer_id 로드할 레이어 ID
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_load_layer_on_demand(LEFStreamingLoader* loader, uint16_t layer_id);
+
+/**
+ * 레이어 언로드 (캐시에서 제거)
+ * @param loader 스트리밍 로더
+ * @param layer_id 언로드할 레이어 ID
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_unload_layer(LEFStreamingLoader* loader, uint16_t layer_id);
+
+/**
+ * 스트리밍 로더에서 레이어 데이터 가져오기
+ * @param loader 스트리밍 로더
+ * @param layer_id 레이어 ID
+ * @return 레이어 데이터 포인터 (실패 시 NULL)
+ */
+void* lef_streaming_get_layer_data(LEFStreamingLoader* loader, uint16_t layer_id);
+
+/**
+ * 캐시 상태 정보 가져오기
+ * @param loader 스트리밍 로더
+ * @param loaded_layers 로드된 레이어 수 (출력)
+ * @param cache_usage 캐시 사용량 (출력)
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_get_cache_info(LEFStreamingLoader* loader, int* loaded_layers, size_t* cache_usage);
+
+/**
+ * 캐시 정리 (LRU 기반)
+ * @param loader 스트리밍 로더
+ * @param target_size 목표 캐시 크기
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_cleanup_cache(LEFStreamingLoader* loader, size_t target_size);
+
+// ============================================================================
+// 유틸리티 함수들
+// ============================================================================
+
+/**
+ * 모델 정보 출력
+ * @param model 모델 포인터
+ */
+void lef_print_model_info(const LEFModel* model);
+
+/**
+ * 레이어 정보 출력
+ * @param model 모델 포인터
+ */
+void lef_print_layer_info(const LEFModel* model);
+
+/**
+ * 모델 통계 정보 가져오기
+ * @param model 모델 포인터
+ * @param total_params 총 파라미터 수 (출력)
+ * @param total_size 총 크기 (출력)
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_get_model_stats(const LEFModel* model, size_t* total_params, size_t* total_size);
+
 #ifdef __cplusplus
 }
 #endif
