@@ -155,6 +155,7 @@ create_unity_test(memory_allocator_test "unit/test_memory_allocator.c")
 create_unity_test(hardware_test "unit/test_hardware.c")
 create_unity_test(kernel_registry_test "unit/test_kernel_registry.c")
 create_unity_test(quantization_test "unit/test_quantization.c")
+create_unity_test(graph_test "unit/test_graph.c")
 
 # Unity CTest 통합
 include(CTest)
@@ -167,6 +168,7 @@ add_test(NAME MemoryAllocatorTest COMMAND memory_allocator_test)
 add_test(NAME HardwareTest COMMAND hardware_test)
 add_test(NAME KernelRegistryTest COMMAND kernel_registry_test)
 add_test(NAME QuantizationTest COMMAND quantization_test)
+add_test(NAME GraphTest COMMAND graph_test)
 
 # 테스트 등록 (새로운 독립적인 테스트들)
 if(TARGET test_unity_simple)
@@ -189,6 +191,12 @@ add_test(NAME FastMathMinimalTest COMMAND fast_math_minimal_test)
 set_tests_properties(TensorTest PROPERTIES
     TIMEOUT 60
     LABELS "tensor;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+set_tests_properties(GraphTest PROPERTIES
+    TIMEOUT 60
+    LABELS "graph;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
