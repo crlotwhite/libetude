@@ -248,6 +248,27 @@ int et_register_operator(ETOperatorRegistry* registry, ETOperator* op);
  */
 ETOperator* et_find_operator(ETOperatorRegistry* registry, const char* name);
 
+/**
+ * @brief 기본 연산자들을 레지스트리에 등록합니다
+ * @param registry 대상 레지스트리
+ * @return 성공시 0, 실패시 음수 에러 코드
+ */
+int et_register_basic_operators(ETOperatorRegistry* registry);
+
+/**
+ * @brief 음성 특화 연산자들을 레지스트리에 등록합니다
+ * @param registry 대상 레지스트리
+ * @return 성공시 0, 실패시 음수 에러 코드
+ */
+int et_register_audio_operators(ETOperatorRegistry* registry);
+
+/**
+ * @brief 모든 기본 연산자들을 레지스트리에 등록합니다
+ * @param registry 대상 레지스트리
+ * @return 성공시 0, 실패시 음수 에러 코드
+ */
+int et_register_all_operators(ETOperatorRegistry* registry);
+
 // =============================================================================
 // 유틸리티 함수
 // =============================================================================

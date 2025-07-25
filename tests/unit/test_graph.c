@@ -379,6 +379,154 @@ static void test_graph_optimization() {
     printf("✓ Graph optimization test passed\n");
 }
 
+static void test_basic_operators_registration() {
+    printf("Testing basic operators registration...\n");
+
+    ETOperatorRegistry* registry = et_create_operator_registry(20);
+    assert(registry != NULL);
+
+    // 기본 연산자들 등록
+    int result = et_register_basic_operators(registry);
+    assert(result == ET_SUCCESS);
+    assert(registry->num_operators >= 3); // Linear, Conv1D, Attention
+
+    // 등록된 연산자들 확인
+    ETOperator* linear_op = et_find_operator(registry, "Linear");
+    assert(linear_op != NULL);
+    assert(linear_op->create != NULL);
+    assert(linear_op->forward != NULL);
+    assert(linear_op->destroy != NULL);
+
+    ETOperator* conv1d_op = et_find_operator(registry, "Conv1D");
+    assert(conv1d_op != NULL);
+    assert(conv1d_op->create != NULL);
+    assert(conv1d_op->forward != NULL);
+    assert(conv1d_op->destroy != NULL);
+
+    ETOperator* attention_op = et_find_operator(registry, "Attention");
+    assert(attention_op != NULL);
+    assert(attention_op->create != NULL);
+    assert(attention_op->forward != NULL);
+    assert(attention_op->destroy != NULL);
+
+    et_destroy_operator_registry(registry);
+    printf("✓ Basic operators registration test passed\n");
+}
+
+static void test_audio_operators_registration() {
+    printf("Testing audio operators registration...\n");
+
+    ETOperatorRegistry* registry = et_create_operator_registry(20);
+    assert(registry != NULL);
+
+    // 음성 특화 연산자들 등록
+    int result = et_register_audio_operators(registry);
+    assert(result == ET_SUCCESS);
+    assert(registry->num_operators >= 3); // STFT, MelScale, Vocoder
+
+    // 등록된 연산자들 확인
+    ETOperator* stft_op = et_find_operator(registry, "STFT");
+    assert(stft_op != NULL);
+    assert(stft_op->create != NULL);
+    assert(stft_op->forward != NULL);
+    assert(stft_op->destroy != NULL);
+
+    ETOperator* mel_op = et_find_operator(registry, "MelScale");
+    assert(mel_op != NULL);
+    assert(mel_op->create != NULL);
+    assert(mel_op->forward != NULL);
+    assert(mel_op->destroy != NULL);
+
+    ETOperator* vocoder_op = et_find_operator(registry, "Vocoder");
+    assert(vocoder_op != NULL);
+    assert(vocoder_op->create != NULL);
+    assert(vocoder_op->forward != NULL);
+    assert(vocoder_op->destroy != NULL);
+
+    et_destroy_operator_registry(registry);
+    printf("✓ Audio operators registration test passed\n");
+}
+
+static void test_all_operators_registration() {
+    printf("Testing all operators registration...\n");
+
+    ETOperatorRegistry* registry = et_create_operator_registry(20);
+    assert(registry != NULL);
+
+    // 모든 연산자들 등록
+    int result = et_register_all_operators(registry);
+    assert(result == ET_SUCCESS);
+    assert(registry->num_operators >= 6); // 기본 3개 + 음성 3개
+
+    // 기본 연산자들 확인
+    assert(et_find_operator(registry, "Linear") != NULL);
+    assert(et_find_operator(registry, "Conv1D") != NULL);
+    assert(et_find_operator(registry, "Attention") != NULL);
+
+    // 음성 특화 연산자들 확인
+    assert(et_find_operator(registry, "STFT") != NULL);
+    assert(et_find_operator(registry, "MelScale") != NULL);
+    assert(et_find_operator(registry, "Vocoder") != NULL);
+
+    et_destroy_operator_registry(registry);
+    printf("✓ All operators registration test passed\n");
+}
+
+static void test_operator_node_creation() {
+    printf("Testing operator node creation...\n");
+
+    ETOperatorRegistry* registry = et_create_operator_registry(20);
+    ETMemoryPool* pool = et_create_memory_pool(1024, 32);
+
+    assert(registry != NULL && pool != NULL);
+
+    // 모든 연산자들 등록
+    int result = et_register_all_operators(registry);
+    assert(result == ET_SUCCESS);
+
+    // Linear 연산자로 노드 생성 테스트
+    ETNode* linear_node = et_create_node("linear_test", "Linear", pool);
+    assert(linear_node != NULL);
+
+    ETOperator* linear_op = et_find_operator(registry, "Linear");
+    assert(linear_op != NULL);
+
+    // 연산자 속성 설정 (간단한 테스트용)
+    typedef struct {
+        size_t input_size;
+        size_t output_size;
+        void* weight;
+        void* bias;
+        bool use_bias;
+    } TestLinearAttributes;
+
+    TestLinearAttributes attrs = {
+        .input_size = 128,
+        .output_size = 64,
+        .weight = NULL,
+        .bias = NULL,
+        .use_bias = false
+    };
+
+    // 연산자 생성 함수 호출
+    if (linear_op->create) {
+        linear_op->create(linear_node, &attrs);
+        assert(linear_node->attributes != NULL);
+        assert(linear_node->num_inputs == 1);
+        assert(linear_node->num_outputs == 1);
+    }
+
+    // 정리
+    if (linear_op->destroy) {
+        linear_op->destroy(linear_node);
+    }
+    et_destroy_node(linear_node);
+    et_destroy_operator_registry(registry);
+    et_destroy_memory_pool(pool);
+
+    printf("✓ Operator node creation test passed\n");
+}
+
 // 메인 테스트 함수
 int main() {
     printf("=== LibEtude Graph System Tests ===\n\n");
@@ -392,6 +540,12 @@ int main() {
     test_operator_registry();
     test_graph_execution();
     test_graph_optimization();
+
+    // 새로운 연산자 레지스트리 테스트들
+    test_basic_operators_registration();
+    test_audio_operators_registration();
+    test_all_operators_registration();
+    test_operator_node_creation();
 
     printf("\n=== All Graph System Tests Passed! ===\n");
     return 0;
