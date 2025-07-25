@@ -24,6 +24,19 @@ static int optimize_operator_fusion(ETGraph* graph);
 static int optimize_dead_code_elimination(ETGraph* graph);
 static int optimize_memory_access(ETGraph* graph);
 
+// 연산자 융합 헬퍼 함수들
+static int fuse_linear_relu(ETGraph* graph, ETNode* linear_node, ETNode* relu_node);
+static int fuse_conv1d_relu(ETGraph* graph, ETNode* conv_node, ETNode* relu_node);
+static int fuse_stft_melscale(ETGraph* graph, ETNode* stft_node, ETNode* mel_node);
+
+// 불필요한 연산 제거 헬퍼 함수들
+static void mark_reachable_nodes(ETGraph* graph, ETNode* node, bool* reachable);
+
+// 메모리 접근 최적화 헬퍼 함수들
+static void optimize_inplace_operations(ETGraph* graph);
+static void optimize_memory_reuse(ETGraph* graph);
+static void optimize_tensor_lifetime(ETGraph* graph);
+
 // =============================================================================
 // 연산자 레지스트리 함수
 // =============================================================================
@@ -324,24 +337,130 @@ static bool dfs_cycle_check(ETNode* node, int* visit_state, ETNode** node_map, s
 }
 
 static int optimize_operator_fusion(ETGraph* graph) {
-    // 연산자 융합 최적화 구현
-    // 예: Conv + BatchNorm + ReLU 융합
-    // 현재는 기본 구현만 제공
-    (void)graph; // 미사용 매개변수 경고 방지
+    if (!graph) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    bool fusion_occurred = true;
+    int fusion_count = 0;
+
+    // 융합 가능한 패턴을 찾을 때까지 반복
+    while (fusion_occurred && fusion_count < 10) { // 최대 10회 반복으로 무한루프 방지
+        fusion_occurred = false;
+
+        // 모든 노드에 대해 융합 가능한 패턴 검사
+        for (size_t i = 0; i < graph->num_nodes && !fusion_occurred; i++) {
+            ETNode* node = graph->nodes[i];
+
+            // Linear + ReLU 융합 패턴 검사
+            if (strcmp(node->op_type, "Linear") == 0 && node->num_output_nodes == 1) {
+                ETNode* next_node = node->output_nodes[0];
+
+                if (strcmp(next_node->op_type, "ReLU") == 0 && next_node->num_input_nodes == 1) {
+                    // Linear + ReLU 융합 수행
+                    if (fuse_linear_relu(graph, node, next_node) == ET_SUCCESS) {
+                        fusion_occurred = true;
+                        fusion_count++;
+                        break;
+                    }
+                }
+            }
+
+            // Conv1D + ReLU 융합 패턴 검사
+            if (strcmp(node->op_type, "Conv1D") == 0 && node->num_output_nodes == 1) {
+                ETNode* next_node = node->output_nodes[0];
+
+                if (strcmp(next_node->op_type, "ReLU") == 0 && next_node->num_input_nodes == 1) {
+                    // Conv1D + ReLU 융합 수행
+                    if (fuse_conv1d_relu(graph, node, next_node) == ET_SUCCESS) {
+                        fusion_occurred = true;
+                        fusion_count++;
+                        break;
+                    }
+                }
+            }
+
+            // STFT + MelScale 융합 패턴 검사 (음성 특화)
+            if (strcmp(node->op_type, "STFT") == 0 && node->num_output_nodes == 1) {
+                ETNode* next_node = node->output_nodes[0];
+
+                if (strcmp(next_node->op_type, "MelScale") == 0 && next_node->num_input_nodes == 1) {
+                    // STFT + MelScale 융합 수행
+                    if (fuse_stft_melscale(graph, node, next_node) == ET_SUCCESS) {
+                        fusion_occurred = true;
+                        fusion_count++;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     return ET_SUCCESS;
 }
 
 static int optimize_dead_code_elimination(ETGraph* graph) {
-    // 불필요한 연산 제거 최적화 구현
-    // 출력에 영향을 주지 않는 노드들을 제거
-    (void)graph; // 미사용 매개변수 경고 방지
+    if (!graph) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 노드가 없으면 최적화할 것이 없음
+    if (graph->num_nodes == 0) {
+        return ET_SUCCESS;
+    }
+
+    // 출력 노드들로부터 역방향으로 도달 가능한 노드들을 마킹
+    bool* reachable = (bool*)calloc(graph->num_nodes, sizeof(bool));
+    if (!reachable) {
+        return ET_ERROR_OUT_OF_MEMORY;
+    }
+
+    // 출력 노드들부터 시작하여 역방향 DFS 수행
+    for (size_t i = 0; i < graph->num_output_nodes; i++) {
+        ETNode* output_node = graph->output_nodes[i];
+        mark_reachable_nodes(graph, output_node, reachable);
+    }
+
+    // 도달 불가능한 노드들을 제거할 목록에 추가
+    ETNode** nodes_to_remove = (ETNode**)malloc(graph->num_nodes * sizeof(ETNode*));
+    if (!nodes_to_remove) {
+        free(reachable);
+        return ET_ERROR_OUT_OF_MEMORY;
+    }
+
+    size_t remove_count = 0;
+    for (size_t i = 0; i < graph->num_nodes; i++) {
+        if (!reachable[i]) {
+            nodes_to_remove[remove_count++] = graph->nodes[i];
+        }
+    }
+
+    // 도달 불가능한 노드들 제거
+    for (size_t i = 0; i < remove_count; i++) {
+        et_remove_node(graph, nodes_to_remove[i]);
+        et_destroy_node(nodes_to_remove[i]);
+    }
+
+    free(reachable);
+    free(nodes_to_remove);
+
     return ET_SUCCESS;
 }
 
 static int optimize_memory_access(ETGraph* graph) {
-    // 메모리 접근 최적화 구현
-    // 메모리 지역성을 고려한 노드 재배치 등
-    (void)graph; // 미사용 매개변수 경고 방지
+    if (!graph) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 1. 인플레이스 연산 최적화
+    optimize_inplace_operations(graph);
+
+    // 2. 메모리 재사용 최적화
+    optimize_memory_reuse(graph);
+
+    // 3. 텐서 생명주기 분석 및 최적화
+    optimize_tensor_lifetime(graph);
+
     return ET_SUCCESS;
 }
 
@@ -995,6 +1114,263 @@ int et_register_basic_operators(ETOperatorRegistry* registry) {
     if (result != ET_SUCCESS) return result;
 
     return ET_SUCCESS;
+}
+
+
+
+// =============================================================================
+// 그래프 최적화 헬퍼 함수들
+// =============================================================================
+
+// 연산자 융합 헬퍼 함수들
+static int fuse_linear_relu(ETGraph* graph, ETNode* linear_node, ETNode* relu_node) {
+    if (!graph || !linear_node || !relu_node) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // Linear 노드의 연산자 타입을 "LinearReLU"로 변경
+    free(linear_node->op_type);
+    linear_node->op_type = (char*)malloc(strlen("LinearReLU") + 1);
+    if (!linear_node->op_type) {
+        return ET_ERROR_OUT_OF_MEMORY;
+    }
+    strcpy(linear_node->op_type, "LinearReLU");
+
+    // ReLU 노드의 출력 연결을 Linear 노드로 이전
+    for (size_t i = 0; i < relu_node->num_output_nodes; i++) {
+        ETNode* output_node = relu_node->output_nodes[i];
+
+        // output_node의 입력에서 relu_node를 linear_node로 교체
+        for (size_t j = 0; j < output_node->num_input_nodes; j++) {
+            if (output_node->input_nodes[j] == relu_node) {
+                output_node->input_nodes[j] = linear_node;
+                break;
+            }
+        }
+    }
+
+    // Linear 노드의 출력 연결을 ReLU 노드의 출력으로 교체
+    free(linear_node->output_nodes);
+    linear_node->output_nodes = relu_node->output_nodes;
+    linear_node->num_output_nodes = relu_node->num_output_nodes;
+
+    // ReLU 노드의 출력 연결 정보를 무효화 (이중 해제 방지)
+    relu_node->output_nodes = NULL;
+    relu_node->num_output_nodes = 0;
+
+    // ReLU 노드를 그래프에서 제거
+    et_remove_node(graph, relu_node);
+    et_destroy_node(relu_node);
+
+    return ET_SUCCESS;
+}
+
+static int fuse_conv1d_relu(ETGraph* graph, ETNode* conv_node, ETNode* relu_node) {
+    if (!graph || !conv_node || !relu_node) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // Conv1D 노드의 연산자 타입을 "Conv1DReLU"로 변경
+    free(conv_node->op_type);
+    conv_node->op_type = (char*)malloc(strlen("Conv1DReLU") + 1);
+    if (!conv_node->op_type) {
+        return ET_ERROR_OUT_OF_MEMORY;
+    }
+    strcpy(conv_node->op_type, "Conv1DReLU");
+
+    // ReLU 노드의 출력 연결을 Conv1D 노드로 이전
+    for (size_t i = 0; i < relu_node->num_output_nodes; i++) {
+        ETNode* output_node = relu_node->output_nodes[i];
+
+        // output_node의 입력에서 relu_node를 conv_node로 교체
+        for (size_t j = 0; j < output_node->num_input_nodes; j++) {
+            if (output_node->input_nodes[j] == relu_node) {
+                output_node->input_nodes[j] = conv_node;
+                break;
+            }
+        }
+    }
+
+    // Conv1D 노드의 출력 연결을 ReLU 노드의 출력으로 교체
+    free(conv_node->output_nodes);
+    conv_node->output_nodes = relu_node->output_nodes;
+    conv_node->num_output_nodes = relu_node->num_output_nodes;
+
+    // ReLU 노드의 출력 연결 정보를 무효화
+    relu_node->output_nodes = NULL;
+    relu_node->num_output_nodes = 0;
+
+    // ReLU 노드를 그래프에서 제거
+    et_remove_node(graph, relu_node);
+    et_destroy_node(relu_node);
+
+    return ET_SUCCESS;
+}
+
+static int fuse_stft_melscale(ETGraph* graph, ETNode* stft_node, ETNode* mel_node) {
+    if (!graph || !stft_node || !mel_node) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // STFT 노드의 연산자 타입을 "STFTMelScale"로 변경
+    free(stft_node->op_type);
+    stft_node->op_type = (char*)malloc(strlen("STFTMelScale") + 1);
+    if (!stft_node->op_type) {
+        return ET_ERROR_OUT_OF_MEMORY;
+    }
+    strcpy(stft_node->op_type, "STFTMelScale");
+
+    // MelScale 노드의 속성을 STFT 노드에 병합
+    // 실제 구현에서는 속성 구조체를 병합해야 함
+
+    // MelScale 노드의 출력 연결을 STFT 노드로 이전
+    for (size_t i = 0; i < mel_node->num_output_nodes; i++) {
+        ETNode* output_node = mel_node->output_nodes[i];
+
+        for (size_t j = 0; j < output_node->num_input_nodes; j++) {
+            if (output_node->input_nodes[j] == mel_node) {
+                output_node->input_nodes[j] = stft_node;
+                break;
+            }
+        }
+    }
+
+    // STFT 노드의 출력을 MelScale 출력으로 변경 (magnitude만 사용)
+    if (stft_node->num_outputs > 1) {
+        // phase 출력 제거하고 magnitude만 유지
+        stft_node->num_outputs = 1;
+    }
+
+    free(stft_node->output_nodes);
+    stft_node->output_nodes = mel_node->output_nodes;
+    stft_node->num_output_nodes = mel_node->num_output_nodes;
+
+    mel_node->output_nodes = NULL;
+    mel_node->num_output_nodes = 0;
+
+    // MelScale 노드를 그래프에서 제거
+    et_remove_node(graph, mel_node);
+    et_destroy_node(mel_node);
+
+    return ET_SUCCESS;
+}
+
+// 불필요한 연산 제거 헬퍼 함수들
+static void mark_reachable_nodes(ETGraph* graph, ETNode* node, bool* reachable) {
+    if (!graph || !node || !reachable) return;
+
+    // 노드 인덱스 찾기
+    int node_index = -1;
+    for (size_t i = 0; i < graph->num_nodes; i++) {
+        if (graph->nodes[i] == node) {
+            node_index = (int)i;
+            break;
+        }
+    }
+
+    if (node_index == -1 || reachable[node_index]) {
+        return; // 노드를 찾을 수 없거나 이미 방문함
+    }
+
+    // 현재 노드를 도달 가능으로 마킹
+    reachable[node_index] = true;
+
+    // 입력 노드들을 재귀적으로 마킹
+    for (size_t i = 0; i < node->num_input_nodes; i++) {
+        mark_reachable_nodes(graph, node->input_nodes[i], reachable);
+    }
+}
+
+// 메모리 접근 최적화 헬퍼 함수들
+static void optimize_inplace_operations(ETGraph* graph) {
+    if (!graph) return;
+
+    // 인플레이스 연산이 가능한 노드들을 찾아서 최적화
+    for (size_t i = 0; i < graph->num_nodes; i++) {
+        ETNode* node = graph->nodes[i];
+
+        // ReLU, Sigmoid 등의 요소별 연산은 인플레이스 가능
+        if (strcmp(node->op_type, "ReLU") == 0 ||
+            strcmp(node->op_type, "Sigmoid") == 0 ||
+            strcmp(node->op_type, "Tanh") == 0) {
+
+            // 입력과 출력 텐서가 같은 크기이고, 입력이 다른 곳에서 사용되지 않으면
+            // 인플레이스 연산으로 변경 가능
+            if (node->num_inputs == 1 && node->num_outputs == 1) {
+                ETTensor* input = node->inputs[0];
+                ETTensor* output = node->outputs[0];
+
+                // 입력 텐서가 다른 노드에서 사용되지 않는지 확인
+                bool input_used_elsewhere = false;
+                for (size_t j = 0; j < graph->num_nodes; j++) {
+                    if (i == j) continue;
+
+                    ETNode* other_node = graph->nodes[j];
+                    for (size_t k = 0; k < other_node->num_inputs; k++) {
+                        if (other_node->inputs[k] == input) {
+                            input_used_elsewhere = true;
+                            break;
+                        }
+                    }
+                    if (input_used_elsewhere) break;
+                }
+
+                // 인플레이스 연산으로 변경
+                if (!input_used_elsewhere && input && output) {
+                    // 출력 텐서를 입력 텐서로 교체
+                    node->outputs[0] = input;
+
+                    // 기존 출력 텐서 해제 (필요시)
+                    if (output != input) {
+                        et_destroy_tensor(output);
+                    }
+                }
+            }
+        }
+    }
+}
+
+static void optimize_memory_reuse(ETGraph* graph) {
+    if (!graph) return;
+
+    // 텐서 생명주기 분석을 통한 메모리 재사용 최적화
+    for (size_t i = 0; i < graph->num_nodes; i++) {
+        ETNode* node = graph->nodes[i];
+
+        // 임시 텐서들을 메모리 풀에서 재사용하도록 최적화
+        for (size_t j = 0; j < node->num_outputs; j++) {
+            ETTensor* tensor = node->outputs[j];
+            if (tensor && tensor->pool) {
+                // 텐서가 더 이상 사용되지 않으면 메모리 풀로 반환
+                // 실제 구현에서는 참조 카운팅이나 생명주기 분석 필요
+            }
+        }
+    }
+}
+
+static void optimize_tensor_lifetime(ETGraph* graph) {
+    if (!graph) return;
+
+    // 텐서 생명주기 분석 및 최적화
+    // 1. 각 텐서의 생성 시점과 마지막 사용 시점 분석
+    // 2. 생명주기가 겹치지 않는 텐서들의 메모리 공유
+    // 3. 메모리 할당 순서 최적화
+
+    for (size_t i = 0; i < graph->num_nodes; i++) {
+        ETNode* node = graph->nodes[i];
+
+        // 노드의 실행 순서를 고려하여 텐서 생명주기 최적화
+        if (node->execution_order >= 0) {
+            // 이전 노드들의 출력 텐서 중 더 이상 사용되지 않는 것들을 해제
+            for (size_t j = 0; j < i; j++) {
+                ETNode* prev_node = graph->nodes[j];
+                if (prev_node->execution_order < node->execution_order) {
+                    // 이전 노드의 출력이 현재 노드 이후에 사용되지 않으면 해제 가능
+                    // 실제 구현에서는 더 정교한 분석 필요
+                }
+            }
+        }
+    }
 }
 
 /**

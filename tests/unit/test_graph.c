@@ -379,6 +379,269 @@ static void test_graph_optimization() {
     printf("✓ Graph optimization test passed\n");
 }
 
+static void test_operator_fusion_optimization() {
+    printf("Testing operator fusion optimization...\n");
+
+    ETGraph* graph = et_create_graph(10);
+    ETMemoryPool* pool = et_create_memory_pool(1024, 32);
+
+    assert(graph != NULL && pool != NULL);
+
+    // Linear + ReLU 융합 테스트를 위한 그래프 생성
+    ETNode* input_node = et_create_node("input", "Input", pool);
+    ETNode* linear_node = et_create_node("linear", "Linear", pool);
+    ETNode* relu_node = et_create_node("relu", "ReLU", pool);
+    ETNode* output_node = et_create_node("output", "Output", pool);
+
+    assert(input_node != NULL && linear_node != NULL && relu_node != NULL && output_node != NULL);
+
+    et_add_node(graph, input_node);
+    et_add_node(graph, linear_node);
+    et_add_node(graph, relu_node);
+    et_add_node(graph, output_node);
+
+    // 연결: input -> linear -> relu -> output
+    et_connect_nodes(input_node, linear_node);
+    et_connect_nodes(linear_node, relu_node);
+    et_connect_nodes(relu_node, output_node);
+
+    size_t initial_node_count = graph->num_nodes;
+    assert(initial_node_count == 4);
+
+    // 연산자 융합 최적화 수행
+    int result = et_optimize_graph(graph, ET_OPT_OPERATOR_FUSION);
+    assert(result == ET_SUCCESS);
+
+    // 융합 후 노드 수가 줄어들었는지 확인 (Linear + ReLU가 융합되어 1개 노드 감소)
+    assert(graph->num_nodes == initial_node_count - 1);
+
+    // Linear 노드가 LinearReLU로 변경되었는지 확인
+    ETNode* fused_node = et_find_node_by_name(graph, "linear");
+    assert(fused_node != NULL);
+    assert(strcmp(fused_node->op_type, "LinearReLU") == 0);
+
+    // ReLU 노드가 제거되었는지 확인
+    ETNode* removed_node = et_find_node_by_name(graph, "relu");
+    assert(removed_node == NULL);
+
+    et_destroy_graph(graph);
+    et_destroy_memory_pool(pool);
+    printf("✓ Operator fusion optimization test passed\n");
+}
+
+static void test_dead_code_elimination_optimization() {
+    printf("Testing dead code elimination optimization...\n");
+
+    ETGraph* graph = et_create_graph(10);
+    ETMemoryPool* pool = et_create_memory_pool(1024, 32);
+
+    assert(graph != NULL && pool != NULL);
+
+    // 불필요한 노드가 있는 그래프 생성
+    ETNode* input_node = et_create_node("input", "Input", pool);
+    ETNode* useful_node = et_create_node("useful", "Linear", pool);
+    ETNode* dead_node = et_create_node("dead", "Linear", pool); // 출력에 연결되지 않은 노드
+    ETNode* output_node = et_create_node("output", "Output", pool);
+
+    assert(input_node != NULL && useful_node != NULL && dead_node != NULL && output_node != NULL);
+
+    et_add_node(graph, input_node);
+    et_add_node(graph, useful_node);
+    et_add_node(graph, dead_node);
+    et_add_node(graph, output_node);
+
+    // 연결: input -> useful -> output, input -> dead (dead는 출력에 연결되지 않음)
+    et_connect_nodes(input_node, useful_node);
+    et_connect_nodes(useful_node, output_node);
+    et_connect_nodes(input_node, dead_node); // dead 노드는 출력에 기여하지 않음
+
+    // 출력 노드 설정
+    graph->output_nodes = (ETNode**)malloc(sizeof(ETNode*));
+    graph->output_nodes[0] = output_node;
+    graph->num_output_nodes = 1;
+
+    size_t initial_node_count = graph->num_nodes;
+    assert(initial_node_count == 4);
+
+    // 불필요한 연산 제거 최적화 수행
+    int result = et_optimize_graph(graph, ET_OPT_DEAD_CODE_ELIMINATION);
+    assert(result == ET_SUCCESS);
+
+    // dead 노드가 제거되었는지 확인
+    assert(graph->num_nodes == initial_node_count - 1);
+    ETNode* removed_node = et_find_node_by_name(graph, "dead");
+    assert(removed_node == NULL);
+
+    // 유용한 노드들은 여전히 존재하는지 확인
+    assert(et_find_node_by_name(graph, "input") != NULL);
+    assert(et_find_node_by_name(graph, "useful") != NULL);
+    assert(et_find_node_by_name(graph, "output") != NULL);
+
+    et_destroy_graph(graph);
+    et_destroy_memory_pool(pool);
+    printf("✓ Dead code elimination optimization test passed\n");
+}
+
+static void test_memory_access_optimization() {
+    printf("Testing memory access optimization...\n");
+
+    ETGraph* graph = et_create_graph(10);
+    ETMemoryPool* pool = et_create_memory_pool(1024, 32);
+
+    assert(graph != NULL && pool != NULL);
+
+    // 메모리 최적화 테스트를 위한 그래프 생성
+    ETNode* input_node = et_create_node("input", "Input", pool);
+    ETNode* relu_node = et_create_node("relu", "ReLU", pool);
+    ETNode* output_node = et_create_node("output", "Output", pool);
+
+    assert(input_node != NULL && relu_node != NULL && output_node != NULL);
+
+    et_add_node(graph, input_node);
+    et_add_node(graph, relu_node);
+    et_add_node(graph, output_node);
+
+    et_connect_nodes(input_node, relu_node);
+    et_connect_nodes(relu_node, output_node);
+
+    // 메모리 접근 최적화 수행
+    int result = et_optimize_graph(graph, ET_OPT_MEMORY_OPTIMIZATION);
+    assert(result == ET_SUCCESS);
+
+    // 최적화가 성공적으로 수행되었는지 확인
+    assert(graph->is_optimized == true);
+
+    et_destroy_graph(graph);
+    et_destroy_memory_pool(pool);
+    printf("✓ Memory access optimization test passed\n");
+}
+
+static void test_audio_operator_fusion() {
+    printf("Testing audio operator fusion...\n");
+
+    ETGraph* graph = et_create_graph(10);
+    ETMemoryPool* pool = et_create_memory_pool(1024, 32);
+
+    assert(graph != NULL && pool != NULL);
+
+    // STFT + MelScale 융합 테스트를 위한 그래프 생성
+    ETNode* input_node = et_create_node("input", "Input", pool);
+    ETNode* stft_node = et_create_node("stft", "STFT", pool);
+    ETNode* mel_node = et_create_node("mel", "MelScale", pool);
+    ETNode* output_node = et_create_node("output", "Output", pool);
+
+    assert(input_node != NULL && stft_node != NULL && mel_node != NULL && output_node != NULL);
+
+    et_add_node(graph, input_node);
+    et_add_node(graph, stft_node);
+    et_add_node(graph, mel_node);
+    et_add_node(graph, output_node);
+
+    // 연결: input -> stft -> mel -> output
+    et_connect_nodes(input_node, stft_node);
+    et_connect_nodes(stft_node, mel_node);
+    et_connect_nodes(mel_node, output_node);
+
+    size_t initial_node_count = graph->num_nodes;
+    assert(initial_node_count == 4);
+
+    // 연산자 융합 최적화 수행
+    int result = et_optimize_graph(graph, ET_OPT_OPERATOR_FUSION);
+    assert(result == ET_SUCCESS);
+
+    // 융합 후 노드 수가 줄어들었는지 확인
+    assert(graph->num_nodes == initial_node_count - 1);
+
+    // STFT 노드가 STFTMelScale로 변경되었는지 확인
+    ETNode* fused_node = et_find_node_by_name(graph, "stft");
+    assert(fused_node != NULL);
+    assert(strcmp(fused_node->op_type, "STFTMelScale") == 0);
+
+    // MelScale 노드가 제거되었는지 확인
+    ETNode* removed_node = et_find_node_by_name(graph, "mel");
+    assert(removed_node == NULL);
+
+    et_destroy_graph(graph);
+    et_destroy_memory_pool(pool);
+    printf("✓ Audio operator fusion test passed\n");
+}
+
+static void test_comprehensive_optimization() {
+    printf("Testing comprehensive optimization...\n");
+
+    ETGraph* graph = et_create_graph(20);
+    ETMemoryPool* pool = et_create_memory_pool(2048, 32);
+
+    assert(graph != NULL && pool != NULL);
+
+    // 복합적인 최적화 테스트를 위한 복잡한 그래프 생성
+    ETNode* input_node = et_create_node("input", "Input", pool);
+    ETNode* linear1_node = et_create_node("linear1", "Linear", pool);
+    ETNode* relu1_node = et_create_node("relu1", "ReLU", pool);
+    ETNode* linear2_node = et_create_node("linear2", "Linear", pool);
+    ETNode* relu2_node = et_create_node("relu2", "ReLU", pool);
+    ETNode* dead_node = et_create_node("dead", "Linear", pool); // 불필요한 노드
+    ETNode* output_node = et_create_node("output", "Output", pool);
+
+    assert(input_node != NULL && linear1_node != NULL && relu1_node != NULL);
+    assert(linear2_node != NULL && relu2_node != NULL && dead_node != NULL && output_node != NULL);
+
+    et_add_node(graph, input_node);
+    et_add_node(graph, linear1_node);
+    et_add_node(graph, relu1_node);
+    et_add_node(graph, linear2_node);
+    et_add_node(graph, relu2_node);
+    et_add_node(graph, dead_node);
+    et_add_node(graph, output_node);
+
+    // 연결: input -> linear1 -> relu1 -> linear2 -> relu2 -> output
+    //       input -> dead (불필요한 연결)
+    et_connect_nodes(input_node, linear1_node);
+    et_connect_nodes(linear1_node, relu1_node);
+    et_connect_nodes(relu1_node, linear2_node);
+    et_connect_nodes(linear2_node, relu2_node);
+    et_connect_nodes(relu2_node, output_node);
+    et_connect_nodes(input_node, dead_node); // 불필요한 연결
+
+    // 출력 노드 설정
+    graph->output_nodes = (ETNode**)malloc(sizeof(ETNode*));
+    graph->output_nodes[0] = output_node;
+    graph->num_output_nodes = 1;
+
+    size_t initial_node_count = graph->num_nodes;
+    assert(initial_node_count == 7);
+
+    // 모든 최적화 수행
+    int result = et_optimize_graph(graph, ET_OPT_ALL);
+    assert(result == ET_SUCCESS);
+    assert(graph->is_optimized == true);
+
+    // 최적화 결과 확인:
+    // 1. Linear + ReLU 융합으로 2개 노드 감소
+    // 2. 불필요한 노드 제거로 1개 노드 감소
+    // 총 3개 노드 감소 예상
+    assert(graph->num_nodes <= initial_node_count - 3);
+
+    // 융합된 노드들 확인
+    ETNode* fused1 = et_find_node_by_name(graph, "linear1");
+    if (fused1) {
+        assert(strcmp(fused1->op_type, "LinearReLU") == 0);
+    }
+
+    ETNode* fused2 = et_find_node_by_name(graph, "linear2");
+    if (fused2) {
+        assert(strcmp(fused2->op_type, "LinearReLU") == 0);
+    }
+
+    // 불필요한 노드가 제거되었는지 확인
+    ETNode* removed_dead = et_find_node_by_name(graph, "dead");
+    assert(removed_dead == NULL);
+
+    et_destroy_graph(graph);
+    et_destroy_memory_pool(pool);
+    printf("✓ Comprehensive optimization test passed\n");
+}
+
 static void test_basic_operators_registration() {
     printf("Testing basic operators registration...\n");
 
@@ -540,6 +803,13 @@ int main() {
     test_operator_registry();
     test_graph_execution();
     test_graph_optimization();
+
+    // 그래프 최적화 상세 테스트들
+    test_operator_fusion_optimization();
+    test_dead_code_elimination_optimization();
+    test_memory_access_optimization();
+    test_audio_operator_fusion();
+    test_comprehensive_optimization();
 
     // 새로운 연산자 레지스트리 테스트들
     test_basic_operators_registration();
