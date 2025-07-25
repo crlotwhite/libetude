@@ -272,12 +272,202 @@ void test_null_pointer_safety() {
     lef_init_layer_header(NULL, 0, LEF_LAYER_LINEAR);  // 크래시하지 않으면 성공
 
     TEST_ASSERT(true, "초기화 함수들의 NULL 안전성");
+
+    // 직렬화 함수들의 NULL 안전성
+    TEST_ASSERT(lef_create_serialization_context(NULL) == NULL, "lef_create_serialization_context NULL 안전성");
+    TEST_ASSERT(lef_set_model_info(NULL, "test", "1.0", NULL, NULL) == LEF_ERROR_INVALID_ARGUMENT,
+                "lef_set_model_info NULL 컨텍스트 안전성");
+    TEST_ASSERT(lef_verify_file_integrity(NULL) == LEF_ERROR_INVALID_ARGUMENT,
+                "lef_verify_file_integrity NULL 안전성");
+}
+
+/**
+ * 모델 직렬화 컨텍스트 테스트
+ */
+void test_serialization_context() {
+    printf("\n=== 모델 직렬화 컨텍스트 테스트 ===\n");
+
+    const char* test_filename = "test_model.lef";
+
+    // 컨텍스트 생성
+    LEFSerializationContext* ctx = lef_create_serialization_context(test_filename);
+    TEST_ASSERT(ctx != NULL, "직렬화 컨텍스트 생성");
+
+    if (ctx) {
+        // 기본 설정 확인
+        TEST_ASSERT(ctx->file != NULL, "파일 포인터 초기화");
+        TEST_ASSERT(ctx->num_layers == 0, "레이어 수 초기화");
+        TEST_ASSERT(ctx->layer_capacity == 16, "레이어 용량 초기화");
+        TEST_ASSERT(ctx->compression_enabled == false, "압축 기본값");
+        TEST_ASSERT(ctx->checksum_enabled == true, "체크섬 기본값");
+
+        // 모델 정보 설정
+        int result = lef_set_model_info(ctx, "TestModel", "1.0.0", "TestAuthor", "Test Description");
+        TEST_ASSERT(result == LEF_SUCCESS, "모델 정보 설정");
+
+        // 아키텍처 정보 설정
+        result = lef_set_model_architecture(ctx, 256, 80, 512, 6, 8, 1000);
+        TEST_ASSERT(result == LEF_SUCCESS, "아키텍처 정보 설정");
+
+        // 오디오 설정
+        result = lef_set_audio_config(ctx, 22050, 80, 256, 1024);
+        TEST_ASSERT(result == LEF_SUCCESS, "오디오 설정");
+
+        // 압축 설정
+        result = lef_enable_compression(ctx, 6);
+        TEST_ASSERT(result == LEF_SUCCESS, "압축 활성화");
+        TEST_ASSERT(ctx->compression_enabled == true, "압축 상태 확인");
+
+        result = lef_disable_compression(ctx);
+        TEST_ASSERT(result == LEF_SUCCESS, "압축 비활성화");
+        TEST_ASSERT(ctx->compression_enabled == false, "압축 상태 확인");
+
+        // 양자화 설정
+        result = lef_set_default_quantization(ctx, LEF_QUANT_BF16);
+        TEST_ASSERT(result == LEF_SUCCESS, "양자화 설정");
+        TEST_ASSERT(ctx->meta.default_quantization == LEF_QUANT_BF16, "양자화 타입 확인");
+
+        lef_destroy_serialization_context(ctx);
+    }
+
+    // 파일 정리
+    remove(test_filename);
+}
+
+/**
+ * 레이어 추가 및 저장 테스트
+ */
+void test_layer_serialization() {
+    printf("\n=== 레이어 직렬화 테스트 ===\n");
+
+    const char* test_filename = "test_layers.lef";
+
+    LEFSerializationContext* ctx = lef_create_serialization_context(test_filename);
+    TEST_ASSERT(ctx != NULL, "직렬화 컨텍스트 생성");
+
+    if (ctx) {
+        // 모델 기본 정보 설정
+        lef_set_model_info(ctx, "LayerTest", "1.0.0", "Test", "Layer test model");
+        lef_set_model_architecture(ctx, 256, 80, 512, 2, 8, 1000);
+        lef_set_audio_config(ctx, 22050, 80, 256, 1024);
+
+        // 테스트 레이어 데이터 생성
+        float test_weights1[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f};
+        float test_weights2[] = {6.0f, 7.0f, 8.0f, 9.0f, 10.0f, 11.0f};
+
+        LEFLayerData layer1 = {
+            .layer_id = 1,
+            .layer_kind = LEF_LAYER_LINEAR,
+            .quant_type = LEF_QUANT_NONE,
+            .layer_meta = NULL,
+            .meta_size = 0,
+            .weight_data = test_weights1,
+            .data_size = sizeof(test_weights1),
+            .quant_params = NULL
+        };
+
+        LEFLayerData layer2 = {
+            .layer_id = 2,
+            .layer_kind = LEF_LAYER_ATTENTION,
+            .quant_type = LEF_QUANT_BF16,
+            .layer_meta = NULL,
+            .meta_size = 0,
+            .weight_data = test_weights2,
+            .data_size = sizeof(test_weights2),
+            .quant_params = NULL
+        };
+
+        // 레이어 추가
+        int result = lef_add_layer(ctx, &layer1);
+        TEST_ASSERT(result == LEF_SUCCESS, "첫 번째 레이어 추가");
+        TEST_ASSERT(ctx->num_layers == 1, "레이어 수 확인");
+
+        result = lef_add_layer(ctx, &layer2);
+        TEST_ASSERT(result == LEF_SUCCESS, "두 번째 레이어 추가");
+        TEST_ASSERT(ctx->num_layers == 2, "레이어 수 확인");
+
+        // 레이어 헤더 확인
+        TEST_ASSERT(ctx->layer_headers[0].layer_id == 1, "첫 번째 레이어 ID");
+        TEST_ASSERT(ctx->layer_headers[0].layer_kind == LEF_LAYER_LINEAR, "첫 번째 레이어 타입");
+        TEST_ASSERT(ctx->layer_headers[1].layer_id == 2, "두 번째 레이어 ID");
+        TEST_ASSERT(ctx->layer_headers[1].layer_kind == LEF_LAYER_ATTENTION, "두 번째 레이어 타입");
+
+        // 모델 완료
+        result = lef_finalize_model(ctx);
+        TEST_ASSERT(result == LEF_SUCCESS, "모델 완료");
+
+        lef_destroy_serialization_context(ctx);
+
+        // 파일 무결성 검증
+        result = lef_verify_file_integrity(test_filename);
+        TEST_ASSERT(result == LEF_SUCCESS, "파일 무결성 검증");
+    }
+
+    // 파일 정리
+    remove(test_filename);
+}
+
+/**
+ * 버전 관리 테스트
+ */
+void test_version_management() {
+    printf("\n=== 버전 관리 테스트 ===\n");
+
+    // 현재 호환성 정보 확인
+    LEFVersionCompatibility compat = lef_get_current_compatibility();
+    TEST_ASSERT(compat.min_major == 1, "최소 주 버전");
+    TEST_ASSERT(compat.min_minor == 0, "최소 부 버전");
+    TEST_ASSERT(compat.max_major == 1, "최대 주 버전");
+    TEST_ASSERT(compat.max_minor == 0, "최대 부 버전");
+
+    // 버전 호환성 확인
+    TEST_ASSERT(lef_check_version_compatibility(1, 0, &compat) == true, "현재 버전 호환성");
+    TEST_ASSERT(lef_check_version_compatibility(0, 9, &compat) == false, "이전 버전 비호환성");
+    TEST_ASSERT(lef_check_version_compatibility(2, 0, &compat) == false, "미래 버전 비호환성");
+
+    // 버전 문자열 확인
+    const char* version_str = lef_get_version_string();
+    TEST_ASSERT(version_str != NULL, "버전 문자열 존재");
+    TEST_ASSERT(strcmp(version_str, "1.0") == 0, "버전 문자열 내용");
+}
+
+/**
+ * 에러 처리 테스트
+ */
+void test_error_handling() {
+    printf("\n=== 에러 처리 테스트 ===\n");
+
+    // 에러 메시지 확인
+    TEST_ASSERT(strcmp(lef_get_error_string(LEF_SUCCESS), "성공") == 0, "성공 메시지");
+    TEST_ASSERT(strcmp(lef_get_error_string(LEF_ERROR_INVALID_ARGUMENT), "잘못된 인수") == 0, "잘못된 인수 메시지");
+    TEST_ASSERT(strcmp(lef_get_error_string(LEF_ERROR_FILE_IO), "파일 입출력 오류") == 0, "파일 IO 오류 메시지");
+
+    // 잘못된 인수 처리
+    LEFSerializationContext* ctx = lef_create_serialization_context("test.lef");
+    if (ctx) {
+        // 잘못된 모델 정보
+        int result = lef_set_model_info(ctx, NULL, "1.0", NULL, NULL);
+        TEST_ASSERT(result == LEF_ERROR_INVALID_ARGUMENT, "NULL 모델 이름 에러");
+
+        // 잘못된 아키텍처 정보
+        result = lef_set_model_architecture(ctx, 0, 80, 512, 6, 8, 1000);
+        TEST_ASSERT(result == LEF_ERROR_INVALID_ARGUMENT, "잘못된 입력 차원 에러");
+
+        // 잘못된 오디오 설정
+        result = lef_set_audio_config(ctx, 22050, 80, 2048, 1024);  // hop > win
+        TEST_ASSERT(result == LEF_ERROR_INVALID_ARGUMENT, "잘못된 hop/win 길이 에러");
+
+        lef_destroy_serialization_context(ctx);
+    }
+
+    remove("test.lef");
 }
 
 int main() {
     printf("LibEtude LEF Format 단위 테스트 시작\n");
     printf("=====================================\n");
 
+    // 기본 기능 테스트
     test_lef_header_init_and_validation();
     test_model_meta_init_and_validation();
     test_layer_header_init_and_validation();
@@ -286,6 +476,12 @@ int main() {
     test_struct_sizes_and_packing();
     test_enum_values();
     test_null_pointer_safety();
+
+    // 모델 직렬화 테스트
+    test_serialization_context();
+    test_layer_serialization();
+    test_version_management();
+    test_error_handling();
 
     printf("\n=====================================\n");
     printf("테스트 결과: %d/%d 통과\n", tests_passed, tests_run);

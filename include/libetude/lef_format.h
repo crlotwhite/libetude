@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -162,6 +163,103 @@ uint32_t lef_calculate_model_hash(const LEFModelMeta* meta);
 void lef_init_header(LEFHeader* header);
 void lef_init_model_meta(LEFModelMeta* meta);
 void lef_init_layer_header(LEFLayerHeader* layer_header, uint16_t layer_id, LEFLayerKind kind);
+
+// 모델 직렬화 관련 구조체 및 함수들
+
+/**
+ * 모델 직렬화 컨텍스트
+ * 모델 저장 과정에서 사용되는 상태 정보
+ */
+typedef struct {
+    FILE* file;                        // 출력 파일 포인터
+    LEFHeader header;                  // 파일 헤더
+    LEFModelMeta meta;                 // 모델 메타데이터
+    LEFLayerHeader* layer_headers;     // 레이어 헤더 배열
+    LEFLayerIndexEntry* layer_index;   // 레이어 인덱스 배열
+    size_t num_layers;                 // 레이어 수
+    size_t layer_capacity;             // 레이어 배열 용량
+    size_t current_offset;             // 현재 파일 오프셋
+    bool compression_enabled;          // 압축 사용 여부
+    uint8_t compression_level;         // 압축 레벨 (1-9)
+    bool checksum_enabled;             // 체크섬 검증 사용 여부
+} LEFSerializationContext;
+
+/**
+ * 레이어 데이터 구조체
+ * 레이어의 실제 데이터와 메타정보를 포함
+ */
+typedef struct {
+    uint16_t layer_id;                 // 레이어 ID
+    LEFLayerKind layer_kind;           // 레이어 타입
+    LEFQuantizationType quant_type;    // 양자화 타입
+    void* layer_meta;                  // 레이어별 메타데이터
+    size_t meta_size;                  // 메타데이터 크기
+    void* weight_data;                 // 가중치 데이터
+    size_t data_size;                  // 데이터 크기
+    LEFQuantizationParams* quant_params; // 양자화 파라미터 (필요시)
+} LEFLayerData;
+
+/**
+ * 버전 호환성 정보
+ */
+typedef struct {
+    uint16_t min_major;                // 최소 지원 주 버전
+    uint16_t min_minor;                // 최소 지원 부 버전
+    uint16_t max_major;                // 최대 지원 주 버전
+    uint16_t max_minor;                // 최대 지원 부 버전
+} LEFVersionCompatibility;
+
+// 모델 직렬화 함수들
+LEFSerializationContext* lef_create_serialization_context(const char* filename);
+void lef_destroy_serialization_context(LEFSerializationContext* ctx);
+
+// 모델 메타데이터 설정
+int lef_set_model_info(LEFSerializationContext* ctx, const char* name, const char* version,
+                       const char* author, const char* description);
+int lef_set_model_architecture(LEFSerializationContext* ctx, uint16_t input_dim, uint16_t output_dim,
+                               uint16_t hidden_dim, uint16_t num_layers, uint16_t num_heads, uint16_t vocab_size);
+int lef_set_audio_config(LEFSerializationContext* ctx, uint16_t sample_rate, uint16_t mel_channels,
+                         uint16_t hop_length, uint16_t win_length);
+
+// 레이어 추가 및 데이터 저장
+int lef_add_layer(LEFSerializationContext* ctx, const LEFLayerData* layer_data);
+int lef_write_layer_data(LEFSerializationContext* ctx, uint16_t layer_id, const void* data, size_t size);
+
+// 압축 및 양자화 설정
+int lef_enable_compression(LEFSerializationContext* ctx, uint8_t level);
+int lef_disable_compression(LEFSerializationContext* ctx);
+int lef_set_default_quantization(LEFSerializationContext* ctx, LEFQuantizationType quant_type);
+
+// 모델 저장 완료
+int lef_finalize_model(LEFSerializationContext* ctx);
+
+// 버전 관리 함수들
+bool lef_check_version_compatibility(uint16_t file_major, uint16_t file_minor,
+                                     const LEFVersionCompatibility* compat);
+LEFVersionCompatibility lef_get_current_compatibility();
+const char* lef_get_version_string();
+
+// 체크섬 및 검증 함수들
+int lef_verify_file_integrity(const char* filename);
+int lef_verify_layer_integrity(const LEFLayerHeader* header, const void* data);
+uint32_t lef_calculate_file_checksum(const char* filename);
+
+// 에러 코드 정의
+typedef enum {
+    LEF_SUCCESS = 0,
+    LEF_ERROR_INVALID_ARGUMENT = -1,
+    LEF_ERROR_FILE_IO = -2,
+    LEF_ERROR_OUT_OF_MEMORY = -3,
+    LEF_ERROR_INVALID_FORMAT = -4,
+    LEF_ERROR_COMPRESSION_FAILED = -5,
+    LEF_ERROR_CHECKSUM_MISMATCH = -6,
+    LEF_ERROR_VERSION_INCOMPATIBLE = -7,
+    LEF_ERROR_LAYER_NOT_FOUND = -8,
+    LEF_ERROR_BUFFER_TOO_SMALL = -9
+} LEFErrorCode;
+
+// 에러 메시지 함수
+const char* lef_get_error_string(LEFErrorCode error);
 
 #ifdef __cplusplus
 }

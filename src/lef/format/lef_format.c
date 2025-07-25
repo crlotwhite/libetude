@@ -1,6 +1,8 @@
 #include "libetude/lef_format.h"
 #include <string.h>
 #include <time.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 // CRC32 테이블 (IEEE 802.3 표준)
 static const uint32_t crc32_table[256] = {
@@ -301,4 +303,618 @@ void lef_init_layer_header(LEFLayerHeader* layer_header, uint16_t layer_id, LEFL
     layer_header->compressed_size = 0;
     layer_header->data_offset = 0;
     layer_header->checksum = 0;
+}
+
+// ============================================================================
+// 모델 직렬화 구현
+// ============================================================================
+
+/**
+ * 직렬화 컨텍스트 생성
+ * @param filename 출력 파일명
+ * @return 생성된 컨텍스트 포인터 (실패 시 NULL)
+ */
+LEFSerializationContext* lef_create_serialization_context(const char* filename) {
+    if (!filename) {
+        return NULL;
+    }
+
+    LEFSerializationContext* ctx = (LEFSerializationContext*)malloc(sizeof(LEFSerializationContext));
+    if (!ctx) {
+        return NULL;
+    }
+
+    memset(ctx, 0, sizeof(LEFSerializationContext));
+
+    // 파일 열기
+    ctx->file = fopen(filename, "wb");
+    if (!ctx->file) {
+        free(ctx);
+        return NULL;
+    }
+
+    // 헤더 및 메타데이터 초기화
+    lef_init_header(&ctx->header);
+    lef_init_model_meta(&ctx->meta);
+
+    // 레이어 배열 초기 용량 설정
+    ctx->layer_capacity = 16;
+    ctx->layer_headers = (LEFLayerHeader*)malloc(ctx->layer_capacity * sizeof(LEFLayerHeader));
+    ctx->layer_index = (LEFLayerIndexEntry*)malloc(ctx->layer_capacity * sizeof(LEFLayerIndexEntry));
+
+    if (!ctx->layer_headers || !ctx->layer_index) {
+        lef_destroy_serialization_context(ctx);
+        return NULL;
+    }
+
+    // 기본 설정
+    ctx->num_layers = 0;
+    ctx->current_offset = sizeof(LEFHeader) + sizeof(LEFModelMeta);
+    ctx->compression_enabled = false;
+    ctx->compression_level = 6;  // 기본 압축 레벨
+    ctx->checksum_enabled = true;
+
+    return ctx;
+}
+
+/**
+ * 직렬화 컨텍스트 해제
+ * @param ctx 해제할 컨텍스트
+ */
+void lef_destroy_serialization_context(LEFSerializationContext* ctx) {
+    if (!ctx) {
+        return;
+    }
+
+    if (ctx->file) {
+        fclose(ctx->file);
+    }
+
+    free(ctx->layer_headers);
+    free(ctx->layer_index);
+    free(ctx);
+}
+
+/**
+ * 모델 기본 정보 설정
+ * @param ctx 직렬화 컨텍스트
+ * @param name 모델 이름
+ * @param version 모델 버전
+ * @param author 제작자
+ * @param description 설명
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_set_model_info(LEFSerializationContext* ctx, const char* name, const char* version,
+                       const char* author, const char* description) {
+    if (!ctx || !name || !version) {
+        return LEF_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 문자열 길이 검증
+    if (strlen(name) >= sizeof(ctx->meta.model_name) ||
+        strlen(version) >= sizeof(ctx->meta.model_version)) {
+        return LEF_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (author && strlen(author) >= sizeof(ctx->meta.author)) {
+        return LEF_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (description && strlen(description) >= sizeof(ctx->meta.description)) {
+        return LEF_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 정보 복사
+    strncpy(ctx->meta.model_name, name, sizeof(ctx->meta.model_name) - 1);
+    strncpy(ctx->meta.model_version, version, sizeof(ctx->meta.model_version) - 1);
+
+    if (author) {
+        strncpy(ctx->meta.author, author, sizeof(ctx->meta.author) - 1);
+    }
+
+    if (description) {
+        strncpy(ctx->meta.description, description, sizeof(ctx->meta.description) - 1);
+    }
+
+    return LEF_SUCCESS;
+}
+
+/**
+ * 모델 아키텍처 정보 설정
+ * @param ctx 직렬화 컨텍스트
+ * @param input_dim 입력 차원
+ * @param output_dim 출력 차원
+ * @param hidden_dim 은닉 차원
+ * @param num_layers 레이어 수
+ * @param num_heads 어텐션 헤드 수
+ * @param vocab_size 어휘 크기
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_set_model_architecture(LEFSerializationContext* ctx, uint16_t input_dim, uint16_t output_dim,
+                               uint16_t hidden_dim, uint16_t num_layers, uint16_t num_heads, uint16_t vocab_size) {
+    if (!ctx) {
+        return LEF_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 아키텍처 정보 검증
+    if (input_dim == 0 || output_dim == 0 || hidden_dim == 0 || num_layers == 0) {
+        return LEF_ERROR_INVALID_ARGUMENT;
+    }
+
+    ctx->meta.input_dim = input_dim;
+    ctx->meta.output_dim = output_dim;
+    ctx->meta.hidden_dim = hidden_dim;
+    ctx->meta.num_layers = num_layers;
+    ctx->meta.num_heads = num_heads;
+    ctx->meta.vocab_size = vocab_size;
+
+    return LEF_SUCCESS;
+}
+
+/**
+ * 오디오 설정 정보 설정
+ * @param ctx 직렬화 컨텍스트
+ * @param sample_rate 샘플링 레이트
+ * @param mel_channels Mel 채널 수
+ * @param hop_length Hop 길이
+ * @param win_length 윈도우 길이
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_set_audio_config(LEFSerializationContext* ctx, uint16_t sample_rate, uint16_t mel_channels,
+                         uint16_t hop_length, uint16_t win_length) {
+    if (!ctx) {
+        return LEF_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 오디오 설정 검증
+    if (sample_rate == 0 || mel_channels == 0 || hop_length == 0 || win_length == 0) {
+        return LEF_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (hop_length > win_length) {
+        return LEF_ERROR_INVALID_ARGUMENT;
+    }
+
+    ctx->meta.sample_rate = sample_rate;
+    ctx->meta.mel_channels = mel_channels;
+    ctx->meta.hop_length = hop_length;
+    ctx->meta.win_length = win_length;
+
+    return LEF_SUCCESS;
+}
+
+/**
+ * 레이어 배열 크기 확장
+ * @param ctx 직렬화 컨텍스트
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+static int lef_expand_layer_arrays(LEFSerializationContext* ctx) {
+    size_t new_capacity = ctx->layer_capacity * 2;
+
+    LEFLayerHeader* new_headers = (LEFLayerHeader*)realloc(ctx->layer_headers,
+                                                           new_capacity * sizeof(LEFLayerHeader));
+    if (!new_headers) {
+        return LEF_ERROR_OUT_OF_MEMORY;
+    }
+
+    LEFLayerIndexEntry* new_index = (LEFLayerIndexEntry*)realloc(ctx->layer_index,
+                                                                 new_capacity * sizeof(LEFLayerIndexEntry));
+    if (!new_index) {
+        free(new_headers);
+        return LEF_ERROR_OUT_OF_MEMORY;
+    }
+
+    ctx->layer_headers = new_headers;
+    ctx->layer_index = new_index;
+    ctx->layer_capacity = new_capacity;
+
+    return LEF_SUCCESS;
+}
+
+/**
+ * 레이어 추가
+ * @param ctx 직렬화 컨텍스트
+ * @param layer_data 레이어 데이터
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_add_layer(LEFSerializationContext* ctx, const LEFLayerData* layer_data) {
+    if (!ctx || !layer_data || !layer_data->weight_data || layer_data->data_size == 0) {
+        return LEF_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 배열 크기 확장 필요 시
+    if (ctx->num_layers >= ctx->layer_capacity) {
+        int result = lef_expand_layer_arrays(ctx);
+        if (result != LEF_SUCCESS) {
+            return result;
+        }
+    }
+
+    // 레이어 헤더 설정
+    LEFLayerHeader* header = &ctx->layer_headers[ctx->num_layers];
+    lef_init_layer_header(header, layer_data->layer_id, layer_data->layer_kind);
+
+    header->quantization_type = (uint8_t)layer_data->quant_type;
+    header->meta_size = layer_data->meta_size;
+    header->data_size = layer_data->data_size;
+    header->data_offset = ctx->current_offset;
+
+    // 체크섬 계산
+    if (ctx->checksum_enabled) {
+        header->checksum = lef_calculate_crc32(layer_data->weight_data, layer_data->data_size);
+    }
+
+    // 압축 처리 (현재는 기본 구현, 실제 압축은 추후 구현)
+    if (ctx->compression_enabled) {
+        header->compressed_size = header->data_size;  // 압축 미구현 시 원본 크기
+        ctx->header.flags |= LEF_FLAG_COMPRESSED;
+    }
+
+    // 레이어 인덱스 엔트리 설정
+    LEFLayerIndexEntry* index_entry = &ctx->layer_index[ctx->num_layers];
+    index_entry->layer_id = layer_data->layer_id;
+    index_entry->header_offset = sizeof(LEFHeader) + sizeof(LEFModelMeta) +
+                                 ctx->num_layers * sizeof(LEFLayerHeader);
+    index_entry->data_offset = header->data_offset;
+    index_entry->data_size = header->data_size;
+
+    // 데이터 쓰기
+    if (fseek(ctx->file, header->data_offset, SEEK_SET) != 0) {
+        return LEF_ERROR_FILE_IO;
+    }
+
+    size_t written = fwrite(layer_data->weight_data, 1, layer_data->data_size, ctx->file);
+    if (written != layer_data->data_size) {
+        return LEF_ERROR_FILE_IO;
+    }
+
+    // 메타데이터 쓰기 (있는 경우)
+    if (layer_data->layer_meta && layer_data->meta_size > 0) {
+        written = fwrite(layer_data->layer_meta, 1, layer_data->meta_size, ctx->file);
+        if (written != layer_data->meta_size) {
+            return LEF_ERROR_FILE_IO;
+        }
+    }
+
+    // 오프셋 업데이트
+    ctx->current_offset += header->data_size + header->meta_size;
+    ctx->num_layers++;
+
+    return LEF_SUCCESS;
+}
+
+/**
+ * 압축 활성화
+ * @param ctx 직렬화 컨텍스트
+ * @param level 압축 레벨 (1-9)
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_enable_compression(LEFSerializationContext* ctx, uint8_t level) {
+    if (!ctx) {
+        return LEF_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (level < 1 || level > 9) {
+        return LEF_ERROR_INVALID_ARGUMENT;
+    }
+
+    ctx->compression_enabled = true;
+    ctx->compression_level = level;
+    ctx->header.flags |= LEF_FLAG_COMPRESSED;
+
+    return LEF_SUCCESS;
+}
+
+/**
+ * 압축 비활성화
+ * @param ctx 직렬화 컨텍스트
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_disable_compression(LEFSerializationContext* ctx) {
+    if (!ctx) {
+        return LEF_ERROR_INVALID_ARGUMENT;
+    }
+
+    ctx->compression_enabled = false;
+    ctx->header.flags &= ~LEF_FLAG_COMPRESSED;
+
+    return LEF_SUCCESS;
+}
+
+/**
+ * 기본 양자화 타입 설정
+ * @param ctx 직렬화 컨텍스트
+ * @param quant_type 양자화 타입
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_set_default_quantization(LEFSerializationContext* ctx, LEFQuantizationType quant_type) {
+    if (!ctx) {
+        return LEF_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (quant_type > LEF_QUANT_MIXED) {
+        return LEF_ERROR_INVALID_ARGUMENT;
+    }
+
+    ctx->meta.default_quantization = (uint8_t)quant_type;
+
+    if (quant_type != LEF_QUANT_NONE) {
+        ctx->header.flags |= LEF_FLAG_QUANTIZED;
+    } else {
+        ctx->header.flags &= ~LEF_FLAG_QUANTIZED;
+    }
+
+    return LEF_SUCCESS;
+}
+
+/**
+ * 모델 저장 완료
+ * @param ctx 직렬화 컨텍스트
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_finalize_model(LEFSerializationContext* ctx) {
+    if (!ctx || !ctx->file) {
+        return LEF_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 헤더 정보 업데이트
+    ctx->header.layer_index_offset = sizeof(LEFHeader) + sizeof(LEFModelMeta);
+    ctx->header.layer_data_offset = ctx->header.layer_index_offset +
+                                    ctx->num_layers * sizeof(LEFLayerIndexEntry);
+
+    // 모델 해시 계산
+    ctx->header.model_hash = lef_calculate_model_hash(&ctx->meta);
+
+    // 파일 크기 계산
+    fseek(ctx->file, 0, SEEK_END);
+    ctx->header.file_size = (uint32_t)ftell(ctx->file);
+
+    // 헤더 쓰기
+    fseek(ctx->file, 0, SEEK_SET);
+    if (fwrite(&ctx->header, sizeof(LEFHeader), 1, ctx->file) != 1) {
+        return LEF_ERROR_FILE_IO;
+    }
+
+    // 메타데이터 쓰기
+    if (fwrite(&ctx->meta, sizeof(LEFModelMeta), 1, ctx->file) != 1) {
+        return LEF_ERROR_FILE_IO;
+    }
+
+    // 레이어 인덱스 쓰기
+    if (ctx->num_layers > 0) {
+        if (fwrite(ctx->layer_index, sizeof(LEFLayerIndexEntry), ctx->num_layers, ctx->file) != ctx->num_layers) {
+            return LEF_ERROR_FILE_IO;
+        }
+    }
+
+    // 파일 플러시
+    fflush(ctx->file);
+
+    return LEF_SUCCESS;
+}
+
+// ============================================================================
+// 버전 관리 구현
+// ============================================================================
+
+/**
+ * 버전 호환성 확인
+ * @param file_major 파일의 주 버전
+ * @param file_minor 파일의 부 버전
+ * @param compat 호환성 정보
+ * @return 호환 가능 시 true, 불가능 시 false
+ */
+bool lef_check_version_compatibility(uint16_t file_major, uint16_t file_minor,
+                                     const LEFVersionCompatibility* compat) {
+    if (!compat) {
+        return false;
+    }
+
+    // 주 버전 확인
+    if (file_major < compat->min_major || file_major > compat->max_major) {
+        return false;
+    }
+
+    // 같은 주 버전에서 부 버전 확인
+    if (file_major == compat->min_major && file_minor < compat->min_minor) {
+        return false;
+    }
+
+    if (file_major == compat->max_major && file_minor > compat->max_minor) {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * 현재 라이브러리의 호환성 정보 반환
+ * @return 호환성 정보 구조체
+ */
+LEFVersionCompatibility lef_get_current_compatibility() {
+    LEFVersionCompatibility compat;
+
+    // 현재 버전은 1.0이므로 1.0만 지원
+    compat.min_major = 1;
+    compat.min_minor = 0;
+    compat.max_major = 1;
+    compat.max_minor = 0;
+
+    return compat;
+}
+
+/**
+ * 버전 문자열 반환
+ * @return 버전 문자열
+ */
+const char* lef_get_version_string() {
+    static char version_str[32];
+    snprintf(version_str, sizeof(version_str), "%d.%d", LEF_VERSION_MAJOR, LEF_VERSION_MINOR);
+    return version_str;
+}
+
+// ============================================================================
+// 체크섬 및 검증 구현
+// ============================================================================
+
+/**
+ * 파일 무결성 검증
+ * @param filename 검증할 파일명
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_verify_file_integrity(const char* filename) {
+    if (!filename) {
+        return LEF_ERROR_INVALID_ARGUMENT;
+    }
+
+    FILE* file = fopen(filename, "rb");
+    if (!file) {
+        return LEF_ERROR_FILE_IO;
+    }
+
+    LEFHeader header;
+    if (fread(&header, sizeof(LEFHeader), 1, file) != 1) {
+        fclose(file);
+        return LEF_ERROR_FILE_IO;
+    }
+
+    // 헤더 검증
+    if (!lef_validate_header(&header)) {
+        fclose(file);
+        return LEF_ERROR_INVALID_FORMAT;
+    }
+
+    // 버전 호환성 확인
+    LEFVersionCompatibility compat = lef_get_current_compatibility();
+    if (!lef_check_version_compatibility(header.version_major, header.version_minor, &compat)) {
+        fclose(file);
+        return LEF_ERROR_VERSION_INCOMPATIBLE;
+    }
+
+    // 모델 메타데이터 검증
+    LEFModelMeta meta;
+    if (fread(&meta, sizeof(LEFModelMeta), 1, file) != 1) {
+        fclose(file);
+        return LEF_ERROR_FILE_IO;
+    }
+
+    if (!lef_validate_model_meta(&meta)) {
+        fclose(file);
+        return LEF_ERROR_INVALID_FORMAT;
+    }
+
+    // 모델 해시 검증
+    uint32_t calculated_hash = lef_calculate_model_hash(&meta);
+    if (calculated_hash != header.model_hash) {
+        fclose(file);
+        return LEF_ERROR_CHECKSUM_MISMATCH;
+    }
+
+    fclose(file);
+    return LEF_SUCCESS;
+}
+
+/**
+ * 레이어 무결성 검증
+ * @param header 레이어 헤더
+ * @param data 레이어 데이터
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_verify_layer_integrity(const LEFLayerHeader* header, const void* data) {
+    if (!header || !data) {
+        return LEF_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 레이어 헤더 검증
+    if (!lef_validate_layer_header(header)) {
+        return LEF_ERROR_INVALID_FORMAT;
+    }
+
+    // 체크섬 검증
+    uint32_t calculated_checksum = lef_calculate_crc32(data, header->data_size);
+    if (calculated_checksum != header->checksum) {
+        return LEF_ERROR_CHECKSUM_MISMATCH;
+    }
+
+    return LEF_SUCCESS;
+}
+
+/**
+ * 파일 전체 체크섬 계산
+ * @param filename 파일명
+ * @return 체크섬 값 (실패 시 0)
+ */
+uint32_t lef_calculate_file_checksum(const char* filename) {
+    if (!filename) {
+        return 0;
+    }
+
+    FILE* file = fopen(filename, "rb");
+    if (!file) {
+        return 0;
+    }
+
+    // 파일 크기 확인
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    if (file_size <= 0) {
+        fclose(file);
+        return 0;
+    }
+
+    // 버퍼 할당
+    uint8_t* buffer = (uint8_t*)malloc(file_size);
+    if (!buffer) {
+        fclose(file);
+        return 0;
+    }
+
+    // 파일 읽기
+    size_t read_size = fread(buffer, 1, file_size, file);
+    fclose(file);
+
+    if (read_size != (size_t)file_size) {
+        free(buffer);
+        return 0;
+    }
+
+    // 체크섬 계산
+    uint32_t checksum = lef_calculate_crc32(buffer, file_size);
+    free(buffer);
+
+    return checksum;
+}
+
+/**
+ * 에러 코드에 대한 문자열 반환
+ * @param error 에러 코드
+ * @return 에러 메시지 문자열
+ */
+const char* lef_get_error_string(LEFErrorCode error) {
+    switch (error) {
+        case LEF_SUCCESS:
+            return "성공";
+        case LEF_ERROR_INVALID_ARGUMENT:
+            return "잘못된 인수";
+        case LEF_ERROR_FILE_IO:
+            return "파일 입출력 오류";
+        case LEF_ERROR_OUT_OF_MEMORY:
+            return "메모리 부족";
+        case LEF_ERROR_INVALID_FORMAT:
+            return "잘못된 파일 형식";
+        case LEF_ERROR_COMPRESSION_FAILED:
+            return "압축 실패";
+        case LEF_ERROR_CHECKSUM_MISMATCH:
+            return "체크섬 불일치";
+        case LEF_ERROR_VERSION_INCOMPATIBLE:
+            return "버전 호환성 없음";
+        case LEF_ERROR_LAYER_NOT_FOUND:
+            return "레이어를 찾을 수 없음";
+        case LEF_ERROR_BUFFER_TOO_SMALL:
+            return "버퍼 크기 부족";
+        default:
+            return "알 수 없는 오류";
+    }
 }
