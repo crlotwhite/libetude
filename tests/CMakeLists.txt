@@ -158,6 +158,7 @@ create_unity_test(quantization_test "unit/test_quantization.c")
 create_unity_test(graph_test "unit/test_graph.c")
 create_unity_test(lef_format_test "unit/test_lef_format.c")
 create_unity_test(model_loader_test "unit/test_model_loader.c")
+create_unity_test(compression_test "unit/test_compression.c")
 
 # Unity CTest 통합
 include(CTest)
@@ -173,6 +174,7 @@ add_test(NAME QuantizationTest COMMAND quantization_test)
 add_test(NAME GraphTest COMMAND graph_test)
 add_test(NAME LEFFormatTest COMMAND lef_format_test)
 add_test(NAME ModelLoaderTest COMMAND model_loader_test)
+add_test(NAME CompressionTest COMMAND compression_test)
 
 # 테스트 등록 (새로운 독립적인 테스트들)
 if(TARGET test_unity_simple)
@@ -213,6 +215,12 @@ set_tests_properties(LEFFormatTest PROPERTIES
 set_tests_properties(ModelLoaderTest PROPERTIES
     TIMEOUT 60
     LABELS "lef;loader;model;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+set_tests_properties(CompressionTest PROPERTIES
+    TIMEOUT 120
+    LABELS "compression;lef;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 

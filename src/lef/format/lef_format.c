@@ -1,4 +1,5 @@
 #include "libetude/lef_format.h"
+#include "libetude/compression.h"
 #include <string.h>
 #include <time.h>
 #include <stdio.h>
@@ -544,10 +545,55 @@ int lef_add_layer(LEFSerializationContext* ctx, const LEFLayerData* layer_data) 
         header->checksum = lef_calculate_crc32(layer_data->weight_data, layer_data->data_size);
     }
 
-    // 압축 처리 (현재는 기본 구현, 실제 압축은 추후 구현)
+    // 압축 처리
     if (ctx->compression_enabled) {
-        header->compressed_size = header->data_size;  // 압축 미구현 시 원본 크기
-        ctx->header.flags |= LEF_FLAG_COMPRESSED;
+        // 레이어별 최적 압축 전략 선택
+        LayerCompressionStrategy strategy = select_optimal_compression_strategy(
+            header->layer_kind, header->data_size, header->quantization_type);
+
+        // 압축 버퍼 할당
+        size_t max_compressed_size = compression_estimate_size(strategy.algorithm,
+                                                             header->data_size, strategy.level);
+        void* compressed_buffer = malloc(max_compressed_size);
+        if (!compressed_buffer) {
+            return LEF_ERROR_OUT_OF_MEMORY;
+        }
+
+        // 압축 수행
+        size_t compressed_size;
+        CompressionStats stats;
+        int compress_result = apply_layer_compression(layer_data->weight_data, header->data_size,
+                                                    &strategy, compressed_buffer, max_compressed_size,
+                                                    &compressed_size, &stats);
+
+        if (compress_result == COMPRESSION_SUCCESS && compressed_size < header->data_size) {
+            // 압축이 효과적인 경우에만 사용
+            header->compressed_size = compressed_size;
+
+            // 압축된 데이터로 교체하여 저장
+            if (fseek(ctx->file, header->data_offset, SEEK_SET) != 0) {
+                free(compressed_buffer);
+                return LEF_ERROR_FILE_IO;
+            }
+
+            size_t written = fwrite(compressed_buffer, 1, compressed_size, ctx->file);
+            if (written != compressed_size) {
+                free(compressed_buffer);
+                return LEF_ERROR_FILE_IO;
+            }
+
+            // 압축 정보를 헤더에 저장
+            ctx->header.flags |= LEF_FLAG_COMPRESSED;
+
+            // 압축된 크기로 오프셋 업데이트
+            ctx->current_offset = header->data_offset + compressed_size;
+        } else {
+            // 압축이 효과적이지 않으면 원본 사용
+            header->compressed_size = 0;  // 압축 안됨 표시
+            free(compressed_buffer);
+        }
+
+        free(compressed_buffer);
     }
 
     // 레이어 인덱스 엔트리 설정

@@ -35,6 +35,8 @@ set(LIBETUDE_CORE_SOURCES
     lef/format/lef_format.c
     lef/loader/model_loader.c
     lef/extensions/extension_loader.c
+    lef/compression/compression.c
+    lef/compression/voice_compression.c
 
     # 런타임 시스템
     runtime/scheduler/task_scheduler.c
