@@ -157,6 +157,7 @@ create_unity_test(kernel_registry_test "unit/test_kernel_registry.c")
 create_unity_test(quantization_test "unit/test_quantization.c")
 create_unity_test(graph_test "unit/test_graph.c")
 create_unity_test(lef_format_test "unit/test_lef_format.c")
+create_unity_test(lefx_format_test "unit/test_lefx_format.c")
 create_unity_test(model_loader_test "unit/test_model_loader.c")
 create_unity_test(compression_test "unit/test_compression.c")
 
@@ -173,6 +174,7 @@ add_test(NAME KernelRegistryTest COMMAND kernel_registry_test)
 add_test(NAME QuantizationTest COMMAND quantization_test)
 add_test(NAME GraphTest COMMAND graph_test)
 add_test(NAME LEFFormatTest COMMAND lef_format_test)
+add_test(NAME LEFXFormatTest COMMAND lefx_format_test)
 add_test(NAME ModelLoaderTest COMMAND model_loader_test)
 add_test(NAME CompressionTest COMMAND compression_test)
 
@@ -209,6 +211,12 @@ set_tests_properties(GraphTest PROPERTIES
 set_tests_properties(LEFFormatTest PROPERTIES
     TIMEOUT 60
     LABELS "lef;format;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+set_tests_properties(LEFXFormatTest PROPERTIES
+    TIMEOUT 60
+    LABELS "lefx;format;extension;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 

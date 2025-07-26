@@ -13,9 +13,16 @@ extern "C" {
 // LEF 매직 넘버 ('LEED' in little-endian)
 #define LEF_MAGIC 0x4445454C
 
+// LEFX 매직 넘버 ('LEEX' in little-endian) - 확장 모델용
+#define LEFX_MAGIC 0x5845454C
+
 // LEF 버전 정보
 #define LEF_VERSION_MAJOR 1
 #define LEF_VERSION_MINOR 0
+
+// LEFX 버전 정보
+#define LEFX_VERSION_MAJOR 1
+#define LEFX_VERSION_MINOR 0
 
 // LEF 플래그 정의
 #define LEF_FLAG_COMPRESSED     (1 << 0)  // 압축 사용
@@ -24,6 +31,16 @@ extern "C" {
 #define LEF_FLAG_STREAMING      (1 << 3)  // 스트리밍 로딩 지원
 #define LEF_FLAG_ENCRYPTED      (1 << 4)  // 암호화 사용
 #define LEF_FLAG_DIFFERENTIAL   (1 << 5)  // 차분 모델
+
+// LEFX 확장 플래그 정의
+#define LEFX_FLAG_SPEAKER_EXT   (1 << 0)  // 화자 확장
+#define LEFX_FLAG_LANGUAGE_EXT  (1 << 1)  // 언어 확장
+#define LEFX_FLAG_EFFECT_EXT    (1 << 2)  // 효과 확장
+#define LEFX_FLAG_VOICE_EXT     (1 << 3)  // 음성 특성 확장
+#define LEFX_FLAG_PLUGIN_EXT    (1 << 4)  // 플러그인 확장
+#define LEFX_FLAG_CONDITIONAL   (1 << 5)  // 조건부 활성화
+#define LEFX_FLAG_DIFFERENTIAL  (1 << 6)  // 차분 확장
+#define LEFX_FLAG_COMPRESSED    (1 << 7)  // 압축된 확장
 
 // 양자화 타입 정의
 typedef enum {
@@ -46,6 +63,18 @@ typedef enum {
     LEF_LAYER_VOCODER = 6,       // 보코더 레이어
     LEF_LAYER_CUSTOM = 255       // 사용자 정의 레이어
 } LEFLayerKind;
+
+// LEFX 확장 타입 정의
+typedef enum {
+    LEFX_EXT_SPEAKER = 0,        // 화자 확장
+    LEFX_EXT_LANGUAGE = 1,       // 언어 확장
+    LEFX_EXT_VOICE_EFFECT = 2,   // 음성 효과 확장
+    LEFX_EXT_AUDIO_EFFECT = 3,   // 오디오 효과 확장
+    LEFX_EXT_STYLE = 4,          // 스타일 확장
+    LEFX_EXT_EMOTION = 5,        // 감정 확장
+    LEFX_EXT_PLUGIN = 6,         // 플러그인 확장
+    LEFX_EXT_CUSTOM = 255        // 사용자 정의 확장
+} LEFXExtensionType;
 
 /**
  * LEF 파일 헤더 구조체
@@ -150,10 +179,166 @@ typedef struct {
     uint8_t reserved[2];               // 예약 공간
 } __attribute__((packed)) LEFQuantizationParams;
 
+// ============================================================================
+// LEFX (확장 모델) 포맷 구조체들
+// ============================================================================
+
+/**
+ * LEFX 확장 모델 헤더 구조체
+ * 확장 모델 파일의 시작 부분에 위치하며 확장 정보를 포함
+ */
+typedef struct {
+    uint32_t magic;                    // LEFX 매직 넘버 ('LEEX')
+    uint16_t version_major;            // 확장 포맷 주 버전
+    uint16_t version_minor;            // 확장 포맷 부 버전
+    uint32_t extension_flags;          // 확장 타입 플래그
+    uint32_t file_size;                // 확장 파일 크기
+
+    // 기본 모델 참조 정보
+    uint32_t base_model_hash;          // 기본 모델 해시 (호환성 검증)
+    char base_model_version[16];       // 기본 모델 버전
+    char base_model_name[32];          // 기본 모델 이름
+    uint32_t required_base_size;       // 필요한 기본 모델 크기
+
+    // 확장 메타데이터
+    uint32_t extension_type;           // 확장 타입 (LEFXExtensionType)
+    uint16_t extension_id;             // 확장 고유 식별자
+    char extension_name[32];           // 확장 이름
+    char extension_author[32];         // 확장 제작자
+    char extension_version[16];        // 확장 버전
+
+    // 확장 데이터 오프셋
+    uint32_t meta_offset;              // 확장 메타데이터 오프셋
+    uint32_t dependency_offset;        // 의존성 정보 오프셋
+    uint32_t layer_index_offset;       // 확장 레이어 인덱스 오프셋
+    uint32_t layer_data_offset;        // 확장 레이어 데이터 오프셋
+    uint32_t plugin_data_offset;       // 플러그인 데이터 오프셋
+
+    uint64_t timestamp;                // 생성 타임스탬프
+    uint8_t reserved[24];              // 향후 확장용 예약 공간
+} __attribute__((packed)) LEFXHeader;
+
+/**
+ * LEFX 확장 메타데이터 구조체
+ * 확장 모델의 상세 정보를 포함
+ */
+typedef struct {
+    // 확장 기본 정보
+    char description[128];             // 확장 설명
+    char license[64];                  // 라이선스 정보
+    char website[128];                 // 웹사이트 URL
+    char contact[64];                  // 연락처 정보
+
+    // 호환성 정보
+    uint16_t min_base_version_major;   // 최소 기본 모델 주 버전
+    uint16_t min_base_version_minor;   // 최소 기본 모델 부 버전
+    uint16_t max_base_version_major;   // 최대 기본 모델 주 버전
+    uint16_t max_base_version_minor;   // 최대 기본 모델 부 버전
+
+    // 확장 특성 정보
+    uint32_t extension_capabilities;   // 확장 기능 플래그
+    uint16_t priority;                 // 확장 우선순위 (0-65535)
+    uint16_t num_layers;               // 확장 레이어 수
+    uint32_t total_params;             // 총 파라미터 수
+    uint32_t memory_requirement;       // 메모리 요구사항 (KB)
+
+    // 음성 특화 정보 (화자/언어 확장용)
+    uint8_t gender;                    // 성별 (0=남성, 1=여성, 2=중성, 255=해당없음)
+    uint8_t age_range;                 // 연령대 (0=어린이, 1=청년, 2=중년, 3=노년, 255=해당없음)
+    uint8_t language_code[4];          // ISO 639-1 언어 코드 (예: "ko", "en")
+    uint8_t accent_code[4];            // 억양 코드 (예: "KR", "US")
+
+    // 품질 및 성능 정보
+    float quality_score;               // 품질 점수 (0.0-1.0)
+    float performance_impact;          // 성능 영향도 (0.0-1.0, 높을수록 무거움)
+    uint32_t inference_time_ms;        // 예상 추론 시간 (밀리초)
+    uint32_t loading_time_ms;          // 예상 로딩 시간 (밀리초)
+
+    uint8_t reserved[32];              // 향후 확장용 예약 공간
+} __attribute__((packed)) LEFXExtensionMeta;
+
+/**
+ * LEFX 확장 레이어 구조체
+ * 확장 모델의 개별 레이어 정보
+ */
+typedef struct {
+    uint16_t extension_layer_id;       // 확장 레이어 고유 ID
+    uint16_t base_layer_id;            // 연결될 기본 모델 레이어 ID (차분 모델용)
+    uint8_t layer_kind;                // 레이어 타입 (LEFLayerKind)
+    uint8_t quantization_type;         // 양자화 타입
+    uint8_t blend_mode;                // 블렌딩 모드 (0=교체, 1=덧셈, 2=곱셈, 3=보간)
+    uint8_t activation_condition;      // 활성화 조건 (0=항상, 1=조건부)
+
+    // 레이어 데이터 정보
+    uint32_t meta_size;                // 레이어 메타데이터 크기
+    uint32_t data_size;                // 실제 데이터 크기
+    uint32_t compressed_size;          // 압축된 크기 (압축 시)
+    uint32_t data_offset;              // 데이터 시작 오프셋
+    uint32_t checksum;                 // 데이터 체크섬
+
+    // 차분 모델 정보
+    float similarity_threshold;        // 유사도 임계값 (차분 모델용)
+    float blend_weight;                // 블렌딩 가중치 (0.0-1.0)
+    uint16_t dependency_count;         // 의존성 레이어 수
+    uint16_t reserved_flags;           // 예약된 플래그
+
+    uint8_t reserved[8];               // 향후 확장용 예약 공간
+} __attribute__((packed)) LEFXLayerHeader;
+
+/**
+ * LEFX 의존성 정보 구조체
+ * 확장 간의 의존성 관계를 정의
+ */
+typedef struct {
+    uint16_t dependency_id;            // 의존하는 확장 ID
+    char dependency_name[32];          // 의존하는 확장 이름
+    char min_version[16];              // 최소 요구 버전
+    char max_version[16];              // 최대 지원 버전
+    uint8_t dependency_type;           // 의존성 타입 (0=필수, 1=선택, 2=충돌)
+    uint8_t load_order;                // 로드 순서 (0=먼저, 1=나중에, 2=상관없음)
+    uint8_t reserved[6];               // 예약 공간
+} __attribute__((packed)) LEFXDependency;
+
+/**
+ * LEFX 조건부 활성화 규칙 구조체
+ * 컨텍스트에 따른 확장 활성화 조건을 정의
+ */
+typedef struct {
+    uint16_t rule_id;                  // 규칙 고유 ID
+    uint8_t condition_type;            // 조건 타입 (0=텍스트, 1=화자, 2=언어, 3=시간, 4=사용자정의)
+    uint8_t operator_type;             // 연산자 (0=같음, 1=포함, 2=범위, 3=정규식)
+    char condition_value[64];          // 조건 값
+    float activation_weight;           // 활성화 가중치 (0.0-1.0)
+    uint8_t priority;                  // 규칙 우선순위
+    uint8_t reserved[7];               // 예약 공간
+} __attribute__((packed)) LEFXActivationRule;
+
+/**
+ * LEFX 플러그인 데이터 구조체
+ * 플러그인 확장을 위한 추가 데이터
+ */
+typedef struct {
+    char plugin_interface[32];         // 플러그인 인터페이스 이름
+    char plugin_version[16];           // 플러그인 버전
+    uint32_t plugin_data_size;         // 플러그인 데이터 크기
+    uint32_t plugin_data_offset;       // 플러그인 데이터 오프셋
+    uint32_t init_function_offset;     // 초기화 함수 오프셋
+    uint32_t process_function_offset;  // 처리 함수 오프셋
+    uint32_t cleanup_function_offset;  // 정리 함수 오프셋
+    uint8_t reserved[16];              // 예약 공간
+} __attribute__((packed)) LEFXPluginData;
+
 // 헤더 검증 함수들
 bool lef_validate_header(const LEFHeader* header);
 bool lef_validate_model_meta(const LEFModelMeta* meta);
 bool lef_validate_layer_header(const LEFLayerHeader* layer_header);
+
+// LEFX 헤더 검증 함수들
+bool lefx_validate_header(const LEFXHeader* header);
+bool lefx_validate_extension_meta(const LEFXExtensionMeta* meta);
+bool lefx_validate_layer_header(const LEFXLayerHeader* layer_header);
+bool lefx_validate_dependency(const LEFXDependency* dependency);
+bool lefx_validate_activation_rule(const LEFXActivationRule* rule);
 
 // 체크섬 계산 함수들
 uint32_t lef_calculate_crc32(const void* data, size_t size);
@@ -163,6 +348,14 @@ uint32_t lef_calculate_model_hash(const LEFModelMeta* meta);
 void lef_init_header(LEFHeader* header);
 void lef_init_model_meta(LEFModelMeta* meta);
 void lef_init_layer_header(LEFLayerHeader* layer_header, uint16_t layer_id, LEFLayerKind kind);
+
+// LEFX 헤더 초기화 함수들
+void lefx_init_header(LEFXHeader* header);
+void lefx_init_extension_meta(LEFXExtensionMeta* meta);
+void lefx_init_layer_header(LEFXLayerHeader* layer_header, uint16_t extension_layer_id, uint16_t base_layer_id);
+void lefx_init_dependency(LEFXDependency* dependency);
+void lefx_init_activation_rule(LEFXActivationRule* rule);
+void lefx_init_plugin_data(LEFXPluginData* plugin_data);
 
 // 모델 직렬화 관련 구조체 및 함수들
 
@@ -287,6 +480,43 @@ typedef struct {
     char* file_path;                   // 파일 경로 (복사본)
     FILE* file_handle;                 // 파일 핸들 (스트리밍 시)
 } LEFModel;
+
+/**
+ * 로드된 LEFX 확장 모델 구조체
+ * 메모리에 로드된 LEFX 확장 모델의 정보를 포함
+ */
+typedef struct {
+    LEFXHeader header;                 // LEFX 파일 헤더
+    LEFXExtensionMeta meta;            // 확장 메타데이터
+    LEFXLayerHeader* layer_headers;    // 확장 레이어 헤더 배열
+    LEFXDependency* dependencies;      // 의존성 정보 배열
+    LEFXActivationRule* activation_rules; // 활성화 규칙 배열
+    LEFXPluginData* plugin_data;       // 플러그인 데이터 (필요시)
+    void** layer_data;                 // 확장 레이어 데이터 포인터 배열
+
+    size_t num_layers;                 // 확장 레이어 수
+    size_t num_dependencies;           // 의존성 수
+    size_t num_activation_rules;       // 활성화 규칙 수
+
+    // 기본 모델 참조
+    LEFModel* base_model;              // 기본 모델 포인터 (연결 시)
+    bool base_model_owned;             // 기본 모델 소유권 여부
+
+    // 메모리 관리
+    void* file_data;                   // 전체 파일 데이터
+    size_t file_size;                  // 파일 크기
+    bool owns_memory;                  // 메모리 소유권 여부
+    bool memory_mapped;                // 메모리 매핑 여부
+
+    // 파일 정보
+    char* file_path;                   // 파일 경로 (복사본)
+    FILE* file_handle;                 // 파일 핸들 (스트리밍 시)
+
+    // 런타임 상태
+    bool is_active;                    // 확장 활성화 상태
+    float current_weight;              // 현재 블렌딩 가중치
+    void* runtime_context;             // 런타임 컨텍스트 (플러그인용)
+} LEFXModel;
 
 /**
  * 스트리밍 로더 구조체
@@ -475,6 +705,242 @@ void lef_print_layer_info(const LEFModel* model);
  * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
  */
 int lef_get_model_stats(const LEFModel* model, size_t* total_params, size_t* total_size);
+
+// ============================================================================
+// LEFX (확장 모델) 관련 함수들
+// ============================================================================
+
+/**
+ * LEFX 확장 모델 로드
+ * @param path 확장 모델 파일 경로
+ * @return 로드된 확장 모델 포인터 (실패 시 NULL)
+ */
+LEFXModel* lefx_load_extension(const char* path);
+
+/**
+ * 메모리에서 LEFX 확장 모델 로드
+ * @param data 확장 모델 데이터 포인터
+ * @param size 데이터 크기
+ * @return 로드된 확장 모델 포인터 (실패 시 NULL)
+ */
+LEFXModel* lefx_load_extension_from_memory(const void* data, size_t size);
+
+/**
+ * LEFX 확장 모델 언로드 및 메모리 해제
+ * @param extension 해제할 확장 모델 포인터
+ */
+void lefx_unload_extension(LEFXModel* extension);
+
+/**
+ * 기본 모델과 확장 모델 호환성 검증
+ * @param base_model 기본 모델 포인터
+ * @param extension 확장 모델 포인터
+ * @return 호환 시 true, 비호환 시 false
+ */
+bool lefx_check_compatibility(const LEFModel* base_model, const LEFXModel* extension);
+
+/**
+ * 확장 모델을 기본 모델에 적용
+ * @param base_model 기본 모델 포인터
+ * @param extension 확장 모델 포인터
+ * @param blend_weight 블렌딩 가중치 (0.0-1.0)
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_apply_extension(LEFModel* base_model, LEFXModel* extension, float blend_weight);
+
+/**
+ * 확장 모델 비활성화
+ * @param base_model 기본 모델 포인터
+ * @param extension 확장 모델 포인터
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_deactivate_extension(LEFModel* base_model, LEFXModel* extension);
+
+/**
+ * 확장 레이어 데이터 가져오기
+ * @param extension 확장 모델 포인터
+ * @param layer_id 확장 레이어 ID
+ * @return 레이어 데이터 포인터 (실패 시 NULL)
+ */
+void* lefx_get_layer_data(LEFXModel* extension, uint16_t layer_id);
+
+/**
+ * 확장 레이어 헤더 가져오기
+ * @param extension 확장 모델 포인터
+ * @param layer_id 확장 레이어 ID
+ * @return 레이어 헤더 포인터 (실패 시 NULL)
+ */
+const LEFXLayerHeader* lefx_get_layer_header(LEFXModel* extension, uint16_t layer_id);
+
+/**
+ * 의존성 검증
+ * @param extension 확장 모델 포인터
+ * @param available_extensions 사용 가능한 확장 모델 배열
+ * @param num_available 사용 가능한 확장 수
+ * @return 의존성 만족 시 true, 불만족 시 false
+ */
+bool lefx_check_dependencies(const LEFXModel* extension,
+                            const LEFXModel** available_extensions,
+                            size_t num_available);
+
+/**
+ * 조건부 활성화 평가
+ * @param extension 확장 모델 포인터
+ * @param context_data 컨텍스트 데이터
+ * @param context_size 컨텍스트 크기
+ * @return 활성화 가중치 (0.0-1.0)
+ */
+float lefx_evaluate_activation_conditions(const LEFXModel* extension,
+                                         const void* context_data,
+                                         size_t context_size);
+
+/**
+ * 확장 모델 정보 출력
+ * @param extension 확장 모델 포인터
+ */
+void lefx_print_extension_info(const LEFXModel* extension);
+
+/**
+ * 확장 모델 통계 정보 가져오기
+ * @param extension 확장 모델 포인터
+ * @param total_params 총 파라미터 수 (출력)
+ * @param total_size 총 크기 (출력)
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_get_extension_stats(const LEFXModel* extension, size_t* total_params, size_t* total_size);
+
+// ============================================================================
+// LEFX 직렬화 관련 구조체 및 함수들
+// ============================================================================
+
+/**
+ * LEFX 확장 모델 직렬화 컨텍스트
+ * 확장 모델 저장 과정에서 사용되는 상태 정보
+ */
+typedef struct {
+    FILE* file;                        // 출력 파일 포인터
+    LEFXHeader header;                 // LEFX 파일 헤더
+    LEFXExtensionMeta meta;            // 확장 메타데이터
+    LEFXLayerHeader* layer_headers;    // 확장 레이어 헤더 배열
+    LEFXDependency* dependencies;      // 의존성 정보 배열
+    LEFXActivationRule* activation_rules; // 활성화 규칙 배열
+    LEFXPluginData* plugin_data;       // 플러그인 데이터
+
+    size_t num_layers;                 // 레이어 수
+    size_t layer_capacity;             // 레이어 배열 용량
+    size_t num_dependencies;           // 의존성 수
+    size_t dependency_capacity;        // 의존성 배열 용량
+    size_t num_activation_rules;       // 활성화 규칙 수
+    size_t activation_rule_capacity;   // 활성화 규칙 배열 용량
+
+    size_t current_offset;             // 현재 파일 오프셋
+    bool compression_enabled;          // 압축 사용 여부
+    uint8_t compression_level;         // 압축 레벨 (1-9)
+    bool checksum_enabled;             // 체크섬 검증 사용 여부
+} LEFXSerializationContext;
+
+/**
+ * LEFX 확장 레이어 데이터 구조체
+ * 확장 레이어의 실제 데이터와 메타정보를 포함
+ */
+typedef struct {
+    uint16_t extension_layer_id;       // 확장 레이어 ID
+    uint16_t base_layer_id;            // 기본 레이어 ID (차분 모델용)
+    LEFLayerKind layer_kind;           // 레이어 타입
+    LEFQuantizationType quant_type;    // 양자화 타입
+    uint8_t blend_mode;                // 블렌딩 모드
+    uint8_t activation_condition;      // 활성화 조건
+
+    void* layer_meta;                  // 레이어별 메타데이터
+    size_t meta_size;                  // 메타데이터 크기
+    void* weight_data;                 // 가중치 데이터
+    size_t data_size;                  // 데이터 크기
+    LEFQuantizationParams* quant_params; // 양자화 파라미터 (필요시)
+
+    float similarity_threshold;        // 유사도 임계값
+    float blend_weight;                // 블렌딩 가중치
+    uint16_t* dependency_layers;       // 의존성 레이어 ID 배열
+    size_t dependency_count;           // 의존성 레이어 수
+} LEFXLayerData;
+
+/**
+ * LEFX 확장 모델 직렬화 컨텍스트 생성
+ * @param filename 출력 파일명
+ * @param base_model_hash 기본 모델 해시
+ * @param extension_type 확장 타입
+ * @return 직렬화 컨텍스트 포인터 (실패 시 NULL)
+ */
+LEFXSerializationContext* lefx_create_serialization_context(const char* filename,
+                                                           uint32_t base_model_hash,
+                                                           LEFXExtensionType extension_type);
+
+/**
+ * LEFX 직렬화 컨텍스트 해제
+ * @param ctx 직렬화 컨텍스트 포인터
+ */
+void lefx_destroy_serialization_context(LEFXSerializationContext* ctx);
+
+/**
+ * 확장 모델 기본 정보 설정
+ * @param ctx 직렬화 컨텍스트
+ * @param name 확장 이름
+ * @param version 확장 버전
+ * @param author 제작자
+ * @param description 설명
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_set_extension_info(LEFXSerializationContext* ctx, const char* name, const char* version,
+                           const char* author, const char* description);
+
+/**
+ * 기본 모델 참조 정보 설정
+ * @param ctx 직렬화 컨텍스트
+ * @param base_model_name 기본 모델 이름
+ * @param base_model_version 기본 모델 버전
+ * @param required_base_size 필요한 기본 모델 크기
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_set_base_model_info(LEFXSerializationContext* ctx, const char* base_model_name,
+                            const char* base_model_version, uint32_t required_base_size);
+
+/**
+ * 확장 레이어 추가
+ * @param ctx 직렬화 컨텍스트
+ * @param layer_data 확장 레이어 데이터
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_add_extension_layer(LEFXSerializationContext* ctx, const LEFXLayerData* layer_data);
+
+/**
+ * 의존성 정보 추가
+ * @param ctx 직렬화 컨텍스트
+ * @param dependency 의존성 정보
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_add_dependency(LEFXSerializationContext* ctx, const LEFXDependency* dependency);
+
+/**
+ * 활성화 규칙 추가
+ * @param ctx 직렬화 컨텍스트
+ * @param rule 활성화 규칙
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_add_activation_rule(LEFXSerializationContext* ctx, const LEFXActivationRule* rule);
+
+/**
+ * 플러그인 데이터 설정
+ * @param ctx 직렬화 컨텍스트
+ * @param plugin_data 플러그인 데이터
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_set_plugin_data(LEFXSerializationContext* ctx, const LEFXPluginData* plugin_data);
+
+/**
+ * 확장 모델 저장 완료
+ * @param ctx 직렬화 컨텍스트
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_finalize_extension(LEFXSerializationContext* ctx);
 
 #ifdef __cplusplus
 }

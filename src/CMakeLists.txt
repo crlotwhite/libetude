@@ -33,6 +33,7 @@ set(LIBETUDE_CORE_SOURCES
 
     # LEF 포맷
     lef/format/lef_format.c
+    lef/format/lefx_format.c
     lef/loader/model_loader.c
     lef/extensions/extension_loader.c
     lef/compression/compression.c
