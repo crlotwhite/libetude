@@ -1168,6 +1168,338 @@ int lefx_set_plugin_data(LEFXSerializationContext* ctx, const LEFXPluginData* pl
 int lefx_finalize_extension(LEFXSerializationContext* ctx);
 
 // ============================================================================
+// 조건부 확장 활성화 시스템 구조체 및 함수들
+// ============================================================================
+
+/**
+ * 컨텍스트 데이터 타입 정의
+ */
+typedef enum {
+    LEFX_CONTEXT_TEXT = 0,             // 텍스트 컨텍스트
+    LEFX_CONTEXT_SPEAKER = 1,          // 화자 컨텍스트
+    LEFX_CONTEXT_LANGUAGE = 2,         // 언어 컨텍스트
+    LEFX_CONTEXT_TIME = 3,             // 시간 컨텍스트
+    LEFX_CONTEXT_EMOTION = 4,          // 감정 컨텍스트
+    LEFX_CONTEXT_STYLE = 5,            // 스타일 컨텍스트
+    LEFX_CONTEXT_CUSTOM = 255          // 사용자 정의 컨텍스트
+} LEFXContextType;
+
+/**
+ * 조건부 활성화 컨텍스트 구조체
+ * 확장 활성화 결정에 사용되는 컨텍스트 정보
+ */
+typedef struct {
+    // 텍스트 컨텍스트
+    const char* input_text;            // 입력 텍스트
+    size_t text_length;                // 텍스트 길이
+    const char* language_hint;         // 언어 힌트 (예: "ko", "en")
+
+    // 화자 컨텍스트
+    uint16_t speaker_id;               // 화자 ID
+    uint8_t gender;                    // 성별 (0=남성, 1=여성, 2=중성)
+    uint8_t age_range;                 // 연령대
+    float pitch_preference;            // 피치 선호도 (-1.0 ~ 1.0)
+
+    // 감정/스타일 컨텍스트
+    uint8_t emotion_type;              // 감정 타입 (0=중성, 1=기쁨, 2=슬픔, 3=분노 등)
+    float emotion_intensity;           // 감정 강도 (0.0 ~ 1.0)
+    uint8_t speaking_style;            // 말하기 스타일 (0=일반, 1=뉴스, 2=대화 등)
+    float speaking_speed;              // 말하기 속도 (0.5 ~ 2.0, 1.0=기본)
+
+    // 시간 컨텍스트
+    uint64_t timestamp;                // 현재 타임스탬프
+    uint8_t time_of_day;               // 시간대 (0=새벽, 1=오전, 2=오후, 3=저녁, 4=밤)
+
+    // 사용자 정의 컨텍스트
+    void* custom_data;                 // 사용자 정의 데이터
+    size_t custom_data_size;           // 사용자 정의 데이터 크기
+
+    // 런타임 정보
+    float quality_preference;          // 품질 선호도 (0.0=속도 우선, 1.0=품질 우선)
+    float performance_budget;          // 성능 예산 (0.0 ~ 1.0)
+    bool realtime_mode;                // 실시간 모드 여부
+} LEFXActivationContext;
+
+/**
+ * 확장 활성화 결과 구조체
+ * 조건부 활성화 평가 결과를 포함
+ */
+typedef struct {
+    bool should_activate;              // 활성화 여부
+    float activation_weight;           // 활성화 가중치 (0.0 ~ 1.0)
+    float blend_weight;                // 블렌딩 가중치 (0.0 ~ 1.0)
+    uint16_t matched_rule_id;          // 매칭된 규칙 ID
+    float confidence_score;            // 신뢰도 점수 (0.0 ~ 1.0)
+    const char* activation_reason;     // 활성화 이유 (디버깅용)
+} LEFXActivationResult;
+
+/**
+ * 블렌딩 모드 정의
+ */
+typedef enum {
+    LEFX_BLEND_REPLACE = 0,            // 교체 (기본 레이어를 확장 레이어로 교체)
+    LEFX_BLEND_ADD = 1,                // 덧셈 (기본 + 확장)
+    LEFX_BLEND_MULTIPLY = 2,           // 곱셈 (기본 * 확장)
+    LEFX_BLEND_INTERPOLATE = 3,        // 보간 (기본 * (1-w) + 확장 * w)
+    LEFX_BLEND_WEIGHTED_SUM = 4,       // 가중합 (기본 * w1 + 확장 * w2)
+    LEFX_BLEND_CUSTOM = 255            // 사용자 정의 블렌딩
+} LEFXBlendMode;
+
+/**
+ * 실시간 전환 상태 구조체
+ * 확장 모델의 실시간 전환을 위한 상태 정보
+ */
+typedef struct {
+    bool is_transitioning;             // 전환 중 여부
+    float transition_progress;         // 전환 진행률 (0.0 ~ 1.0)
+    float transition_duration;         // 전환 지속 시간 (초)
+    uint64_t transition_start_time;    // 전환 시작 시간
+
+    // 전환 전/후 상태
+    float prev_weight;                 // 이전 가중치
+    float target_weight;               // 목표 가중치
+    LEFXBlendMode prev_blend_mode;     // 이전 블렌딩 모드
+    LEFXBlendMode target_blend_mode;   // 목표 블렌딩 모드
+
+    // 전환 곡선 설정
+    uint8_t transition_curve;          // 전환 곡선 (0=선형, 1=ease-in, 2=ease-out, 3=ease-in-out)
+    float smoothing_factor;            // 스무딩 팩터 (0.0 ~ 1.0)
+} LEFXTransitionState;
+
+/**
+ * 확장 활성화 매니저 구조체
+ * 여러 확장 모델의 조건부 활성화를 관리
+ */
+typedef struct {
+    LEFXModel** extensions;            // 확장 모델 배열
+    size_t num_extensions;             // 확장 모델 수
+    size_t extensions_capacity;        // 확장 배열 용량
+
+    LEFXActivationResult* activation_results; // 활성화 결과 배열
+    LEFXTransitionState* transition_states;   // 전환 상태 배열
+
+    // 전역 설정
+    float global_quality_threshold;    // 전역 품질 임계값
+    float global_performance_budget;   // 전역 성능 예산
+    bool enable_smooth_transitions;    // 부드러운 전환 활성화
+    float default_transition_duration; // 기본 전환 지속 시간
+
+    // 캐시 및 최적화
+    LEFXActivationContext* cached_context; // 캐시된 컨텍스트
+    uint64_t cache_timestamp;          // 캐시 타임스탬프
+    bool cache_valid;                  // 캐시 유효성
+
+    // 통계 정보
+    size_t total_activations;          // 총 활성화 횟수
+    size_t total_transitions;          // 총 전환 횟수
+    float avg_activation_time;         // 평균 활성화 시간
+} LEFXActivationManager;
+
+// ============================================================================
+// 조건부 확장 활성화 시스템 함수들
+// ============================================================================
+
+/**
+ * 활성화 컨텍스트 초기화
+ * @param context 초기화할 컨텍스트 포인터
+ */
+void lefx_init_activation_context(LEFXActivationContext* context);
+
+/**
+ * 활성화 매니저 생성
+ * @param initial_capacity 초기 확장 배열 용량
+ * @return 활성화 매니저 포인터 (실패 시 NULL)
+ */
+LEFXActivationManager* lefx_create_activation_manager(size_t initial_capacity);
+
+/**
+ * 활성화 매니저 해제
+ * @param manager 활성화 매니저 포인터
+ */
+void lefx_destroy_activation_manager(LEFXActivationManager* manager);
+
+/**
+ * 확장 모델을 활성화 매니저에 등록
+ * @param manager 활성화 매니저
+ * @param extension 등록할 확장 모델
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_register_extension(LEFXActivationManager* manager, LEFXModel* extension);
+
+/**
+ * 확장 모델을 활성화 매니저에서 제거
+ * @param manager 활성화 매니저
+ * @param extension 제거할 확장 모델
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_unregister_extension(LEFXActivationManager* manager, LEFXModel* extension);
+
+/**
+ * 단일 확장 모델의 조건부 활성화 평가
+ * @param extension 확장 모델
+ * @param context 활성화 컨텍스트
+ * @param result 활성화 결과 (출력)
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_evaluate_single_extension(const LEFXModel* extension,
+                                  const LEFXActivationContext* context,
+                                  LEFXActivationResult* result);
+
+/**
+ * 모든 등록된 확장 모델의 조건부 활성화 평가
+ * @param manager 활성화 매니저
+ * @param context 활성화 컨텍스트
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_evaluate_all_extensions(LEFXActivationManager* manager,
+                                const LEFXActivationContext* context);
+
+/**
+ * 활성화 규칙 매칭 검사
+ * @param rule 활성화 규칙
+ * @param context 활성화 컨텍스트
+ * @param match_score 매칭 점수 (출력, 0.0 ~ 1.0)
+ * @return 매칭 시 true, 비매칭 시 false
+ */
+bool lefx_match_activation_rule(const LEFXActivationRule* rule,
+                               const LEFXActivationContext* context,
+                               float* match_score);
+
+/**
+ * 텍스트 조건 매칭
+ * @param rule_value 규칙 값
+ * @param context_text 컨텍스트 텍스트
+ * @param operator_type 연산자 타입
+ * @return 매칭 점수 (0.0 ~ 1.0)
+ */
+float lefx_match_text_condition(const char* rule_value,
+                               const char* context_text,
+                               uint8_t operator_type);
+
+/**
+ * 화자 조건 매칭
+ * @param rule_value 규칙 값
+ * @param context 활성화 컨텍스트
+ * @param operator_type 연산자 타입
+ * @return 매칭 점수 (0.0 ~ 1.0)
+ */
+float lefx_match_speaker_condition(const char* rule_value,
+                                  const LEFXActivationContext* context,
+                                  uint8_t operator_type);
+
+/**
+ * 언어 조건 매칭
+ * @param rule_value 규칙 값
+ * @param context 활성화 컨텍스트
+ * @param operator_type 연산자 타입
+ * @return 매칭 점수 (0.0 ~ 1.0)
+ */
+float lefx_match_language_condition(const char* rule_value,
+                                   const LEFXActivationContext* context,
+                                   uint8_t operator_type);
+
+/**
+ * 시간 조건 매칭
+ * @param rule_value 규칙 값
+ * @param context 활성화 컨텍스트
+ * @param operator_type 연산자 타입
+ * @return 매칭 점수 (0.0 ~ 1.0)
+ */
+float lefx_match_time_condition(const char* rule_value,
+                               const LEFXActivationContext* context,
+                               uint8_t operator_type);
+
+/**
+ * 사용자 정의 조건 매칭
+ * @param rule_value 규칙 값
+ * @param context 활성화 컨텍스트
+ * @param operator_type 연산자 타입
+ * @return 매칭 점수 (0.0 ~ 1.0)
+ */
+float lefx_match_custom_condition(const char* rule_value,
+                                 const LEFXActivationContext* context,
+                                 uint8_t operator_type);
+
+/**
+ * 레이어 블렌딩 수행
+ * @param base_data 기본 레이어 데이터
+ * @param extension_data 확장 레이어 데이터
+ * @param output_data 출력 데이터
+ * @param data_size 데이터 크기
+ * @param blend_mode 블렌딩 모드
+ * @param blend_weight 블렌딩 가중치
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_blend_layer_data(const void* base_data,
+                         const void* extension_data,
+                         void* output_data,
+                         size_t data_size,
+                         LEFXBlendMode blend_mode,
+                         float blend_weight);
+
+/**
+ * 실시간 전환 시작
+ * @param manager 활성화 매니저
+ * @param extension_index 확장 인덱스
+ * @param target_weight 목표 가중치
+ * @param transition_duration 전환 지속 시간 (초)
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_start_transition(LEFXActivationManager* manager,
+                         size_t extension_index,
+                         float target_weight,
+                         float transition_duration);
+
+/**
+ * 실시간 전환 업데이트
+ * @param manager 활성화 매니저
+ * @param current_time 현재 시간 (밀리초)
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_update_transitions(LEFXActivationManager* manager, uint64_t current_time);
+
+/**
+ * 전환 곡선 계산
+ * @param progress 진행률 (0.0 ~ 1.0)
+ * @param curve_type 곡선 타입
+ * @return 조정된 진행률 (0.0 ~ 1.0)
+ */
+float lefx_calculate_transition_curve(float progress, uint8_t curve_type);
+
+/**
+ * 활성화 결과 최적화 (성능 예산 고려)
+ * @param manager 활성화 매니저
+ * @param performance_budget 성능 예산 (0.0 ~ 1.0)
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_optimize_activations(LEFXActivationManager* manager, float performance_budget);
+
+/**
+ * 활성화 캐시 무효화
+ * @param manager 활성화 매니저
+ */
+void lefx_invalidate_cache(LEFXActivationManager* manager);
+
+/**
+ * 활성화 통계 정보 가져오기
+ * @param manager 활성화 매니저
+ * @param active_extensions 활성화된 확장 수 (출력)
+ * @param total_weight 총 활성화 가중치 (출력)
+ * @param performance_impact 성능 영향도 (출력)
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_get_activation_stats(const LEFXActivationManager* manager,
+                             size_t* active_extensions,
+                             float* total_weight,
+                             float* performance_impact);
+
+/**
+ * 활성화 정보 출력 (디버깅용)
+ * @param manager 활성화 매니저
+ */
+void lefx_print_activation_info(const LEFXActivationManager* manager);
+
+// ============================================================================
 // 내부 헬퍼 함수들 (구현에서만 사용)
 // ============================================================================
 

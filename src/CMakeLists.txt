@@ -36,6 +36,7 @@ set(LIBETUDE_CORE_SOURCES
     lef/format/lefx_format.c
     lef/loader/model_loader.c
     lef/extensions/extension_loader.c
+    lef/extensions/conditional_activation.c
     lef/compression/compression.c
     lef/compression/voice_compression.c
 

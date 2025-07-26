@@ -162,6 +162,7 @@ create_unity_test(model_loader_test "unit/test_model_loader.c")
 create_unity_test(compression_test "unit/test_compression.c")
 create_unity_test(diff_model_test "unit/test_diff_model.c")
 create_unity_test(lefx_loader_test "unit/test_lefx_loader.c")
+create_unity_test(conditional_activation_test "unit/test_conditional_activation.c")
 
 # Unity CTest 통합
 include(CTest)
@@ -181,6 +182,7 @@ add_test(NAME ModelLoaderTest COMMAND model_loader_test)
 add_test(NAME CompressionTest COMMAND compression_test)
 add_test(NAME DiffModelTest COMMAND diff_model_test)
 add_test(NAME LEFXLoaderTest COMMAND lefx_loader_test)
+add_test(NAME ConditionalActivationTest COMMAND conditional_activation_test)
 
 # 테스트 등록 (새로운 독립적인 테스트들)
 if(TARGET test_unity_simple)
@@ -245,6 +247,12 @@ set_tests_properties(DiffModelTest PROPERTIES
 set_tests_properties(LEFXLoaderTest PROPERTIES
     TIMEOUT 120
     LABELS "lefx;loader;extension;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+set_tests_properties(ConditionalActivationTest PROPERTIES
+    TIMEOUT 120
+    LABELS "conditional;activation;lefx;extension;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
