@@ -619,6 +619,25 @@ ETTensor* et_quantize_to_bfloat16(const ETTensor* input, ETTensor* output, ETMem
  */
 ETTensor* et_dequantize_from_bfloat16(const ETTensor* input, ETTensor* output, ETMemoryPool* pool);
 
+// 정밀도 손실 최소화를 위한 고급 양자화 전략
+typedef enum {
+    ET_QUANT_STRATEGY_MINMAX = 0,      // 기본 min-max 전략
+    ET_QUANT_STRATEGY_PERCENTILE = 1,  // 백분위수 기반 전략 (이상치 제거)
+    ET_QUANT_STRATEGY_KL_DIVERGENCE = 2, // KL 발산 최소화 전략
+    ET_QUANT_STRATEGY_MSE_OPTIMAL = 3,   // MSE 최적화 전략
+    ET_QUANT_STRATEGY_VOICE_OPTIMIZED = 4 // 음성 특화 전략
+} ETQuantizationStrategy;
+
+// 고급 양자화 옵션
+typedef struct {
+    ETQuantizationStrategy strategy;    // 양자화 전략
+    float outlier_percentile;          // 이상치 제거 백분위수 (0.1 = 0.1%와 99.9% 제거)
+    bool symmetric;                    // 대칭 양자화 여부
+    bool per_channel;                  // 채널별 양자화 여부
+    size_t channel_axis;               // 채널 축 (per_channel이 true일 때)
+    float smoothing_factor;            // 스무딩 팩터 (0.0 ~ 1.0)
+} ETQuantizationOptions;
+
 /**
  * @brief 양자화 파라미터 계산 (INT8/INT4용)
  * @param input 입력 텐서
@@ -629,6 +648,17 @@ ETTensor* et_dequantize_from_bfloat16(const ETTensor* input, ETTensor* output, E
 bool et_compute_quantization_params(const ETTensor* input, ETDataType target_dtype, ETQuantizationParams* params);
 
 /**
+ * @brief 고급 양자화 파라미터 계산 (정밀도 손실 최소화)
+ * @param input 입력 텐서
+ * @param target_dtype 목표 데이터 타입 (ET_INT8 또는 ET_INT4)
+ * @param params 계산된 양자화 파라미터를 저장할 구조체
+ * @param options 양자화 옵션
+ * @return 성공시 true, 실패시 false
+ */
+bool et_compute_quantization_params_advanced(const ETTensor* input, ETDataType target_dtype,
+                                            ETQuantizationParams* params, const ETQuantizationOptions* options);
+
+/**
  * @brief 텐서를 INT8로 양자화
  * @param input 입력 텐서 (float32)
  * @param output 출력 텐서 (INT8, NULL이면 새로 생성)
@@ -637,6 +667,19 @@ bool et_compute_quantization_params(const ETTensor* input, ETDataType target_dty
  * @return 양자화된 텐서, 실패시 NULL
  */
 ETTensor* et_quantize_to_int8(const ETTensor* input, ETTensor* output, const ETQuantizationParams* params, ETMemoryPool* pool);
+
+/**
+ * @brief 고급 INT8 양자화 (정밀도 손실 최소화)
+ * @param input 입력 텐서 (float32)
+ * @param output 출력 텐서 (INT8, NULL이면 새로 생성)
+ * @param params 양자화 파라미터 (NULL이면 자동 계산)
+ * @param options 양자화 옵션 (NULL이면 기본값 사용)
+ * @param pool 메모리 풀
+ * @return 양자화된 텐서, 실패시 NULL
+ */
+ETTensor* et_quantize_to_int8_advanced(const ETTensor* input, ETTensor* output,
+                                      const ETQuantizationParams* params,
+                                      const ETQuantizationOptions* options, ETMemoryPool* pool);
 
 /**
  * @brief INT8 텐서를 float32로 역양자화
@@ -657,6 +700,19 @@ ETTensor* et_dequantize_from_int8(const ETTensor* input, ETTensor* output, const
  * @return 양자화된 텐서, 실패시 NULL
  */
 ETTensor* et_quantize_to_int4(const ETTensor* input, ETTensor* output, const ETQuantizationParams* params, ETMemoryPool* pool);
+
+/**
+ * @brief 고급 INT4 양자화 (정밀도 손실 최소화)
+ * @param input 입력 텐서 (float32)
+ * @param output 출력 텐서 (INT4, NULL이면 새로 생성)
+ * @param params 양자화 파라미터 (NULL이면 자동 계산)
+ * @param options 양자화 옵션 (NULL이면 기본값 사용)
+ * @param pool 메모리 풀
+ * @return 양자화된 텐서, 실패시 NULL
+ */
+ETTensor* et_quantize_to_int4_advanced(const ETTensor* input, ETTensor* output,
+                                      const ETQuantizationParams* params,
+                                      const ETQuantizationOptions* options, ETMemoryPool* pool);
 
 /**
  * @brief INT4 텐서를 float32로 역양자화

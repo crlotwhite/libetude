@@ -10,6 +10,7 @@
 #include <string.h>
 #include <math.h>
 #include <assert.h>
+#include <float.h>
 #include "libetude/tensor.h"
 #include "libetude/memory.h"
 #include "libetude/simd_kernels.h"
@@ -558,6 +559,272 @@ static int test_simd_bfloat16_vector_ops() {
     return 1;
 }
 
+// 고급 양자화 전략 테스트
+static int test_advanced_quantization_strategies() {
+    printf("\n=== 고급 양자화 전략 테스트 ===\n");
+
+    // 메모리 풀 생성
+    ETMemoryPool* pool = et_create_memory_pool(1024 * 1024, 32);
+    TEST_ASSERT(pool != NULL, "메모리 풀 생성");
+
+    // 테스트 텐서 생성 (음성 신호 시뮬레이션)
+    size_t shape[] = {1000};
+    ETTensor* input = et_create_tensor(pool, ET_FLOAT32, 1, shape);
+    TEST_ASSERT(input != NULL, "입력 텐서 생성");
+
+    float* input_data = (float*)input->data;
+
+    // 음성 신호 시뮬레이션: 정규분포 + 일부 이상치
+    for (size_t i = 0; i < 1000; i++) {
+        if (i < 950) {
+            // 정상 범위 (-1.0 ~ 1.0)
+            input_data[i] = ((float)rand() / RAND_MAX - 0.5f) * 2.0f;
+        } else {
+            // 이상치 (-10.0 ~ 10.0)
+            input_data[i] = ((float)rand() / RAND_MAX - 0.5f) * 20.0f;
+        }
+    }
+
+    // 1. 기본 Min-Max 전략
+    ETQuantizationOptions minmax_options = {
+        .strategy = ET_QUANT_STRATEGY_MINMAX,
+        .outlier_percentile = 0.0f,
+        .symmetric = false,
+        .per_channel = false,
+        .channel_axis = 0,
+        .smoothing_factor = 0.0f
+    };
+
+    ETTensor* minmax_quantized = et_quantize_to_int8_advanced(input, NULL, NULL, &minmax_options, pool);
+    TEST_ASSERT(minmax_quantized != NULL, "Min-Max 전략 양자화");
+
+    // 2. 백분위수 기반 전략 (이상치 제거)
+    ETQuantizationOptions percentile_options = {
+        .strategy = ET_QUANT_STRATEGY_PERCENTILE,
+        .outlier_percentile = 2.5f, // 상하위 2.5% 제거
+        .symmetric = false,
+        .per_channel = false,
+        .channel_axis = 0,
+        .smoothing_factor = 0.0f
+    };
+
+    ETTensor* percentile_quantized = et_quantize_to_int8_advanced(input, NULL, NULL, &percentile_options, pool);
+    TEST_ASSERT(percentile_quantized != NULL, "백분위수 전략 양자화");
+
+    // 3. 음성 특화 전략
+    ETQuantizationOptions voice_options = {
+        .strategy = ET_QUANT_STRATEGY_VOICE_OPTIMIZED,
+        .outlier_percentile = 0.0f,
+        .symmetric = false,
+        .per_channel = false,
+        .channel_axis = 0,
+        .smoothing_factor = 0.0f
+    };
+
+    ETTensor* voice_quantized = et_quantize_to_int8_advanced(input, NULL, NULL, &voice_options, pool);
+    TEST_ASSERT(voice_quantized != NULL, "음성 특화 전략 양자화");
+
+    // 4. 대칭 양자화 테스트
+    ETQuantizationOptions symmetric_options = {
+        .strategy = ET_QUANT_STRATEGY_VOICE_OPTIMIZED,
+        .outlier_percentile = 0.0f,
+        .symmetric = true,
+        .per_channel = false,
+        .channel_axis = 0,
+        .smoothing_factor = 0.0f
+    };
+
+    ETTensor* symmetric_quantized = et_quantize_to_int8_advanced(input, NULL, NULL, &symmetric_options, pool);
+    TEST_ASSERT(symmetric_quantized != NULL, "대칭 양자화");
+
+    // 메모리 정리
+    et_destroy_tensor(input);
+    et_destroy_tensor(minmax_quantized);
+    et_destroy_tensor(percentile_quantized);
+    et_destroy_tensor(voice_quantized);
+    et_destroy_tensor(symmetric_quantized);
+    et_destroy_memory_pool(pool);
+
+    printf("PASS: 고급 양자화 전략 테스트 통과\n");
+    return 1;
+}
+
+// INT4 고급 양자화 테스트
+static int test_advanced_int4_quantization() {
+    printf("\n=== INT4 고급 양자화 테스트 ===\n");
+
+    // 메모리 풀 생성
+    ETMemoryPool* pool = et_create_memory_pool(1024 * 1024, 32);
+    TEST_ASSERT(pool != NULL, "메모리 풀 생성");
+
+    // 테스트 텐서 생성
+    size_t shape[] = {100};
+    ETTensor* input = et_create_tensor(pool, ET_FLOAT32, 1, shape);
+    TEST_ASSERT(input != NULL, "입력 텐서 생성");
+
+    float* input_data = (float*)input->data;
+
+    // 음성 특성을 가진 테스트 데이터 생성
+    for (size_t i = 0; i < 100; i++) {
+        // 정규분포 기반 음성 신호 시뮬레이션
+        float t = (float)i / 100.0f;
+        input_data[i] = 0.8f * sinf(2.0f * 3.14159f * 5.0f * t) +
+                       0.1f * ((float)rand() / RAND_MAX - 0.5f);
+    }
+
+    // 기본 INT4 양자화
+    ETTensor* basic_quantized = et_quantize_to_int4(input, NULL, NULL, pool);
+    TEST_ASSERT(basic_quantized != NULL, "기본 INT4 양자화");
+
+    // 고급 INT4 양자화 (음성 특화 + 대칭)
+    ETQuantizationOptions advanced_options = {
+        .strategy = ET_QUANT_STRATEGY_VOICE_OPTIMIZED,
+        .outlier_percentile = 1.0f,
+        .symmetric = true,
+        .per_channel = false,
+        .channel_axis = 0,
+        .smoothing_factor = 0.0f
+    };
+
+    ETTensor* advanced_quantized = et_quantize_to_int4_advanced(input, NULL, NULL, &advanced_options, pool);
+    TEST_ASSERT(advanced_quantized != NULL, "고급 INT4 양자화");
+
+    // 역양자화 및 정확성 검증
+    ETQuantizationParams params;
+    TEST_ASSERT(et_compute_quantization_params_advanced(input, ET_INT4, &params, &advanced_options),
+                "고급 양자화 파라미터 계산");
+
+    ETTensor* dequantized = et_dequantize_from_int4(advanced_quantized, NULL, &params, pool);
+    TEST_ASSERT(dequantized != NULL, "INT4 역양자화");
+
+    // MSE 계산
+    float* dequant_data = (float*)dequantized->data;
+    float mse = 0.0f;
+    for (size_t i = 0; i < input->size; i++) {
+        float error = input_data[i] - dequant_data[i];
+        mse += error * error;
+    }
+    mse /= input->size;
+
+    printf("INT4 고급 양자화 MSE: %f\n", mse);
+
+    // INT4의 제한된 정밀도를 고려하여 허용 오차 설정
+    TEST_ASSERT(mse < 0.1f, "INT4 양자화 정확성 확인");
+
+    // 메모리 정리
+    et_destroy_tensor(input);
+    et_destroy_tensor(basic_quantized);
+    et_destroy_tensor(advanced_quantized);
+    et_destroy_tensor(dequantized);
+    et_destroy_memory_pool(pool);
+
+    printf("PASS: INT4 고급 양자화 테스트 통과\n");
+    return 1;
+}
+
+// 정밀도 손실 최소화 전략 비교 테스트
+static int test_precision_loss_minimization() {
+    printf("\n=== 정밀도 손실 최소화 전략 비교 테스트 ===\n");
+
+    // 메모리 풀 생성
+    ETMemoryPool* pool = et_create_memory_pool(1024 * 1024, 32);
+    TEST_ASSERT(pool != NULL, "메모리 풀 생성");
+
+    // 테스트 텐서 생성 (복잡한 음성 신호 시뮬레이션)
+    size_t shape[] = {512};
+    ETTensor* input = et_create_tensor(pool, ET_FLOAT32, 1, shape);
+    TEST_ASSERT(input != NULL, "입력 텐서 생성");
+
+    float* input_data = (float*)input->data;
+
+    // 복잡한 음성 신호 시뮬레이션 (여러 주파수 성분 + 노이즈)
+    for (size_t i = 0; i < 512; i++) {
+        float t = (float)i / 512.0f;
+        input_data[i] = 0.5f * sinf(2.0f * 3.14159f * 440.0f * t) +  // 기본 톤
+                       0.3f * sinf(2.0f * 3.14159f * 880.0f * t) +   // 하모닉
+                       0.2f * sinf(2.0f * 3.14159f * 1320.0f * t) +  // 상위 하모닉
+                       0.05f * ((float)rand() / RAND_MAX - 0.5f);     // 노이즈
+    }
+
+    // 다양한 전략으로 양자화 수행 및 MSE 비교
+    struct {
+        const char* name;
+        ETQuantizationStrategy strategy;
+        float outlier_percentile;
+        bool symmetric;
+    } strategies[] = {
+        {"기본 Min-Max", ET_QUANT_STRATEGY_MINMAX, 0.0f, false},
+        {"백분위수 (1%)", ET_QUANT_STRATEGY_PERCENTILE, 1.0f, false},
+        {"백분위수 (2.5%)", ET_QUANT_STRATEGY_PERCENTILE, 2.5f, false},
+        {"음성 특화", ET_QUANT_STRATEGY_VOICE_OPTIMIZED, 0.0f, false},
+        {"음성 특화 + 대칭", ET_QUANT_STRATEGY_VOICE_OPTIMIZED, 0.0f, true}
+    };
+
+    int num_strategies = sizeof(strategies) / sizeof(strategies[0]);
+    float best_mse = FLT_MAX;
+    const char* best_strategy = NULL;
+
+    for (int s = 0; s < num_strategies; s++) {
+        ETQuantizationOptions options = {
+            .strategy = strategies[s].strategy,
+            .outlier_percentile = strategies[s].outlier_percentile,
+            .symmetric = strategies[s].symmetric,
+            .per_channel = false,
+            .channel_axis = 0,
+            .smoothing_factor = 0.0f
+        };
+
+        // INT8 양자화
+        ETTensor* quantized = et_quantize_to_int8_advanced(input, NULL, NULL, &options, pool);
+        if (!quantized) continue;
+
+        // 양자화 파라미터 계산
+        ETQuantizationParams params;
+        if (!et_compute_quantization_params_advanced(input, ET_INT8, &params, &options)) {
+            et_destroy_tensor(quantized);
+            continue;
+        }
+
+        // 역양자화
+        ETTensor* dequantized = et_dequantize_from_int8(quantized, NULL, &params, pool);
+        if (!dequantized) {
+            et_destroy_tensor(quantized);
+            continue;
+        }
+
+        // MSE 계산
+        float* dequant_data = (float*)dequantized->data;
+        float mse = 0.0f;
+        for (size_t i = 0; i < input->size; i++) {
+            float error = input_data[i] - dequant_data[i];
+            mse += error * error;
+        }
+        mse /= input->size;
+
+        printf("%s: MSE = %f\n", strategies[s].name, mse);
+
+        if (mse < best_mse) {
+            best_mse = mse;
+            best_strategy = strategies[s].name;
+        }
+
+        et_destroy_tensor(quantized);
+        et_destroy_tensor(dequantized);
+    }
+
+    printf("최적 전략: %s (MSE: %f)\n", best_strategy, best_mse);
+
+    // 정밀도 손실 최소화가 효과적인지 확인
+    TEST_ASSERT(best_mse < 0.01f, "정밀도 손실 최소화 효과 확인");
+
+    // 메모리 정리
+    et_destroy_tensor(input);
+    et_destroy_memory_pool(pool);
+
+    printf("PASS: 정밀도 손실 최소화 전략 비교 테스트 통과\n");
+    return 1;
+}
+
 // 메인 테스트 함수
 int main() {
     printf("LibEtude 양자화 기능 테스트 시작\n");
@@ -579,6 +846,11 @@ int main() {
     total_tests++; if (test_voice_optimized_bf16_params()) passed_tests++;
     total_tests++; if (test_adaptive_bfloat16_quantization()) passed_tests++;
     total_tests++; if (test_simd_bfloat16_vector_ops()) passed_tests++;
+
+    // 새로운 고급 양자화 테스트들
+    total_tests++; if (test_advanced_quantization_strategies()) passed_tests++;
+    total_tests++; if (test_advanced_int4_quantization()) passed_tests++;
+    total_tests++; if (test_precision_loss_minimization()) passed_tests++;
 
     // 결과 출력
     printf("\n=====================================\n");

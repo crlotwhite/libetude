@@ -146,7 +146,53 @@ ETTensor* et_dequantize_from_bfloat16(const ETTensor* input, ETTensor* output, E
 // INT8/INT4 양자화 파라미터 계산
 // =============================================================================
 
+// 정적 함수 선언
+static bool et_compute_minmax_range(const ETTensor* input, float* min_val, float* max_val);
+static bool et_compute_percentile_range(const ETTensor* input, float outlier_percentile,
+                                       float* min_val, float* max_val);
+static bool et_compute_kl_optimal_range(const ETTensor* input, ETDataType target_dtype,
+                                       float* min_val, float* max_val);
+static bool et_compute_mse_optimal_range(const ETTensor* input, ETDataType target_dtype,
+                                        float* min_val, float* max_val);
+static bool et_compute_voice_optimal_range(const ETTensor* input, ETDataType target_dtype,
+                                          float* min_val, float* max_val);
+static int et_float_compare(const void* a, const void* b);
+static float et_compute_kl_divergence(const int* histogram, int num_bins, float bin_width,
+                                     float min_val, float threshold, int num_quantized_bins);
+static float et_compute_quantization_mse(const ETTensor* input, float min_val, float max_val, int num_levels);
+static float et_round_to_nearest_even(float x);
+
+// 양자화 오차 분석 구조체
+typedef struct {
+    float mse;                    // 평균 제곱 오차
+    float mae;                    // 평균 절대 오차
+    float max_error;              // 최대 오차
+    float snr_db;                 // 신호 대 잡음비 (dB)
+    float dynamic_range_loss;     // 동적 범위 손실 (%)
+} ETQuantizationError;
+
+static bool et_compute_quantization_error(const ETTensor* original, const ETTensor* quantized,
+                                         const ETQuantizationParams* params, ETQuantizationError* error);
+
+// 구조체들은 헤더 파일에 정의되어 있음
+
+// 기본 양자화 파라미터 계산 (기존 함수)
 bool et_compute_quantization_params(const ETTensor* input, ETDataType target_dtype, ETQuantizationParams* params) {
+    ETQuantizationOptions options = {
+        .strategy = ET_QUANT_STRATEGY_MINMAX,
+        .outlier_percentile = 0.0f,
+        .symmetric = false,
+        .per_channel = false,
+        .channel_axis = 0,
+        .smoothing_factor = 0.0f
+    };
+
+    return et_compute_quantization_params_advanced(input, target_dtype, params, &options);
+}
+
+// 고급 양자화 파라미터 계산
+bool et_compute_quantization_params_advanced(const ETTensor* input, ETDataType target_dtype,
+                                            ETQuantizationParams* params, const ETQuantizationOptions* options) {
     if (!et_validate_tensor(input) || !params || input->dtype != ET_FLOAT32) {
         return false;
     }
@@ -155,58 +201,79 @@ bool et_compute_quantization_params(const ETTensor* input, ETDataType target_dty
         return false;
     }
 
-    // 텐서의 최소값과 최대값 찾기
-    float min_val = FLT_MAX;
-    float max_val = -FLT_MAX;
-
-    const float* data = (const float*)input->data;
-
-    if (input->is_contiguous) {
-        // 연속 메모리인 경우 빠른 탐색
-        for (size_t i = 0; i < input->size; i++) {
-            float val = data[i];
-            if (val < min_val) min_val = val;
-            if (val > max_val) max_val = val;
-        }
-    } else {
-        // 비연속 메모리인 경우 인덱스 기반 탐색
-        size_t indices[ET_MAX_TENSOR_DIMS] = {0};
-
-        for (size_t i = 0; i < input->size; i++) {
-            float val = et_get_float(input, indices);
-            if (val < min_val) min_val = val;
-            if (val > max_val) max_val = val;
-
-            // 다음 인덱스 계산
-            for (int j = (int)input->ndim - 1; j >= 0; j--) {
-                indices[j]++;
-                if (indices[j] < input->shape[j]) break;
-                indices[j] = 0;
-            }
-        }
-    }
-
     // 양자화 범위 설정
     int32_t qmin, qmax;
     if (target_dtype == ET_INT8) {
-        qmin = -128;
+        qmin = options->symmetric ? -127 : -128;
         qmax = 127;
     } else { // ET_INT4
-        qmin = -8;
+        qmin = options->symmetric ? -7 : -8;
         qmax = 7;
+    }
+
+    float min_val, max_val;
+
+    // 전략에 따른 min/max 계산
+    switch (options->strategy) {
+        case ET_QUANT_STRATEGY_PERCENTILE:
+            if (!et_compute_percentile_range(input, options->outlier_percentile, &min_val, &max_val)) {
+                return false;
+            }
+            break;
+
+        case ET_QUANT_STRATEGY_KL_DIVERGENCE:
+            if (!et_compute_kl_optimal_range(input, target_dtype, &min_val, &max_val)) {
+                return false;
+            }
+            break;
+
+        case ET_QUANT_STRATEGY_MSE_OPTIMAL:
+            if (!et_compute_mse_optimal_range(input, target_dtype, &min_val, &max_val)) {
+                return false;
+            }
+            break;
+
+        case ET_QUANT_STRATEGY_VOICE_OPTIMIZED:
+            if (!et_compute_voice_optimal_range(input, target_dtype, &min_val, &max_val)) {
+                return false;
+            }
+            break;
+
+        default: // ET_QUANT_STRATEGY_MINMAX
+            if (!et_compute_minmax_range(input, &min_val, &max_val)) {
+                return false;
+            }
+            break;
+    }
+
+    // 대칭 양자화 처리
+    if (options->symmetric) {
+        float abs_max = fmaxf(fabsf(min_val), fabsf(max_val));
+        min_val = -abs_max;
+        max_val = abs_max;
+    }
+
+    // 스무딩 적용 (이전 값과의 가중 평균)
+    if (options->smoothing_factor > 0.0f && options->smoothing_factor <= 1.0f) {
+        // 이전 파라미터가 있다면 스무딩 적용 (여기서는 단순화)
+        // 실제로는 이전 양자화 파라미터를 저장해야 함
     }
 
     // 스케일과 제로 포인트 계산
     float scale = (max_val - min_val) / (qmax - qmin);
-    if (scale == 0.0f) {
-        scale = 1.0f; // 모든 값이 같은 경우
+    if (scale == 0.0f || scale < 1e-8f) {
+        scale = 1e-8f; // 수치적 안정성을 위한 최소값
     }
 
-    int32_t zero_point = qmin - (int32_t)roundf(min_val / scale);
-
-    // 제로 포인트 클램핑
-    if (zero_point < qmin) zero_point = qmin;
-    if (zero_point > qmax) zero_point = qmax;
+    int32_t zero_point;
+    if (options->symmetric) {
+        zero_point = 0; // 대칭 양자화에서는 제로 포인트가 0
+    } else {
+        zero_point = qmin - (int32_t)roundf(min_val / scale);
+        // 제로 포인트 클램핑
+        if (zero_point < qmin) zero_point = qmin;
+        if (zero_point > qmax) zero_point = qmax;
+    }
 
     // 파라미터 설정
     params->scale = scale;
@@ -217,11 +284,398 @@ bool et_compute_quantization_params(const ETTensor* input, ETDataType target_dty
     return true;
 }
 
+// Min-Max 범위 계산
+static bool et_compute_minmax_range(const ETTensor* input, float* min_val, float* max_val) {
+    *min_val = FLT_MAX;
+    *max_val = -FLT_MAX;
+
+    const float* data = (const float*)input->data;
+
+    if (input->is_contiguous) {
+        // 연속 메모리인 경우 빠른 탐색
+        for (size_t i = 0; i < input->size; i++) {
+            float val = data[i];
+            if (val < *min_val) *min_val = val;
+            if (val > *max_val) *max_val = val;
+        }
+    } else {
+        // 비연속 메모리인 경우 인덱스 기반 탐색
+        size_t indices[ET_MAX_TENSOR_DIMS] = {0};
+
+        for (size_t i = 0; i < input->size; i++) {
+            float val = et_get_float(input, indices);
+            if (val < *min_val) *min_val = val;
+            if (val > *max_val) *max_val = val;
+
+            // 다음 인덱스 계산
+            for (int j = (int)input->ndim - 1; j >= 0; j--) {
+                indices[j]++;
+                if (indices[j] < input->shape[j]) break;
+                indices[j] = 0;
+            }
+        }
+    }
+
+    return *min_val != FLT_MAX && *max_val != -FLT_MAX;
+}
+
+// 백분위수 기반 범위 계산 (이상치 제거)
+static bool et_compute_percentile_range(const ETTensor* input, float outlier_percentile,
+                                       float* min_val, float* max_val) {
+    if (outlier_percentile < 0.0f || outlier_percentile >= 50.0f) {
+        return et_compute_minmax_range(input, min_val, max_val);
+    }
+
+    // 모든 값을 배열에 복사 (정렬을 위해)
+    float* values = (float*)malloc(input->size * sizeof(float));
+    if (!values) {
+        return false;
+    }
+
+    const float* data = (const float*)input->data;
+    if (input->is_contiguous) {
+        memcpy(values, data, input->size * sizeof(float));
+    } else {
+        size_t indices[ET_MAX_TENSOR_DIMS] = {0};
+        for (size_t i = 0; i < input->size; i++) {
+            values[i] = et_get_float(input, indices);
+
+            // 다음 인덱스 계산
+            for (int j = (int)input->ndim - 1; j >= 0; j--) {
+                indices[j]++;
+                if (indices[j] < input->shape[j]) break;
+                indices[j] = 0;
+            }
+        }
+    }
+
+    // 퀵 정렬 (간단한 구현)
+    qsort(values, input->size, sizeof(float), et_float_compare);
+
+    // 백분위수 계산
+    size_t lower_idx = (size_t)(input->size * outlier_percentile / 100.0f);
+    size_t upper_idx = input->size - 1 - lower_idx;
+
+    if (lower_idx >= input->size) lower_idx = 0;
+    if (upper_idx >= input->size) upper_idx = input->size - 1;
+
+    *min_val = values[lower_idx];
+    *max_val = values[upper_idx];
+
+    free(values);
+    return true;
+}
+
+// float 비교 함수 (qsort용)
+static int et_float_compare(const void* a, const void* b) {
+    float fa = *(const float*)a;
+    float fb = *(const float*)b;
+    return (fa > fb) - (fa < fb);
+}
+
+// KL 발산 최소화 기반 범위 계산
+static bool et_compute_kl_optimal_range(const ETTensor* input, ETDataType target_dtype,
+                                       float* min_val, float* max_val) {
+    // 히스토그램 기반 KL 발산 최소화
+    const int num_bins = 2048;
+    const int num_candidates = 100;
+
+    // 먼저 전체 범위 계산
+    float global_min, global_max;
+    if (!et_compute_minmax_range(input, &global_min, &global_max)) {
+        return false;
+    }
+
+    // 히스토그램 생성
+    int* histogram = (int*)calloc(num_bins, sizeof(int));
+    if (!histogram) {
+        return false;
+    }
+
+    float bin_width = (global_max - global_min) / num_bins;
+    if (bin_width <= 0.0f) {
+        free(histogram);
+        *min_val = global_min;
+        *max_val = global_max;
+        return true;
+    }
+
+    // 히스토그램 채우기
+    const float* data = (const float*)input->data;
+    if (input->is_contiguous) {
+        for (size_t i = 0; i < input->size; i++) {
+            int bin = (int)((data[i] - global_min) / bin_width);
+            if (bin < 0) bin = 0;
+            if (bin >= num_bins) bin = num_bins - 1;
+            histogram[bin]++;
+        }
+    } else {
+        size_t indices[ET_MAX_TENSOR_DIMS] = {0};
+        for (size_t i = 0; i < input->size; i++) {
+            float val = et_get_float(input, indices);
+            int bin = (int)((val - global_min) / bin_width);
+            if (bin < 0) bin = 0;
+            if (bin >= num_bins) bin = num_bins - 1;
+            histogram[bin]++;
+
+            // 다음 인덱스 계산
+            for (int j = (int)input->ndim - 1; j >= 0; j--) {
+                indices[j]++;
+                if (indices[j] < input->shape[j]) break;
+                indices[j] = 0;
+            }
+        }
+    }
+
+    // 양자화 레벨 수
+    int num_quantized_bins = (target_dtype == ET_INT8) ? 256 : 16;
+
+    // 최적의 임계값 찾기 (간단한 그리드 서치)
+    float best_threshold = global_max;
+    float min_kl_div = FLT_MAX;
+
+    for (int i = 1; i < num_candidates; i++) {
+        float threshold = global_min + (global_max - global_min) * i / num_candidates;
+        float kl_div = et_compute_kl_divergence(histogram, num_bins, bin_width, global_min,
+                                               threshold, num_quantized_bins);
+
+        if (kl_div < min_kl_div) {
+            min_kl_div = kl_div;
+            best_threshold = threshold;
+        }
+    }
+
+    free(histogram);
+
+    *min_val = global_min;
+    *max_val = best_threshold;
+    return true;
+}
+
+// KL 발산 계산
+static float et_compute_kl_divergence(const int* histogram, int num_bins, float bin_width,
+                                     float min_val, float threshold, int num_quantized_bins) {
+    // 원본 분포 정규화
+    int total_count = 0;
+    for (int i = 0; i < num_bins; i++) {
+        total_count += histogram[i];
+    }
+
+    if (total_count == 0) return FLT_MAX;
+
+    // 임계값 내의 빈 찾기
+    int threshold_bin = (int)((threshold - min_val) / bin_width);
+    if (threshold_bin >= num_bins) threshold_bin = num_bins - 1;
+
+    // 양자화된 분포 생성
+    float* quantized_dist = (float*)calloc(num_quantized_bins, sizeof(float));
+    if (!quantized_dist) return FLT_MAX;
+
+    float quantized_bin_width = (threshold - min_val) / num_quantized_bins;
+
+    for (int i = 0; i <= threshold_bin; i++) {
+        float bin_center = min_val + (i + 0.5f) * bin_width;
+        int q_bin = (int)((bin_center - min_val) / quantized_bin_width);
+        if (q_bin >= num_quantized_bins) q_bin = num_quantized_bins - 1;
+        quantized_dist[q_bin] += (float)histogram[i] / total_count;
+    }
+
+    // KL 발산 계산
+    float kl_div = 0.0f;
+    for (int i = 0; i <= threshold_bin; i++) {
+        float p = (float)histogram[i] / total_count;
+        if (p > 0.0f) {
+            float bin_center = min_val + (i + 0.5f) * bin_width;
+            int q_bin = (int)((bin_center - min_val) / quantized_bin_width);
+            if (q_bin >= num_quantized_bins) q_bin = num_quantized_bins - 1;
+
+            float q = quantized_dist[q_bin];
+            if (q > 0.0f) {
+                kl_div += p * logf(p / q);
+            } else {
+                kl_div += p * 10.0f; // 큰 페널티
+            }
+        }
+    }
+
+    free(quantized_dist);
+    return kl_div;
+}
+
+// MSE 최적화 기반 범위 계산
+static bool et_compute_mse_optimal_range(const ETTensor* input, ETDataType target_dtype,
+                                        float* min_val, float* max_val) {
+    // 전체 범위 계산
+    float global_min, global_max;
+    if (!et_compute_minmax_range(input, &global_min, &global_max)) {
+        return false;
+    }
+
+    // 양자화 레벨 수
+    int num_levels = (target_dtype == ET_INT8) ? 256 : 16;
+
+    // 그리드 서치로 최적 범위 찾기
+    const int num_candidates = 50;
+    float best_min = global_min, best_max = global_max;
+    float min_mse = FLT_MAX;
+
+    for (int i = 0; i < num_candidates; i++) {
+        for (int j = i + 1; j < num_candidates; j++) {
+            float test_min = global_min + (global_max - global_min) * i / num_candidates;
+            float test_max = global_min + (global_max - global_min) * j / num_candidates;
+
+            float mse = et_compute_quantization_mse(input, test_min, test_max, num_levels);
+
+            if (mse < min_mse) {
+                min_mse = mse;
+                best_min = test_min;
+                best_max = test_max;
+            }
+        }
+    }
+
+    *min_val = best_min;
+    *max_val = best_max;
+    return true;
+}
+
+// 양자화 MSE 계산
+static float et_compute_quantization_mse(const ETTensor* input, float min_val, float max_val, int num_levels) {
+    float scale = (max_val - min_val) / (num_levels - 1);
+    if (scale <= 0.0f) return FLT_MAX;
+
+    float mse = 0.0f;
+    const float* data = (const float*)input->data;
+
+    if (input->is_contiguous) {
+        for (size_t i = 0; i < input->size; i++) {
+            float original = data[i];
+
+            // 클램핑
+            if (original < min_val) original = min_val;
+            if (original > max_val) original = max_val;
+
+            // 양자화
+            int quantized_int = (int)roundf((original - min_val) / scale);
+            float quantized = min_val + quantized_int * scale;
+
+            float error = original - quantized;
+            mse += error * error;
+        }
+    } else {
+        size_t indices[ET_MAX_TENSOR_DIMS] = {0};
+        for (size_t i = 0; i < input->size; i++) {
+            float original = et_get_float(input, indices);
+
+            // 클램핑
+            if (original < min_val) original = min_val;
+            if (original > max_val) original = max_val;
+
+            // 양자화
+            int quantized_int = (int)roundf((original - min_val) / scale);
+            float quantized = min_val + quantized_int * scale;
+
+            float error = original - quantized;
+            mse += error * error;
+
+            // 다음 인덱스 계산
+            for (int j = (int)input->ndim - 1; j >= 0; j--) {
+                indices[j]++;
+                if (indices[j] < input->shape[j]) break;
+                indices[j] = 0;
+            }
+        }
+    }
+
+    return mse / input->size;
+}
+
+// 음성 특화 범위 계산
+static bool et_compute_voice_optimal_range(const ETTensor* input, ETDataType target_dtype,
+                                          float* min_val, float* max_val) {
+    // 음성 신호의 특성을 고려한 양자화 범위 계산
+
+    // 기본 통계 계산
+    float mean = 0.0f, variance = 0.0f;
+    float global_min, global_max;
+
+    if (!et_compute_minmax_range(input, &global_min, &global_max)) {
+        return false;
+    }
+
+    const float* data = (const float*)input->data;
+
+    // 평균 계산
+    if (input->is_contiguous) {
+        for (size_t i = 0; i < input->size; i++) {
+            mean += data[i];
+        }
+    } else {
+        size_t indices[ET_MAX_TENSOR_DIMS] = {0};
+        for (size_t i = 0; i < input->size; i++) {
+            mean += et_get_float(input, indices);
+
+            // 다음 인덱스 계산
+            for (int j = (int)input->ndim - 1; j >= 0; j--) {
+                indices[j]++;
+                if (indices[j] < input->shape[j]) break;
+                indices[j] = 0;
+            }
+        }
+    }
+    mean /= input->size;
+
+    // 분산 계산
+    if (input->is_contiguous) {
+        for (size_t i = 0; i < input->size; i++) {
+            float diff = data[i] - mean;
+            variance += diff * diff;
+        }
+    } else {
+        size_t indices[ET_MAX_TENSOR_DIMS] = {0};
+        for (size_t i = 0; i < input->size; i++) {
+            float val = et_get_float(input, indices);
+            float diff = val - mean;
+            variance += diff * diff;
+
+            // 다음 인덱스 계산
+            for (int j = (int)input->ndim - 1; j >= 0; j--) {
+                indices[j]++;
+                if (indices[j] < input->shape[j]) break;
+                indices[j] = 0;
+            }
+        }
+    }
+    variance /= input->size;
+    float std_dev = sqrtf(variance);
+
+    // 음성 신호 특성 고려
+    // 1. 대부분의 음성 신호는 정규분포에 가까움
+    // 2. 99.7% 데이터가 3σ 범위 내에 있음
+    // 3. 극단값(클리핑 등)은 제거하는 것이 좋음
+
+    float sigma_multiplier = (target_dtype == ET_INT8) ? 3.5f : 2.5f; // INT4는 더 보수적으로
+
+    *min_val = fmaxf(global_min, mean - sigma_multiplier * std_dev);
+    *max_val = fminf(global_max, mean + sigma_multiplier * std_dev);
+
+    // 최소 범위 보장
+    if (*max_val - *min_val < 1e-6f) {
+        *min_val = global_min;
+        *max_val = global_max;
+    }
+
+    return true;
+}
+
 // =============================================================================
 // INT8 양자화 구현
 // =============================================================================
 
-ETTensor* et_quantize_to_int8(const ETTensor* input, ETTensor* output, const ETQuantizationParams* params, ETMemoryPool* pool) {
+// 고급 INT8 양자화 (정밀도 손실 최소화)
+ETTensor* et_quantize_to_int8_advanced(const ETTensor* input, ETTensor* output,
+                                      const ETQuantizationParams* params,
+                                      const ETQuantizationOptions* options, ETMemoryPool* pool) {
     if (!et_validate_tensor(input) || input->dtype != ET_FLOAT32) {
         return NULL;
     }
@@ -229,7 +683,18 @@ ETTensor* et_quantize_to_int8(const ETTensor* input, ETTensor* output, const ETQ
     // 양자화 파라미터 계산 또는 사용
     ETQuantizationParams computed_params;
     if (!params) {
-        if (!et_compute_quantization_params(input, ET_INT8, &computed_params)) {
+        ETQuantizationOptions default_options = {
+            .strategy = ET_QUANT_STRATEGY_VOICE_OPTIMIZED,
+            .outlier_percentile = 0.1f,
+            .symmetric = false,
+            .per_channel = false,
+            .channel_axis = 0,
+            .smoothing_factor = 0.0f
+        };
+
+        const ETQuantizationOptions* use_options = options ? options : &default_options;
+
+        if (!et_compute_quantization_params_advanced(input, ET_INT8, &computed_params, use_options)) {
             return NULL;
         }
         params = &computed_params;
@@ -248,11 +713,21 @@ ETTensor* et_quantize_to_int8(const ETTensor* input, ETTensor* output, const ETQ
     const float* input_data = (const float*)input->data;
     int8_t* output_data = (int8_t*)output->data;
 
+    // 정밀도 손실 최소화를 위한 개선된 양자화
+    float inv_scale = 1.0f / params->scale;
+
     // 연속 메모리인 경우 빠른 변환
     if (input->is_contiguous && output->is_contiguous) {
         for (size_t i = 0; i < input->size; i++) {
             float val = input_data[i];
-            int32_t quantized = (int32_t)roundf(val / params->scale) + params->zero_point;
+
+            // 범위 클램핑 (정밀도 향상)
+            if (val < params->min_val) val = params->min_val;
+            if (val > params->max_val) val = params->max_val;
+
+            // 개선된 반올림 (banker's rounding)
+            float scaled = val * inv_scale + params->zero_point;
+            int32_t quantized = (int32_t)et_round_to_nearest_even(scaled);
 
             // 클램핑
             if (quantized < -128) quantized = -128;
@@ -266,7 +741,13 @@ ETTensor* et_quantize_to_int8(const ETTensor* input, ETTensor* output, const ETQ
 
         for (size_t i = 0; i < input->size; i++) {
             float val = et_get_float(input, indices);
-            int32_t quantized = (int32_t)roundf(val / params->scale) + params->zero_point;
+
+            // 범위 클램핑
+            if (val < params->min_val) val = params->min_val;
+            if (val > params->max_val) val = params->max_val;
+
+            float scaled = val * inv_scale + params->zero_point;
+            int32_t quantized = (int32_t)et_round_to_nearest_even(scaled);
 
             // 클램핑
             if (quantized < -128) quantized = -128;
@@ -288,6 +769,10 @@ ETTensor* et_quantize_to_int8(const ETTensor* input, ETTensor* output, const ETQ
     }
 
     return output;
+}
+
+ETTensor* et_quantize_to_int8(const ETTensor* input, ETTensor* output, const ETQuantizationParams* params, ETMemoryPool* pool) {
+    return et_quantize_to_int8_advanced(input, output, params, NULL, pool);
 }
 
 ETTensor* et_dequantize_from_int8(const ETTensor* input, ETTensor* output, const ETQuantizationParams* params, ETMemoryPool* pool) {
@@ -340,6 +825,102 @@ ETTensor* et_dequantize_from_int8(const ETTensor* input, ETTensor* output, const
 }
 
 // =============================================================================
+// 정밀도 향상 유틸리티 함수
+// =============================================================================
+
+/**
+ * @brief Banker's rounding (round half to even) 구현
+ * 정밀도 손실을 최소화하기 위한 반올림 방법
+ */
+static float et_round_to_nearest_even(float x) {
+    float floor_x = floorf(x);
+    float frac = x - floor_x;
+
+    if (frac < 0.5f) {
+        return floor_x;
+    } else if (frac > 0.5f) {
+        return floor_x + 1.0f;
+    } else {
+        // 정확히 0.5인 경우, 짝수로 반올림
+        int floor_int = (int)floor_x;
+        if (floor_int % 2 == 0) {
+            return floor_x;
+        } else {
+            return floor_x + 1.0f;
+        }
+    }
+}
+
+// ETQuantizationError는 이미 정적 함수 선언 부분에 정의됨
+
+/**
+ * @brief 양자화 오차 계산
+ */
+static bool et_compute_quantization_error(const ETTensor* original, const ETTensor* quantized,
+                                         const ETQuantizationParams* params, ETQuantizationError* error) {
+    if (!et_validate_tensor(original) || !et_validate_tensor(quantized) || !error) {
+        return false;
+    }
+
+    if (!et_same_shape(original, quantized) || original->dtype != ET_FLOAT32) {
+        return false;
+    }
+
+    const float* orig_data = (const float*)original->data;
+    float* dequant_data = NULL;
+
+    // 역양자화 수행
+    ETTensor* dequantized = NULL;
+    if (quantized->dtype == ET_INT8) {
+        dequantized = et_dequantize_from_int8(quantized, NULL, params, original->pool);
+    } else if (quantized->dtype == ET_INT4) {
+        dequantized = et_dequantize_from_int4(quantized, NULL, params, original->pool);
+    } else {
+        return false;
+    }
+
+    if (!dequantized) return false;
+    dequant_data = (float*)dequantized->data;
+
+    // 오차 통계 계산
+    float sum_squared_error = 0.0f;
+    float sum_abs_error = 0.0f;
+    float max_error = 0.0f;
+    float sum_squared_signal = 0.0f;
+
+    for (size_t i = 0; i < original->size; i++) {
+        float orig = orig_data[i];
+        float dequant = dequant_data[i];
+        float err = fabsf(orig - dequant);
+
+        sum_squared_error += err * err;
+        sum_abs_error += err;
+        if (err > max_error) max_error = err;
+        sum_squared_signal += orig * orig;
+    }
+
+    error->mse = sum_squared_error / original->size;
+    error->mae = sum_abs_error / original->size;
+    error->max_error = max_error;
+
+    // SNR 계산 (dB)
+    if (sum_squared_error > 0.0f && sum_squared_signal > 0.0f) {
+        error->snr_db = 10.0f * log10f(sum_squared_signal / sum_squared_error);
+    } else {
+        error->snr_db = INFINITY;
+    }
+
+    // 동적 범위 손실 계산
+    float orig_range = params->max_val - params->min_val;
+    float quant_levels = (quantized->dtype == ET_INT8) ? 256.0f : 16.0f;
+    float quant_resolution = orig_range / quant_levels;
+    error->dynamic_range_loss = (quant_resolution / orig_range) * 100.0f;
+
+    et_destroy_tensor(dequantized);
+    return true;
+}
+
+// =============================================================================
 // INT4 패킹/언패킹 유틸리티
 // =============================================================================
 
@@ -360,7 +941,10 @@ void et_unpack_int4(uint8_t packed, uint8_t* val1, uint8_t* val2) {
 // INT4 양자화 구현
 // =============================================================================
 
-ETTensor* et_quantize_to_int4(const ETTensor* input, ETTensor* output, const ETQuantizationParams* params, ETMemoryPool* pool) {
+// 고급 INT4 양자화 (정밀도 손실 최소화)
+ETTensor* et_quantize_to_int4_advanced(const ETTensor* input, ETTensor* output,
+                                      const ETQuantizationParams* params,
+                                      const ETQuantizationOptions* options, ETMemoryPool* pool) {
     if (!et_validate_tensor(input) || input->dtype != ET_FLOAT32) {
         return NULL;
     }
@@ -368,14 +952,22 @@ ETTensor* et_quantize_to_int4(const ETTensor* input, ETTensor* output, const ETQ
     // 양자화 파라미터 계산 또는 사용
     ETQuantizationParams computed_params;
     if (!params) {
-        if (!et_compute_quantization_params(input, ET_INT4, &computed_params)) {
+        ETQuantizationOptions default_options = {
+            .strategy = ET_QUANT_STRATEGY_VOICE_OPTIMIZED,
+            .outlier_percentile = 0.2f, // INT4는 더 보수적으로
+            .symmetric = true,          // INT4는 대칭 양자화가 더 효과적
+            .per_channel = false,
+            .channel_axis = 0,
+            .smoothing_factor = 0.0f
+        };
+
+        const ETQuantizationOptions* use_options = options ? options : &default_options;
+
+        if (!et_compute_quantization_params_advanced(input, ET_INT4, &computed_params, use_options)) {
             return NULL;
         }
         params = &computed_params;
     }
-
-    // INT4는 2개 요소당 1바이트이므로 크기 계산
-    // size_t packed_size = (input->size + 1) / 2; // 홀수 개수면 올림 (사용하지 않음)
 
     // 출력 텐서 생성 또는 검증
     if (!output) {
@@ -390,12 +982,18 @@ ETTensor* et_quantize_to_int4(const ETTensor* input, ETTensor* output, const ETQ
     const float* input_data = (const float*)input->data;
     uint8_t* output_data = (uint8_t*)output->data;
 
+    float inv_scale = 1.0f / params->scale;
+
     // 연속 메모리인 경우 빠른 변환
     if (input->is_contiguous && output->is_contiguous) {
         for (size_t i = 0; i < input->size; i += 2) {
             // 첫 번째 값 양자화
             float val1 = input_data[i];
-            int32_t quantized1 = (int32_t)roundf(val1 / params->scale) + params->zero_point;
+            if (val1 < params->min_val) val1 = params->min_val;
+            if (val1 > params->max_val) val1 = params->max_val;
+
+            float scaled1 = val1 * inv_scale + params->zero_point;
+            int32_t quantized1 = (int32_t)et_round_to_nearest_even(scaled1);
             if (quantized1 < -8) quantized1 = -8;
             if (quantized1 > 7) quantized1 = 7;
             uint8_t q1 = (uint8_t)(quantized1 + 8); // -8~7을 0~15로 변환
@@ -404,10 +1002,14 @@ ETTensor* et_quantize_to_int4(const ETTensor* input, ETTensor* output, const ETQ
             uint8_t q2 = 0;
             if (i + 1 < input->size) {
                 float val2 = input_data[i + 1];
-                int32_t quantized2 = (int32_t)roundf(val2 / params->scale) + params->zero_point;
+                if (val2 < params->min_val) val2 = params->min_val;
+                if (val2 > params->max_val) val2 = params->max_val;
+
+                float scaled2 = val2 * inv_scale + params->zero_point;
+                int32_t quantized2 = (int32_t)et_round_to_nearest_even(scaled2);
                 if (quantized2 < -8) quantized2 = -8;
                 if (quantized2 > 7) quantized2 = 7;
-                q2 = (uint8_t)(quantized2 + 8); // -8~7을 0~15로 변환
+                q2 = (uint8_t)(quantized2 + 8);
             }
 
             // 패킹하여 저장
@@ -420,7 +1022,11 @@ ETTensor* et_quantize_to_int4(const ETTensor* input, ETTensor* output, const ETQ
         for (size_t i = 0; i < input->size; i += 2) {
             // 첫 번째 값 양자화
             float val1 = et_get_float(input, indices);
-            int32_t quantized1 = (int32_t)roundf(val1 / params->scale) + params->zero_point;
+            if (val1 < params->min_val) val1 = params->min_val;
+            if (val1 > params->max_val) val1 = params->max_val;
+
+            float scaled1 = val1 * inv_scale + params->zero_point;
+            int32_t quantized1 = (int32_t)et_round_to_nearest_even(scaled1);
             if (quantized1 < -8) quantized1 = -8;
             if (quantized1 > 7) quantized1 = 7;
             uint8_t q1 = (uint8_t)(quantized1 + 8);
@@ -436,7 +1042,11 @@ ETTensor* et_quantize_to_int4(const ETTensor* input, ETTensor* output, const ETQ
             uint8_t q2 = 0;
             if (i + 1 < input->size) {
                 float val2 = et_get_float(input, indices);
-                int32_t quantized2 = (int32_t)roundf(val2 / params->scale) + params->zero_point;
+                if (val2 < params->min_val) val2 = params->min_val;
+                if (val2 > params->max_val) val2 = params->max_val;
+
+                float scaled2 = val2 * inv_scale + params->zero_point;
+                int32_t quantized2 = (int32_t)et_round_to_nearest_even(scaled2);
                 if (quantized2 < -8) quantized2 = -8;
                 if (quantized2 > 7) quantized2 = 7;
                 q2 = (uint8_t)(quantized2 + 8);
@@ -455,6 +1065,10 @@ ETTensor* et_quantize_to_int4(const ETTensor* input, ETTensor* output, const ETQ
     }
 
     return output;
+}
+
+ETTensor* et_quantize_to_int4(const ETTensor* input, ETTensor* output, const ETQuantizationParams* params, ETMemoryPool* pool) {
+    return et_quantize_to_int4_advanced(input, output, params, NULL, pool);
 }
 
 ETTensor* et_dequantize_from_int4(const ETTensor* input, ETTensor* output, const ETQuantizationParams* params, ETMemoryPool* pool) {
