@@ -160,6 +160,7 @@ create_unity_test(lef_format_test "unit/test_lef_format.c")
 create_unity_test(lefx_format_test "unit/test_lefx_format.c")
 create_unity_test(model_loader_test "unit/test_model_loader.c")
 create_unity_test(compression_test "unit/test_compression.c")
+create_unity_test(diff_model_test "unit/test_diff_model.c")
 
 # Unity CTest 통합
 include(CTest)
@@ -177,6 +178,7 @@ add_test(NAME LEFFormatTest COMMAND lef_format_test)
 add_test(NAME LEFXFormatTest COMMAND lefx_format_test)
 add_test(NAME ModelLoaderTest COMMAND model_loader_test)
 add_test(NAME CompressionTest COMMAND compression_test)
+add_test(NAME DiffModelTest COMMAND diff_model_test)
 
 # 테스트 등록 (새로운 독립적인 테스트들)
 if(TARGET test_unity_simple)
@@ -229,6 +231,12 @@ set_tests_properties(ModelLoaderTest PROPERTIES
 set_tests_properties(CompressionTest PROPERTIES
     TIMEOUT 120
     LABELS "compression;lef;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+set_tests_properties(DiffModelTest PROPERTIES
+    TIMEOUT 120
+    LABELS "diff;model;lefx;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 

@@ -810,6 +810,231 @@ void lefx_print_extension_info(const LEFXModel* extension);
 int lefx_get_extension_stats(const LEFXModel* extension, size_t* total_params, size_t* total_size);
 
 // ============================================================================
+// 차분 모델 시스템 관련 구조체 및 함수들
+// ============================================================================
+
+/**
+ * 레이어 차분 정보 구조체
+ * 기본 모델과 화자별 모델 간의 차이 정보를 저장
+ */
+typedef struct {
+    uint16_t base_layer_id;            // 기본 모델 레이어 ID
+    uint16_t speaker_layer_id;         // 화자별 모델 레이어 ID
+    float similarity_score;            // 유사도 점수 (0.0-1.0)
+    float compression_ratio;           // 압축 비율
+    size_t original_size;              // 원본 레이어 크기
+    size_t diff_size;                  // 차분 데이터 크기
+    void* diff_data;                   // 차분 데이터 포인터
+    uint8_t diff_type;                 // 차분 타입 (0=가중치 차분, 1=델타 압축, 2=스파스 차분)
+} LEFLayerDiff;
+
+/**
+ * 차분 모델 생성 컨텍스트
+ * 차분 모델 생성 과정에서 사용되는 상태 정보
+ */
+typedef struct {
+    LEFModel* base_model;              // 기본 모델 포인터
+    LEFModel* speaker_model;           // 화자별 모델 포인터
+    LEFLayerDiff* layer_diffs;         // 레이어 차분 정보 배열
+    size_t num_diffs;                  // 차분 레이어 수
+    size_t diff_capacity;              // 차분 배열 용량
+
+    // 최적화 설정
+    float similarity_threshold;        // 유사도 임계값 (이하는 차분 저장)
+    float compression_threshold;       // 압축 임계값 (이하는 원본 저장)
+    bool enable_sparse_diff;           // 스파스 차분 활성화
+    bool enable_quantization;          // 차분 양자화 활성화
+
+    // 통계 정보
+    size_t total_original_size;        // 총 원본 크기
+    size_t total_diff_size;            // 총 차분 크기
+    float average_similarity;          // 평균 유사도
+    int layers_compressed;             // 압축된 레이어 수
+    int layers_skipped;                // 건너뛴 레이어 수 (높은 유사도)
+} LEFDiffContext;
+
+/**
+ * 차분 압축 알고리즘 타입
+ */
+typedef enum {
+    LEF_DIFF_WEIGHT_DELTA = 0,         // 가중치 델타 압축
+    LEF_DIFF_SPARSE_MASK = 1,          // 스파스 마스크 압축
+    LEF_DIFF_QUANTIZED_DELTA = 2,      // 양자화된 델타 압축
+    LEF_DIFF_HUFFMAN_CODED = 3,        // 허프만 코딩 압축
+    LEF_DIFF_CUSTOM = 255              // 사용자 정의 압축
+} LEFDiffCompressionType;
+
+/**
+ * 차분 메타데이터 구조체
+ * 차분 모델의 메타정보를 저장
+ */
+typedef struct {
+    uint32_t base_model_hash;          // 기본 모델 해시
+    char base_model_version[16];       // 기본 모델 버전
+    char speaker_id[32];               // 화자 식별자
+    float overall_similarity;          // 전체 유사도 점수
+    uint16_t diff_layers_count;        // 차분 레이어 수
+    uint16_t skipped_layers_count;     // 건너뛴 레이어 수
+    uint32_t compression_savings;      // 압축으로 절약된 바이트 수
+    uint8_t diff_algorithm;            // 사용된 차분 알고리즘
+    uint8_t reserved[15];              // 예약 공간
+} LEFDiffMetadata;
+
+// ============================================================================
+// 차분 모델 시스템 함수들
+// ============================================================================
+
+/**
+ * 차분 모델 생성 컨텍스트 생성
+ * @param base_model 기본 모델 포인터
+ * @param speaker_model 화자별 모델 포인터
+ * @param similarity_threshold 유사도 임계값 (0.0-1.0)
+ * @return 차분 컨텍스트 포인터 (실패 시 NULL)
+ */
+LEFDiffContext* lef_create_diff_context(LEFModel* base_model,
+                                       LEFModel* speaker_model,
+                                       float similarity_threshold);
+
+/**
+ * 차분 모델 생성 컨텍스트 해제
+ * @param ctx 차분 컨텍스트 포인터
+ */
+void lef_destroy_diff_context(LEFDiffContext* ctx);
+
+/**
+ * 레이어 간 유사도 계산
+ * @param base_layer_data 기본 레이어 데이터
+ * @param speaker_layer_data 화자 레이어 데이터
+ * @param data_size 데이터 크기
+ * @param layer_kind 레이어 타입
+ * @return 유사도 점수 (0.0-1.0)
+ */
+float lef_calculate_layer_similarity(const void* base_layer_data,
+                                    const void* speaker_layer_data,
+                                    size_t data_size,
+                                    LEFLayerKind layer_kind);
+
+/**
+ * 레이어 차분 생성
+ * @param ctx 차분 컨텍스트
+ * @param base_layer_id 기본 레이어 ID
+ * @param speaker_layer_id 화자 레이어 ID
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_create_layer_diff(LEFDiffContext* ctx,
+                         uint16_t base_layer_id,
+                         uint16_t speaker_layer_id);
+
+/**
+ * 전체 모델 차분 분석 수행
+ * @param ctx 차분 컨텍스트
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_analyze_model_differences(LEFDiffContext* ctx);
+
+/**
+ * 차분 데이터 압축
+ * @param diff_data 차분 데이터
+ * @param data_size 데이터 크기
+ * @param compression_type 압축 타입
+ * @param compressed_data 압축된 데이터 (출력)
+ * @param compressed_size 압축된 크기 (출력)
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_compress_diff_data(const void* diff_data,
+                          size_t data_size,
+                          LEFDiffCompressionType compression_type,
+                          void** compressed_data,
+                          size_t* compressed_size);
+
+/**
+ * 차분 데이터 압축 해제
+ * @param compressed_data 압축된 데이터
+ * @param compressed_size 압축된 크기
+ * @param compression_type 압축 타입
+ * @param diff_data 차분 데이터 (출력)
+ * @param data_size 데이터 크기 (출력)
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_decompress_diff_data(const void* compressed_data,
+                            size_t compressed_size,
+                            LEFDiffCompressionType compression_type,
+                            void** diff_data,
+                            size_t* data_size);
+
+/**
+ * 유사도 기반 최적화 수행
+ * @param ctx 차분 컨텍스트
+ * @param optimization_level 최적화 레벨 (1-5)
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_optimize_diff_model(LEFDiffContext* ctx, int optimization_level);
+
+/**
+ * 차분 모델을 LEFX 파일로 저장
+ * @param ctx 차분 컨텍스트
+ * @param output_path 출력 파일 경로
+ * @param speaker_info 화자 정보
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_save_diff_model(LEFDiffContext* ctx,
+                       const char* output_path,
+                       const char* speaker_info);
+
+/**
+ * 차분 모델 통계 정보 가져오기
+ * @param ctx 차분 컨텍스트
+ * @param total_savings 총 절약된 바이트 수 (출력)
+ * @param compression_ratio 압축 비율 (출력)
+ * @param avg_similarity 평균 유사도 (출력)
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_get_diff_stats(const LEFDiffContext* ctx,
+                      size_t* total_savings,
+                      float* compression_ratio,
+                      float* avg_similarity);
+
+/**
+ * 차분 모델 정보 출력
+ * @param ctx 차분 컨텍스트
+ */
+void lef_print_diff_info(const LEFDiffContext* ctx);
+
+/**
+ * 스파스 차분 생성 (가중치가 거의 0인 부분 제거)
+ * @param base_data 기본 데이터
+ * @param speaker_data 화자 데이터
+ * @param data_size 데이터 크기
+ * @param sparsity_threshold 스파스 임계값
+ * @param sparse_diff 스파스 차분 데이터 (출력)
+ * @param sparse_size 스파스 데이터 크기 (출력)
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_create_sparse_diff(const float* base_data,
+                          const float* speaker_data,
+                          size_t data_size,
+                          float sparsity_threshold,
+                          void** sparse_diff,
+                          size_t* sparse_size);
+
+/**
+ * 양자화된 차분 생성
+ * @param base_data 기본 데이터
+ * @param speaker_data 화자 데이터
+ * @param data_size 데이터 크기
+ * @param quantization_bits 양자화 비트 수
+ * @param quantized_diff 양자화된 차분 데이터 (출력)
+ * @param quantized_size 양자화된 데이터 크기 (출력)
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lef_create_quantized_diff(const float* base_data,
+                             const float* speaker_data,
+                             size_t data_size,
+                             int quantization_bits,
+                             void** quantized_diff,
+                             size_t* quantized_size);
+
+// ============================================================================
 // LEFX 직렬화 관련 구조체 및 함수들
 // ============================================================================
 
