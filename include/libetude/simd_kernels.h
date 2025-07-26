@@ -309,6 +309,125 @@ LIBETUDE_API void simd_noise_gate_mobile(const float* input, float* output, size
                                         float threshold, float ratio);
 
 // ============================================================================
+// BF16 양자화 SIMD 최적화 함수들
+// ============================================================================
+
+/**
+ * @brief SIMD 최적화된 float32 to BF16 변환
+ *
+ * 벡터화된 BF16 변환으로 대량의 데이터를 효율적으로 처리합니다.
+ *
+ * @param input float32 입력 배열
+ * @param output BF16 출력 배열 (uint16_t로 저장)
+ * @param size 배열 크기
+ */
+LIBETUDE_API void simd_float32_to_bfloat16_optimal(const float* input, uint16_t* output, size_t size);
+
+/**
+ * @brief SIMD 최적화된 BF16 to float32 변환
+ *
+ * 벡터화된 BF16 역변환으로 대량의 데이터를 효율적으로 처리합니다.
+ *
+ * @param input BF16 입력 배열 (uint16_t로 저장)
+ * @param output float32 출력 배열
+ * @param size 배열 크기
+ */
+LIBETUDE_API void simd_bfloat16_to_float32_optimal(const uint16_t* input, float* output, size_t size);
+
+/**
+ * @brief SIMD 최적화된 BF16 벡터 덧셈
+ *
+ * BF16 형태로 저장된 두 벡터의 덧셈을 수행합니다.
+ * 내부적으로 float32로 변환 후 연산하고 다시 BF16으로 변환합니다.
+ *
+ * @param a 첫 번째 BF16 벡터
+ * @param b 두 번째 BF16 벡터
+ * @param result 결과 BF16 벡터
+ * @param size 벡터 크기
+ */
+LIBETUDE_API void simd_bfloat16_vector_add_optimal(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size);
+
+/**
+ * @brief SIMD 최적화된 BF16 벡터 곱셈
+ *
+ * BF16 형태로 저장된 두 벡터의 곱셈을 수행합니다.
+ *
+ * @param a 첫 번째 BF16 벡터
+ * @param b 두 번째 BF16 벡터
+ * @param result 결과 BF16 벡터
+ * @param size 벡터 크기
+ */
+LIBETUDE_API void simd_bfloat16_vector_mul_optimal(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size);
+
+/**
+ * @brief SIMD 최적화된 BF16 행렬 곱셈
+ *
+ * BF16 형태로 저장된 행렬들의 곱셈을 수행합니다.
+ * 높은 처리량과 메모리 효율성을 제공합니다.
+ *
+ * @param a 행렬 A (m x k, BF16)
+ * @param b 행렬 B (k x n, BF16)
+ * @param c 결과 행렬 C (m x n, BF16)
+ * @param m 행렬 A의 행 수
+ * @param n 행렬 B의 열 수
+ * @param k 행렬 A의 열 수 (= 행렬 B의 행 수)
+ */
+LIBETUDE_API void simd_bfloat16_gemm_optimal(const uint16_t* a, const uint16_t* b, uint16_t* c,
+                                            size_t m, size_t n, size_t k);
+
+/**
+ * @brief SIMD 최적화된 BF16 활성화 함수 (ReLU)
+ *
+ * BF16 데이터에 대한 ReLU 활성화 함수를 적용합니다.
+ *
+ * @param input 입력 BF16 벡터
+ * @param output 출력 BF16 벡터
+ * @param size 벡터 크기
+ */
+LIBETUDE_API void simd_bfloat16_relu_optimal(const uint16_t* input, uint16_t* output, size_t size);
+
+/**
+ * @brief SIMD 최적화된 BF16 활성화 함수 (GELU)
+ *
+ * BF16 데이터에 대한 GELU 활성화 함수를 적용합니다.
+ * 음성 합성 모델에서 자주 사용되는 활성화 함수입니다.
+ *
+ * @param input 입력 BF16 벡터
+ * @param output 출력 BF16 벡터
+ * @param size 벡터 크기
+ */
+LIBETUDE_API void simd_bfloat16_gelu_optimal(const uint16_t* input, uint16_t* output, size_t size);
+
+/**
+ * @brief 적응형 BF16 양자화 임계값 계산
+ *
+ * 입력 데이터의 분포를 분석하여 최적의 BF16 양자화 전략을 결정합니다.
+ * 음성 합성 특성을 고려한 동적 임계값 조정을 수행합니다.
+ *
+ * @param input float32 입력 데이터
+ * @param size 데이터 크기
+ * @param quantile 분위수 (0.0 ~ 1.0, 기본값 0.99)
+ * @return 권장 양자화 임계값
+ */
+LIBETUDE_API float simd_bfloat16_adaptive_threshold(const float* input, size_t size, float quantile);
+
+/**
+ * @brief 음성 특화 BF16 양자화 파라미터 튜닝
+ *
+ * 음성 합성 모델의 특성을 고려하여 BF16 양자화 파라미터를 최적화합니다.
+ * 주파수 도메인 특성과 시간 도메인 특성을 모두 고려합니다.
+ *
+ * @param input float32 입력 데이터 (음성 특징)
+ * @param size 데이터 크기
+ * @param is_frequency_domain 주파수 도메인 데이터 여부
+ * @param scale_factor 출력 스케일 팩터 포인터
+ * @param bias_factor 출력 바이어스 팩터 포인터
+ * @return 튜닝 성공 여부
+ */
+LIBETUDE_API bool simd_bfloat16_voice_tuning(const float* input, size_t size, bool is_frequency_domain,
+                                             float* scale_factor, float* bias_factor);
+
+// ============================================================================
 // SIMD 커널 시스템 관리 함수
 // ============================================================================
 

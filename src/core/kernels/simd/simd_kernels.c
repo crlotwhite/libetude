@@ -60,6 +60,23 @@ extern void neon_gemm_memory_optimized(const float* a, const float* b, float* c,
 // CPU 기본 커널 함수들 (fallback)
 extern void register_cpu_kernels(void);
 
+// BF16 SIMD 커널 함수들
+extern void sse_float32_to_bfloat16(const float* input, uint16_t* output, size_t size);
+extern void sse_bfloat16_to_float32(const uint16_t* input, float* output, size_t size);
+extern void sse_bfloat16_vector_add(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size);
+extern void sse_bfloat16_vector_mul(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size);
+
+extern void avx_float32_to_bfloat16(const float* input, uint16_t* output, size_t size);
+extern void avx_bfloat16_to_float32(const uint16_t* input, float* output, size_t size);
+extern void avx_bfloat16_vector_add(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size);
+extern void avx_bfloat16_vector_mul(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size);
+extern void avx_bfloat16_gemm(const uint16_t* a, const uint16_t* b, uint16_t* c, size_t m, size_t n, size_t k);
+
+extern void neon_float32_to_bfloat16(const float* input, uint16_t* output, size_t size);
+extern void neon_bfloat16_to_float32(const uint16_t* input, float* output, size_t size);
+extern void neon_bfloat16_vector_add(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size);
+extern void neon_bfloat16_vector_mul(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size);
+
 // ============================================================================
 // 고수준 SIMD 인터페이스 함수들
 // ============================================================================
@@ -559,4 +576,336 @@ uint32_t simd_kernels_get_features(void) {
  */
 void simd_kernels_print_info(void) {
     kernel_registry_print_info();
+}
+
+// ============================================================================
+// BF16 양자화 SIMD 최적화 함수들
+// ============================================================================
+
+/**
+ * @brief SIMD 최적화된 float32 to BF16 변환
+ */
+void simd_float32_to_bfloat16_optimal(const float* input, uint16_t* output, size_t size) {
+    typedef void (*Float32ToBF16Kernel)(const float*, uint16_t*, size_t);
+    Float32ToBF16Kernel kernel = (Float32ToBF16Kernel)kernel_registry_select_optimal("float32_to_bfloat16", size);
+
+    if (kernel) {
+        kernel(input, output, size);
+    } else {
+        // fallback: 기본 구현 (스칼라 버전)
+        for (size_t i = 0; i < size; i++) {
+            union {
+                float f;
+                uint32_t i;
+            } converter;
+
+            converter.f = input[i];
+
+            // 반올림을 위한 바이어스 추가
+            uint32_t bias = 0x00007FFF + ((converter.i >> 16) & 1);
+
+            // 상위 16비트 추출 (반올림 적용)
+            output[i] = (uint16_t)((converter.i + bias) >> 16);
+        }
+    }
+}
+
+/**
+ * @brief SIMD 최적화된 BF16 to float32 변환
+ */
+void simd_bfloat16_to_float32_optimal(const uint16_t* input, float* output, size_t size) {
+    typedef void (*BF16ToFloat32Kernel)(const uint16_t*, float*, size_t);
+    BF16ToFloat32Kernel kernel = (BF16ToFloat32Kernel)kernel_registry_select_optimal("bfloat16_to_float32", size);
+
+    if (kernel) {
+        kernel(input, output, size);
+    } else {
+        // fallback: 기본 구현 (스칼라 버전)
+        for (size_t i = 0; i < size; i++) {
+            union {
+                float f;
+                uint32_t i;
+            } converter;
+
+            // BF16은 float32의 상위 16비트만 사용
+            // 하위 16비트는 0으로 채움
+            converter.i = ((uint32_t)input[i]) << 16;
+            output[i] = converter.f;
+        }
+    }
+}
+
+/**
+ * @brief SIMD 최적화된 BF16 벡터 덧셈
+ */
+void simd_bfloat16_vector_add_optimal(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size) {
+    typedef void (*BF16VectorAddKernel)(const uint16_t*, const uint16_t*, uint16_t*, size_t);
+    BF16VectorAddKernel kernel = (BF16VectorAddKernel)kernel_registry_select_optimal("bfloat16_vector_add", size);
+
+    if (kernel) {
+        kernel(a, b, result, size);
+    } else {
+        // fallback: 기본 구현 (BF16 -> float32 -> 연산 -> BF16)
+        for (size_t i = 0; i < size; i++) {
+            // BF16을 float32로 변환
+            union { float f; uint32_t i; } conv_a, conv_b, conv_result;
+            conv_a.i = ((uint32_t)a[i]) << 16;
+            conv_b.i = ((uint32_t)b[i]) << 16;
+
+            // float32로 덧셈 수행
+            conv_result.f = conv_a.f + conv_b.f;
+
+            // 결과를 BF16으로 변환
+            uint32_t bias = 0x00007FFF + ((conv_result.i >> 16) & 1);
+            result[i] = (uint16_t)((conv_result.i + bias) >> 16);
+        }
+    }
+}
+
+/**
+ * @brief SIMD 최적화된 BF16 벡터 곱셈
+ */
+void simd_bfloat16_vector_mul_optimal(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size) {
+    typedef void (*BF16VectorMulKernel)(const uint16_t*, const uint16_t*, uint16_t*, size_t);
+    BF16VectorMulKernel kernel = (BF16VectorMulKernel)kernel_registry_select_optimal("bfloat16_vector_mul", size);
+
+    if (kernel) {
+        kernel(a, b, result, size);
+    } else {
+        // fallback: 기본 구현 (BF16 -> float32 -> 연산 -> BF16)
+        for (size_t i = 0; i < size; i++) {
+            // BF16을 float32로 변환
+            union { float f; uint32_t i; } conv_a, conv_b, conv_result;
+            conv_a.i = ((uint32_t)a[i]) << 16;
+            conv_b.i = ((uint32_t)b[i]) << 16;
+
+            // float32로 곱셈 수행
+            conv_result.f = conv_a.f * conv_b.f;
+
+            // 결과를 BF16으로 변환
+            uint32_t bias = 0x00007FFF + ((conv_result.i >> 16) & 1);
+            result[i] = (uint16_t)((conv_result.i + bias) >> 16);
+        }
+    }
+}
+
+/**
+ * @brief SIMD 최적화된 BF16 행렬 곱셈
+ */
+void simd_bfloat16_gemm_optimal(const uint16_t* a, const uint16_t* b, uint16_t* c,
+                               size_t m, size_t n, size_t k) {
+    typedef void (*BF16GemmKernel)(const uint16_t*, const uint16_t*, uint16_t*, size_t, size_t, size_t);
+    size_t matrix_size = m * n * k;
+    BF16GemmKernel kernel = (BF16GemmKernel)kernel_registry_select_optimal("bfloat16_gemm", matrix_size);
+
+    if (kernel) {
+        kernel(a, b, c, m, n, k);
+    } else {
+        // fallback: 기본 구현 (BF16 -> float32 -> GEMM -> BF16)
+        // 결과 행렬 초기화
+        memset(c, 0, m * n * sizeof(uint16_t));
+
+        for (size_t i = 0; i < m; i++) {
+            for (size_t j = 0; j < n; j++) {
+                float sum = 0.0f;
+
+                for (size_t l = 0; l < k; l++) {
+                    // BF16을 float32로 변환하여 연산
+                    union { float f; uint32_t i; } conv_a, conv_b;
+                    conv_a.i = ((uint32_t)a[i * k + l]) << 16;
+                    conv_b.i = ((uint32_t)b[l * n + j]) << 16;
+
+                    sum += conv_a.f * conv_b.f;
+                }
+
+                // 결과를 BF16으로 변환
+                union { float f; uint32_t i; } conv_result;
+                conv_result.f = sum;
+                uint32_t bias = 0x00007FFF + ((conv_result.i >> 16) & 1);
+                c[i * n + j] = (uint16_t)((conv_result.i + bias) >> 16);
+            }
+        }
+    }
+}
+
+/**
+ * @brief SIMD 최적화된 BF16 활성화 함수 (ReLU)
+ */
+void simd_bfloat16_relu_optimal(const uint16_t* input, uint16_t* output, size_t size) {
+    typedef void (*BF16ReluKernel)(const uint16_t*, uint16_t*, size_t);
+    BF16ReluKernel kernel = (BF16ReluKernel)kernel_registry_select_optimal("bfloat16_relu", size);
+
+    if (kernel) {
+        kernel(input, output, size);
+    } else {
+        // fallback: 기본 구현
+        const uint16_t zero_bf16 = 0x0000; // BF16 형태의 0.0
+
+        for (size_t i = 0; i < size; i++) {
+            // BF16을 float32로 변환하여 비교
+            union { float f; uint32_t i; } conv;
+            conv.i = ((uint32_t)input[i]) << 16;
+
+            if (conv.f > 0.0f) {
+                output[i] = input[i]; // 양수면 그대로
+            } else {
+                output[i] = zero_bf16; // 음수면 0
+            }
+        }
+    }
+}
+
+/**
+ * @brief SIMD 최적화된 BF16 활성화 함수 (GELU)
+ */
+void simd_bfloat16_gelu_optimal(const uint16_t* input, uint16_t* output, size_t size) {
+    typedef void (*BF16GeluKernel)(const uint16_t*, uint16_t*, size_t);
+    BF16GeluKernel kernel = (BF16GeluKernel)kernel_registry_select_optimal("bfloat16_gelu", size);
+
+    if (kernel) {
+        kernel(input, output, size);
+    } else {
+        // fallback: 기본 구현
+        const float sqrt_2_over_pi = 0.7978845608f;
+        const float coeff = 0.044715f;
+
+        for (size_t i = 0; i < size; i++) {
+            // BF16을 float32로 변환
+            union { float f; uint32_t i; } conv_input, conv_output;
+            conv_input.i = ((uint32_t)input[i]) << 16;
+
+            // GELU 계산
+            float x = conv_input.f;
+            float x3 = x * x * x;
+            float inner = sqrt_2_over_pi * (x + coeff * x3);
+            conv_output.f = 0.5f * x * (1.0f + tanhf(inner));
+
+            // 결과를 BF16으로 변환
+            uint32_t bias = 0x00007FFF + ((conv_output.i >> 16) & 1);
+            output[i] = (uint16_t)((conv_output.i + bias) >> 16);
+        }
+    }
+}
+
+/**
+ * @brief 적응형 BF16 양자화 임계값 계산
+ */
+float simd_bfloat16_adaptive_threshold(const float* input, size_t size, float quantile) {
+    if (!input || size == 0 || quantile < 0.0f || quantile > 1.0f) {
+        return 1.0f; // 기본값
+    }
+
+    // 절댓값의 히스토그램을 사용한 분위수 계산
+    const int HISTOGRAM_BINS = 1000;
+    float histogram[HISTOGRAM_BINS] = {0};
+
+    // 최댓값 찾기
+    float max_abs = 0.0f;
+    for (size_t i = 0; i < size; i++) {
+        float abs_val = fabsf(input[i]);
+        if (abs_val > max_abs) {
+            max_abs = abs_val;
+        }
+    }
+
+    if (max_abs == 0.0f) {
+        return 1.0f; // 모든 값이 0인 경우
+    }
+
+    // 히스토그램 생성
+    float bin_width = max_abs / HISTOGRAM_BINS;
+    for (size_t i = 0; i < size; i++) {
+        float abs_val = fabsf(input[i]);
+        int bin = (int)(abs_val / bin_width);
+        if (bin >= HISTOGRAM_BINS) bin = HISTOGRAM_BINS - 1;
+        histogram[bin] += 1.0f;
+    }
+
+    // 분위수 계산
+    float target_count = quantile * size;
+    float cumulative = 0.0f;
+
+    for (int i = 0; i < HISTOGRAM_BINS; i++) {
+        cumulative += histogram[i];
+        if (cumulative >= target_count) {
+            return (i + 1) * bin_width;
+        }
+    }
+
+    return max_abs; // fallback
+}
+
+/**
+ * @brief 음성 특화 BF16 양자화 파라미터 튜닝
+ */
+bool simd_bfloat16_voice_tuning(const float* input, size_t size, bool is_frequency_domain,
+                               float* scale_factor, float* bias_factor) {
+    if (!input || size == 0 || !scale_factor || !bias_factor) {
+        return false;
+    }
+
+    // 기본값 설정
+    *scale_factor = 1.0f;
+    *bias_factor = 0.0f;
+
+    // 통계 계산
+    float mean = 0.0f;
+    float variance = 0.0f;
+    float min_val = input[0];
+    float max_val = input[0];
+
+    // 평균 계산
+    for (size_t i = 0; i < size; i++) {
+        mean += input[i];
+        if (input[i] < min_val) min_val = input[i];
+        if (input[i] > max_val) max_val = input[i];
+    }
+    mean /= (float)size;
+
+    // 분산 계산
+    for (size_t i = 0; i < size; i++) {
+        float diff = input[i] - mean;
+        variance += diff * diff;
+    }
+    variance /= (float)size;
+
+    float std_dev = sqrtf(variance);
+
+    if (is_frequency_domain) {
+        // 주파수 도메인: 로그 스케일 특성 고려
+        // 낮은 주파수 성분이 더 중요하므로 동적 범위 조정
+        float dynamic_range = max_val - min_val;
+
+        if (dynamic_range > 0.0f) {
+            // 3-sigma 규칙을 사용하여 스케일 조정
+            float three_sigma = 3.0f * std_dev;
+            *scale_factor = 1.0f / (three_sigma + 1e-8f);
+
+            // 평균을 중심으로 바이어스 조정
+            *bias_factor = -mean * (*scale_factor);
+        }
+    } else {
+        // 시간 도메인: 신호의 동적 범위 보존
+        float abs_max = fmaxf(fabsf(min_val), fabsf(max_val));
+
+        if (abs_max > 0.0f) {
+            // BF16의 동적 범위를 고려한 스케일링
+            // BF16은 약 ±3.4e38 범위를 가지지만, 정밀도는 7비트
+            float bf16_safe_range = 65504.0f; // BF16의 안전한 최댓값
+            *scale_factor = bf16_safe_range / (abs_max * 1.1f); // 10% 여유
+
+            // 시간 도메인에서는 일반적으로 바이어스 없음
+            *bias_factor = 0.0f;
+        }
+    }
+
+    // 스케일 팩터가 너무 작거나 큰 경우 클램핑
+    if (*scale_factor < 1e-6f) *scale_factor = 1e-6f;
+    if (*scale_factor > 1e6f) *scale_factor = 1e6f;
+
+    // 바이어스 팩터 클램핑
+    if (*bias_factor < -1000.0f) *bias_factor = -1000.0f;
+    if (*bias_factor > 1000.0f) *bias_factor = 1000.0f;
+
+    return true;
 }

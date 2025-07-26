@@ -854,3 +854,331 @@ void register_avx_kernels(void) {
     kernel_registry_register(&kernel_info);
 #endif
 }
+//
+ ============================================================================
+// AVX BF16 양자화 최적화 커널
+// ============================================================================
+
+#ifdef LIBETUDE_HAVE_AVX
+/**
+ * @brief AVX 최적화된 float32 to BF16 변환
+ */
+void avx_float32_to_bfloat16(const float* input, uint16_t* output, size_t size) {
+    size_t i = 0;
+
+    // 8개 요소씩 AVX 벡터 처리
+    for (; i + 7 < size; i += 8) {
+        __m256 vfloat = _mm256_loadu_ps(input + i);
+        __m256i vint = _mm256_castps_si256(vfloat);
+
+        // 반올림을 위한 바이어스 추가
+        __m256i bias = _mm256_set1_epi32(0x00007FFF);
+        __m256i round_bit = _mm256_and_si256(_mm256_srli_epi32(vint, 16), _mm256_set1_epi32(1));
+        bias = _mm256_add_epi32(bias, round_bit);
+
+        // 바이어스 추가 후 상위 16비트 추출
+        vint = _mm256_add_epi32(vint, bias);
+        vint = _mm256_srli_epi32(vint, 16);
+
+        // 32비트에서 16비트로 패킹
+        __m256i packed = _mm256_packus_epi32(vint, vint);
+
+        // 결과 저장 (128비트씩 두 번)
+        _mm_storeu_si128((__m128i*)(output + i), _mm256_extracti128_si256(packed, 0));
+        _mm_storeu_si128((__m128i*)(output + i + 4), _mm256_extracti128_si256(packed, 1));
+    }
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        union { float f; uint32_t i; } converter;
+        converter.f = input[i];
+        uint32_t bias = 0x00007FFF + ((converter.i >> 16) & 1);
+        output[i] = (uint16_t)((converter.i + bias) >> 16);
+    }
+}
+
+/**
+ * @brief AVX 최적화된 BF16 to float32 변환
+ */
+void avx_bfloat16_to_float32(const uint16_t* input, float* output, size_t size) {
+    size_t i = 0;
+
+    // 8개 요소씩 AVX 벡터 처리
+    for (; i + 7 < size; i += 8) {
+        // 16비트 값들을 로드
+        __m128i vbf16 = _mm_loadu_si128((__m128i*)(input + i));
+
+        // 16비트를 32비트로 확장
+        __m256i vint32 = _mm256_cvtepu16_epi32(vbf16);
+
+        // 16비트 왼쪽 시프트 (BF16 -> float32)
+        vint32 = _mm256_slli_epi32(vint32, 16);
+
+        // 정수를 float로 재해석
+        __m256 vfloat = _mm256_castsi256_ps(vint32);
+
+        // 결과 저장
+        _mm256_storeu_ps(output + i, vfloat);
+    }
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        union { float f; uint32_t i; } converter;
+        converter.i = ((uint32_t)input[i]) << 16;
+        output[i] = converter.f;
+    }
+}
+
+/**
+ * @brief AVX 최적화된 BF16 벡터 덧셈
+ */
+void avx_bfloat16_vector_add(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size) {
+    size_t i = 0;
+
+    // 8개 요소씩 AVX 벡터 처리
+    for (; i + 7 < size; i += 8) {
+        // BF16 값들을 로드
+        __m128i va_bf16 = _mm_loadu_si128((__m128i*)(a + i));
+        __m128i vb_bf16 = _mm_loadu_si128((__m128i*)(b + i));
+
+        // 16비트를 32비트로 확장
+        __m256i va_int32 = _mm256_cvtepu16_epi32(va_bf16);
+        __m256i vb_int32 = _mm256_cvtepu16_epi32(vb_bf16);
+
+        // 16비트 왼쪽 시프트 (BF16 -> float32)
+        va_int32 = _mm256_slli_epi32(va_int32, 16);
+        vb_int32 = _mm256_slli_epi32(vb_int32, 16);
+
+        // 정수를 float로 재해석
+        __m256 va_float = _mm256_castsi256_ps(va_int32);
+        __m256 vb_float = _mm256_castsi256_ps(vb_int32);
+
+        // float32 덧셈 수행
+        __m256 vresult_float = _mm256_add_ps(va_float, vb_float);
+
+        // float32를 BF16으로 변환
+        __m256i vresult_int = _mm256_castps_si256(vresult_float);
+
+        // 반올림을 위한 바이어스 추가
+        __m256i bias = _mm256_set1_epi32(0x00007FFF);
+        __m256i round_bit = _mm256_and_si256(_mm256_srli_epi32(vresult_int, 16), _mm256_set1_epi32(1));
+        bias = _mm256_add_epi32(bias, round_bit);
+
+        // 바이어스 추가 후 상위 16비트 추출
+        vresult_int = _mm256_add_epi32(vresult_int, bias);
+        vresult_int = _mm256_srli_epi32(vresult_int, 16);
+
+        // 32비트에서 16비트로 패킹
+        __m256i packed = _mm256_packus_epi32(vresult_int, vresult_int);
+
+        // 결과 저장
+        _mm_storeu_si128((__m128i*)(result + i), _mm256_extracti128_si256(packed, 0));
+    }
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        union { float f; uint32_t i; } conv_a, conv_b, conv_result;
+        conv_a.i = ((uint32_t)a[i]) << 16;
+        conv_b.i = ((uint32_t)b[i]) << 16;
+        conv_result.f = conv_a.f + conv_b.f;
+        uint32_t bias = 0x00007FFF + ((conv_result.i >> 16) & 1);
+        result[i] = (uint16_t)((conv_result.i + bias) >> 16);
+    }
+}
+
+/**
+ * @brief AVX 최적화된 BF16 벡터 곱셈
+ */
+void avx_bfloat16_vector_mul(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size) {
+    size_t i = 0;
+
+    // 8개 요소씩 AVX 벡터 처리
+    for (; i + 7 < size; i += 8) {
+        // BF16 값들을 로드
+        __m128i va_bf16 = _mm_loadu_si128((__m128i*)(a + i));
+        __m128i vb_bf16 = _mm_loadu_si128((__m128i*)(b + i));
+
+        // 16비트를 32비트로 확장
+        __m256i va_int32 = _mm256_cvtepu16_epi32(va_bf16);
+        __m256i vb_int32 = _mm256_cvtepu16_epi32(vb_bf16);
+
+        // 16비트 왼쪽 시프트 (BF16 -> float32)
+        va_int32 = _mm256_slli_epi32(va_int32, 16);
+        vb_int32 = _mm256_slli_epi32(vb_int32, 16);
+
+        // 정수를 float로 재해석
+        __m256 va_float = _mm256_castsi256_ps(va_int32);
+        __m256 vb_float = _mm256_castsi256_ps(vb_int32);
+
+        // float32 곱셈 수행
+        __m256 vresult_float = _mm256_mul_ps(va_float, vb_float);
+
+        // float32를 BF16으로 변환
+        __m256i vresult_int = _mm256_castps_si256(vresult_float);
+
+        // 반올림을 위한 바이어스 추가
+        __m256i bias = _mm256_set1_epi32(0x00007FFF);
+        __m256i round_bit = _mm256_and_si256(_mm256_srli_epi32(vresult_int, 16), _mm256_set1_epi32(1));
+        bias = _mm256_add_epi32(bias, round_bit);
+
+        // 바이어스 추가 후 상위 16비트 추출
+        vresult_int = _mm256_add_epi32(vresult_int, bias);
+        vresult_int = _mm256_srli_epi32(vresult_int, 16);
+
+        // 32비트에서 16비트로 패킹
+        __m256i packed = _mm256_packus_epi32(vresult_int, vresult_int);
+
+        // 결과 저장
+        _mm_storeu_si128((__m128i*)(result + i), _mm256_extracti128_si256(packed, 0));
+    }
+
+    // 나머지 요소 처리
+    for (; i < size; i++) {
+        union { float f; uint32_t i; } conv_a, conv_b, conv_result;
+        conv_a.i = ((uint32_t)a[i]) << 16;
+        conv_b.i = ((uint32_t)b[i]) << 16;
+        conv_result.f = conv_a.f * conv_b.f;
+        uint32_t bias = 0x00007FFF + ((conv_result.i >> 16) & 1);
+        result[i] = (uint16_t)((conv_result.i + bias) >> 16);
+    }
+}
+
+/**
+ * @brief AVX 최적화된 BF16 행렬 곱셈 (간단한 구현)
+ */
+void avx_bfloat16_gemm(const uint16_t* a, const uint16_t* b, uint16_t* c,
+                      size_t m, size_t n, size_t k) {
+    // 결과 행렬 초기화
+    memset(c, 0, m * n * sizeof(uint16_t));
+
+    // 블록 크기 설정 (캐시 효율성을 위해)
+    const size_t BLOCK_SIZE = 64;
+
+    for (size_t i = 0; i < m; i += BLOCK_SIZE) {
+        for (size_t j = 0; j < n; j += BLOCK_SIZE) {
+            for (size_t l = 0; l < k; l += BLOCK_SIZE) {
+                // 블록 경계 계산
+                size_t i_end = (i + BLOCK_SIZE < m) ? i + BLOCK_SIZE : m;
+                size_t j_end = (j + BLOCK_SIZE < n) ? j + BLOCK_SIZE : n;
+                size_t l_end = (l + BLOCK_SIZE < k) ? l + BLOCK_SIZE : k;
+
+                // 블록 내 행렬 곱셈
+                for (size_t ii = i; ii < i_end; ii++) {
+                    for (size_t jj = j; jj < j_end; jj++) {
+                        __m256 sum_vec = _mm256_setzero_ps();
+                        size_t ll = l;
+
+                        // AVX로 8개씩 처리
+                        for (; ll + 7 < l_end; ll += 8) {
+                            // A 행렬의 BF16 값들을 float32로 변환
+                            __m128i va_bf16 = _mm_loadu_si128((__m128i*)(a + ii * k + ll));
+                            __m256i va_int32 = _mm256_cvtepu16_epi32(va_bf16);
+                            va_int32 = _mm256_slli_epi32(va_int32, 16);
+                            __m256 va_float = _mm256_castsi256_ps(va_int32);
+
+                            // B 행렬의 BF16 값들을 float32로 변환
+                            uint16_t b_values[8];
+                            for (int idx = 0; idx < 8; idx++) {
+                                b_values[idx] = b[(ll + idx) * n + jj];
+                            }
+                            __m128i vb_bf16 = _mm_loadu_si128((__m128i*)b_values);
+                            __m256i vb_int32 = _mm256_cvtepu16_epi32(vb_bf16);
+                            vb_int32 = _mm256_slli_epi32(vb_int32, 16);
+                            __m256 vb_float = _mm256_castsi256_ps(vb_int32);
+
+                            // 곱셈 및 누적
+                            __m256 prod = _mm256_mul_ps(va_float, vb_float);
+                            sum_vec = _mm256_add_ps(sum_vec, prod);
+                        }
+
+                        // 벡터 합계를 스칼라로 축소
+                        float sum_array[8];
+                        _mm256_storeu_ps(sum_array, sum_vec);
+                        float partial_sum = sum_array[0] + sum_array[1] + sum_array[2] + sum_array[3] +
+                                          sum_array[4] + sum_array[5] + sum_array[6] + sum_array[7];
+
+                        // 나머지 요소들 처리
+                        for (; ll < l_end; ll++) {
+                            union { float f; uint32_t i; } conv_a, conv_b;
+                            conv_a.i = ((uint32_t)a[ii * k + ll]) << 16;
+                            conv_b.i = ((uint32_t)b[ll * n + jj]) << 16;
+                            partial_sum += conv_a.f * conv_b.f;
+                        }
+
+                        // 기존 값에 누적하고 BF16으로 변환
+                        union { float f; uint32_t i; } conv_c, conv_result;
+                        conv_c.i = ((uint32_t)c[ii * n + jj]) << 16;
+                        conv_result.f = conv_c.f + partial_sum;
+                        uint32_t bias = 0x00007FFF + ((conv_result.i >> 16) & 1);
+                        c[ii * n + jj] = (uint16_t)((conv_result.i + bias) >> 16);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#else // LIBETUDE_HAVE_AVX가 정의되지 않은 경우
+
+// AVX가 지원되지 않는 경우 더미 함수들
+void avx_float32_to_bfloat16(const float* input, uint16_t* output, size_t size) {
+    // 기본 구현으로 fallback
+    for (size_t i = 0; i < size; i++) {
+        union { float f; uint32_t i; } converter;
+        converter.f = input[i];
+        uint32_t bias = 0x00007FFF + ((converter.i >> 16) & 1);
+        output[i] = (uint16_t)((converter.i + bias) >> 16);
+    }
+}
+
+void avx_bfloat16_to_float32(const uint16_t* input, float* output, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        union { float f; uint32_t i; } converter;
+        converter.i = ((uint32_t)input[i]) << 16;
+        output[i] = converter.f;
+    }
+}
+
+void avx_bfloat16_vector_add(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        union { float f; uint32_t i; } conv_a, conv_b, conv_result;
+        conv_a.i = ((uint32_t)a[i]) << 16;
+        conv_b.i = ((uint32_t)b[i]) << 16;
+        conv_result.f = conv_a.f + conv_b.f;
+        uint32_t bias = 0x00007FFF + ((conv_result.i >> 16) & 1);
+        result[i] = (uint16_t)((conv_result.i + bias) >> 16);
+    }
+}
+
+void avx_bfloat16_vector_mul(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        union { float f; uint32_t i; } conv_a, conv_b, conv_result;
+        conv_a.i = ((uint32_t)a[i]) << 16;
+        conv_b.i = ((uint32_t)b[i]) << 16;
+        conv_result.f = conv_a.f * conv_b.f;
+        uint32_t bias = 0x00007FFF + ((conv_result.i >> 16) & 1);
+        result[i] = (uint16_t)((conv_result.i + bias) >> 16);
+    }
+}
+
+void avx_bfloat16_gemm(const uint16_t* a, const uint16_t* b, uint16_t* c,
+                      size_t m, size_t n, size_t k) {
+    memset(c, 0, m * n * sizeof(uint16_t));
+    for (size_t i = 0; i < m; i++) {
+        for (size_t j = 0; j < n; j++) {
+            float sum = 0.0f;
+            for (size_t l = 0; l < k; l++) {
+                union { float f; uint32_t i; } conv_a, conv_b;
+                conv_a.i = ((uint32_t)a[i * k + l]) << 16;
+                conv_b.i = ((uint32_t)b[l * n + j]) << 16;
+                sum += conv_a.f * conv_b.f;
+            }
+            union { float f; uint32_t i; } conv_result;
+            conv_result.f = sum;
+            uint32_t bias = 0x00007FFF + ((conv_result.i >> 16) & 1);
+            c[i * n + j] = (uint16_t)((conv_result.i + bias) >> 16);
+        }
+    }
+}
+
+#endif // LIBETUDE_HAVE_AVX

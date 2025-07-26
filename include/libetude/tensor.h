@@ -705,6 +705,41 @@ uint8_t et_pack_int4(uint8_t val1, uint8_t val2);
  */
 void et_unpack_int4(uint8_t packed, uint8_t* val1, uint8_t* val2);
 
+/**
+ * @brief 음성 합성 특화 BF16 양자화 파라미터 계산
+ * @param input 입력 텐서 (float32)
+ * @param is_frequency_domain 주파수 도메인 데이터 여부
+ * @param scale_factor 출력 스케일 팩터 포인터
+ * @param bias_factor 출력 바이어스 팩터 포인터
+ * @return 성공시 true, 실패시 false
+ */
+bool et_compute_voice_optimized_bf16_params(const ETTensor* input, bool is_frequency_domain,
+                                           float* scale_factor, float* bias_factor);
+
+/**
+ * @brief 적응형 BF16 양자화 (음성 특화)
+ * @param input 입력 텐서 (float32)
+ * @param output 출력 텐서 (BF16, NULL이면 새로 생성)
+ * @param is_frequency_domain 주파수 도메인 데이터 여부
+ * @param pool 메모리 풀
+ * @return 양자화된 텐서, 실패시 NULL
+ */
+ETTensor* et_adaptive_quantize_to_bfloat16(const ETTensor* input, ETTensor* output,
+                                          bool is_frequency_domain, ETMemoryPool* pool);
+
+/**
+ * @brief 배치별 적응형 BF16 양자화
+ * @param input 입력 텐서 (float32)
+ * @param output 출력 텐서 (BF16, NULL이면 새로 생성)
+ * @param is_frequency_domain 주파수 도메인 데이터 여부
+ * @param batch_axis 배치 축 인덱스
+ * @param pool 메모리 풀
+ * @return 양자화된 텐서, 실패시 NULL
+ */
+ETTensor* et_batch_adaptive_quantize_to_bfloat16(const ETTensor* input, ETTensor* output,
+                                                bool is_frequency_domain, size_t batch_axis,
+                                                ETMemoryPool* pool);
+
 // =============================================================================
 // 인플레이스 연산 함수
 // =============================================================================
