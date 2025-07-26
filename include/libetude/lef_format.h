@@ -1167,6 +1167,22 @@ int lefx_set_plugin_data(LEFXSerializationContext* ctx, const LEFXPluginData* pl
  */
 int lefx_finalize_extension(LEFXSerializationContext* ctx);
 
+// ============================================================================
+// 내부 헬퍼 함수들 (구현에서만 사용)
+// ============================================================================
+
+/**
+ * 레이어 블렌딩 적용 (내부 함수)
+ * @param base_data 기본 레이어 데이터
+ * @param ext_data 확장 레이어 데이터
+ * @param data_size 데이터 크기
+ * @param blend_mode 블렌딩 모드
+ * @param weight 블렌딩 가중치
+ * @return 성공 시 LEF_SUCCESS, 실패 시 에러 코드
+ */
+int lefx_apply_layer_blending(void* base_data, const void* ext_data,
+                             size_t data_size, uint8_t blend_mode, float weight);
+
 #ifdef __cplusplus
 }
 #endif
