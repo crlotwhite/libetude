@@ -174,6 +174,7 @@ create_unity_test(error_handling_test "unit/test_error_handling.c")
 # 오디오 처리 테스트
 create_unity_test(audio_io_test "unit/test_audio_io.c")
 create_unity_test(stft_test "unit/test_stft.c")
+create_unity_test(mel_scale_test "unit/test_mel_scale.c")
 
 # Unity CTest 통합
 include(CTest)
@@ -201,6 +202,7 @@ add_test(NAME ErrorHandlingTest COMMAND error_handling_test)
 # 오디오 처리 테스트
 add_test(NAME AudioIOTest COMMAND audio_io_test)
 add_test(NAME STFTTest COMMAND stft_test)
+add_test(NAME MelScaleTest COMMAND mel_scale_test)
 
 # 테스트 등록 (새로운 독립적인 테스트들)
 if(TARGET test_unity_simple)
@@ -289,6 +291,25 @@ set_tests_properties(ProfilerTest PROPERTIES
 set_tests_properties(ErrorHandlingTest PROPERTIES
     TIMEOUT 120
     LABELS "error;logging;runtime;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# 오디오 처리 테스트 속성 설정
+set_tests_properties(AudioIOTest PROPERTIES
+    TIMEOUT 60
+    LABELS "audio;io;platform;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+set_tests_properties(STFTTest PROPERTIES
+    TIMEOUT 120
+    LABELS "audio;stft;dsp;simd;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+set_tests_properties(MelScaleTest PROPERTIES
+    TIMEOUT 120
+    LABELS "audio;mel;dsp;simd;optimization;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
