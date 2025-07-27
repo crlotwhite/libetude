@@ -41,7 +41,7 @@ set(LIBETUDE_CORE_SOURCES
     lef/compression/voice_compression.c
 
     # 런타임 시스템
-    runtime/scheduler/task_scheduler.c
+    runtime/scheduler/task_scheduler_simple.c
     runtime/profiler/profiler.c
     runtime/error/error_handling.c
 

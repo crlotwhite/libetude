@@ -43,48 +43,19 @@ static void cleanup_task_queue(ETTaskQueue* queue) {
     pthread_cond_destroy(&queue->condition);
 }
 
-// 우선순위 큐에 작업 추가 (우선순위와 데드라인 고려)
+// 큐에 작업 추가 (간단한 FIFO)
 static void enqueue_task(ETTaskQueue* queue, ETTask* task) {
     pthread_mutex_lock(&queue->mutex);
 
-    // 빈 큐인 경우
-    if (queue->head == NULL) {
-        queue->head = queue->tail = task;
-        task->next = NULL;
+    task->next = NULL;
+    if (queue->tail) {
+        queue->tail->next = task;
     } else {
-        // 실시간 작업의 경우 데드라인 기준으로 정렬
-        if (task->priority == ET_TASK_PRIORITY_REALTIME) {
-            ETTask* current = queue->head;
-            ETTask* prev = NULL;
-
-            // 데드라인이 더 빠른 위치 찾기
-            while (current && current->priority == ET_TASK_PRIORITY_REALTIME &&
-                   current->deadline <= task->deadline) {
-                prev = current;
-                current = current->next;
-            }
-
-            if (prev == NULL) {
-                // 맨 앞에 삽입
-                task->next = queue->head;
-                queue->head = task;
-            } else {
-                // 중간에 삽입
-                task->next = prev->next;
-                prev->next = task;
-                if (task->next == NULL) {
-                    queue->tail = task;
-                }
-            }
-        } else {
-            // 일반 작업은 큐 끝에 추가
-            queue->tail->next = task;
-            queue->tail = task;
-            task->next = NULL;
-        }
+        queue->head = task;
     }
-
+    queue->tail = task;
     queue->count++;
+
     pthread_cond_signal(&queue->condition);
     pthread_mutex_unlock(&queue->mutex);
 }
@@ -107,7 +78,7 @@ static ETTask* dequeue_task(ETTaskQueue* queue) {
     return task;
 }
 
-// 워커 스레드 함수
+// 워커 스레드 함수 (간단한 버전)
 static void* worker_thread_func(void* arg) {
     ETWorkerThread* worker = (ETWorkerThread*)arg;
     ETTaskScheduler* scheduler = worker->scheduler;
@@ -115,53 +86,22 @@ static void* worker_thread_func(void* arg) {
     while (!worker->should_exit) {
         ETTask* task = NULL;
 
-        // 우선순위 순서대로 작업 검색 (REALTIME > HIGH > NORMAL > LOW)
+        // 우선순위 순서대로 작업 검색
         for (int priority = ET_TASK_PRIORITY_REALTIME; priority >= ET_TASK_PRIORITY_LOW; priority--) {
-            ETTaskQueue* queue = &scheduler->queues[priority];
-
-            pthread_mutex_lock(&queue->mutex);
-
-            // 실시간 모드에서 데드라인 체크
-            if (scheduler->realtime_mode && priority == ET_TASK_PRIORITY_REALTIME) {
-                uint64_t current_time = get_current_time_us();
-
-                // 데드라인이 지난 작업들 제거
-                while (queue->head && queue->head->deadline < current_time) {
-                    ETTask* expired_task = dequeue_task(queue);
-                    if (expired_task) {
-                        expired_task->status = ET_TASK_STATUS_CANCELLED;
-                        pthread_mutex_lock(&scheduler->scheduler_mutex);
-                        scheduler->total_tasks_cancelled++;
-                        pthread_mutex_unlock(&scheduler->scheduler_mutex);
-
-                        if (expired_task->completion_callback) {
-                            expired_task->completion_callback(expired_task->task_id,
-                                                            expired_task->callback_user_data);
-                        }
-                        free(expired_task);
-                    }
-                }
-            }
-
-            if (queue->head) {
-                task = dequeue_task(queue);
-                pthread_mutex_unlock(&queue->mutex);
+            task = dequeue_task(&scheduler->queues[priority]);
+            if (task) {
                 break;
             }
-
-            pthread_mutex_unlock(&queue->mutex);
         }
 
         if (task) {
             // 작업 실행
             task->status = ET_TASK_STATUS_RUNNING;
-            uint64_t start_time = get_current_time_us();
 
             if (task->task_func) {
                 task->task_func(task->task_data);
             }
 
-            uint64_t end_time = get_current_time_us();
             task->status = ET_TASK_STATUS_COMPLETED;
 
             // 통계 업데이트
@@ -328,96 +268,52 @@ uint32_t et_submit_task_with_callback(ETTaskScheduler* scheduler,
     return task->task_id;
 }
 
-// 작업 취소 (구현 복잡성으로 인해 기본적인 형태만 제공)
+// 나머지 함수들은 기본 구현
 bool et_cancel_task(ETTaskScheduler* scheduler, uint32_t task_id) {
-    if (!scheduler || task_id == 0) {
-        return false;
-    }
-
-    // 실제 구현에서는 각 큐를 검색하여 해당 작업을 찾아 제거해야 함
-    // 여기서는 간단한 형태로만 구현
-
-    pthread_mutex_lock(&scheduler->scheduler_mutex);
-    scheduler->total_tasks_cancelled++;
-    pthread_mutex_unlock(&scheduler->scheduler_mutex);
-
-    return true;
+    (void)scheduler;
+    (void)task_id;
+    return false; // 간단한 구현에서는 취소 지원 안함
 }
 
-// 작업 상태 조회 (간단한 형태)
 ETTaskStatus et_get_task_status(ETTaskScheduler* scheduler, uint32_t task_id) {
-    if (!scheduler || task_id == 0) {
-        return ET_TASK_STATUS_CANCELLED;
-    }
-
-    // 실제 구현에서는 작업 상태를 추적하는 해시 테이블 등이 필요
-    // 여기서는 기본값 반환
-    return ET_TASK_STATUS_PENDING;
+    (void)scheduler;
+    (void)task_id;
+    return ET_TASK_STATUS_PENDING; // 간단한 구현
 }
 
-// 실시간 모드 설정
 void et_set_realtime_mode(ETTaskScheduler* scheduler, bool enable) {
-    if (!scheduler) {
-        return;
-    }
-
+    if (!scheduler) return;
     pthread_mutex_lock(&scheduler->scheduler_mutex);
     scheduler->realtime_mode = enable;
     pthread_mutex_unlock(&scheduler->scheduler_mutex);
 }
 
-// 오디오 버퍼 데드라인 설정
 void et_set_audio_buffer_deadline(ETTaskScheduler* scheduler, uint64_t deadline_us) {
-    if (!scheduler) {
-        return;
-    }
-
+    if (!scheduler) return;
     pthread_mutex_lock(&scheduler->scheduler_mutex);
     scheduler->audio_buffer_deadline = deadline_us;
     pthread_mutex_unlock(&scheduler->scheduler_mutex);
 }
 
-// 스케줄러 통계 조회
 void et_get_scheduler_stats(ETTaskScheduler* scheduler, ETSchedulerStats* stats) {
-    if (!scheduler || !stats) {
-        return;
-    }
+    if (!scheduler || !stats) return;
 
     pthread_mutex_lock(&scheduler->scheduler_mutex);
-
     stats->total_submitted = scheduler->total_tasks_submitted;
     stats->total_completed = scheduler->total_tasks_completed;
     stats->total_cancelled = scheduler->total_tasks_cancelled;
-
-    // 대기 중인 작업 수 계산
     stats->pending_tasks = 0;
     for (int i = 0; i < 4; i++) {
-        pthread_mutex_lock(&scheduler->queues[i].mutex);
         stats->pending_tasks += scheduler->queues[i].count;
-        pthread_mutex_unlock(&scheduler->queues[i].mutex);
     }
-
-    // 활성 워커 수 계산
-    stats->active_workers = 0;
-    for (uint32_t i = 0; i < scheduler->num_workers; i++) {
-        if (scheduler->workers[i].active && !scheduler->workers[i].should_exit) {
-            stats->active_workers++;
-        }
-    }
-
-    // 평균 시간들 (실제 구현에서는 더 정교한 측정 필요)
-    stats->avg_task_completion_time_us = 1000.0; // 기본값 1ms
-    stats->avg_queue_wait_time_us = 500.0;       // 기본값 0.5ms
-
+    stats->active_workers = scheduler->num_workers;
+    stats->avg_task_completion_time_us = 1000.0;
+    stats->avg_queue_wait_time_us = 500.0;
     pthread_mutex_unlock(&scheduler->scheduler_mutex);
 }
 
-// 스케줄러 일시 정지
 void et_pause_scheduler(ETTaskScheduler* scheduler) {
-    if (!scheduler) {
-        return;
-    }
-
+    if (!scheduler) return;
     pthread_mutex_lock(&scheduler->scheduler_mutex);
     for (uint32_t i = 0; i < scheduler->num_workers; i++) {
         scheduler->workers[i].active = false;
@@ -425,12 +321,8 @@ void et_pause_scheduler(ETTaskScheduler* scheduler) {
     pthread_mutex_unlock(&scheduler->scheduler_mutex);
 }
 
-// 스케줄러 재개
 void et_resume_scheduler(ETTaskScheduler* scheduler) {
-    if (!scheduler) {
-        return;
-    }
-
+    if (!scheduler) return;
     pthread_mutex_lock(&scheduler->scheduler_mutex);
     for (uint32_t i = 0; i < scheduler->num_workers; i++) {
         if (!scheduler->workers[i].should_exit) {

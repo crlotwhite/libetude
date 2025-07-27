@@ -30,6 +30,10 @@ function(create_unity_test test_name test_sources)
         UNITY_INCLUDE_DOUBLE
         UNITY_INCLUDE_FLOAT
     )
+    # pthread 라이브러리 링크 (Unix 계열)
+    if(NOT WIN32)
+        target_link_libraries(${test_name} pthread m)
+    endif()
 endfunction()
 
 # 개별 텐서 테스트
@@ -104,8 +108,8 @@ target_compile_definitions(test_simd_math_functions PRIVATE
 
 # 윈도우에서 수학 라이브러리 링크
 if(NOT WIN32)
-    target_link_libraries(test_simd_math_functions m)
-    target_link_libraries(tensor_test m)
+    target_link_libraries(test_simd_math_functions m pthread)
+    target_link_libraries(tensor_test m pthread)
 endif()
 
 # 레거시 테스트 (호환성을 위해 유지)
@@ -163,6 +167,7 @@ create_unity_test(compression_test "unit/test_compression.c")
 create_unity_test(diff_model_test "unit/test_diff_model.c")
 create_unity_test(lefx_loader_test "unit/test_lefx_loader.c")
 create_unity_test(conditional_activation_test "unit/test_conditional_activation.c")
+create_unity_test(task_scheduler_test "unit/test_task_scheduler.c")
 
 # Unity CTest 통합
 include(CTest)
@@ -183,6 +188,7 @@ add_test(NAME CompressionTest COMMAND compression_test)
 add_test(NAME DiffModelTest COMMAND diff_model_test)
 add_test(NAME LEFXLoaderTest COMMAND lefx_loader_test)
 add_test(NAME ConditionalActivationTest COMMAND conditional_activation_test)
+add_test(NAME TaskSchedulerTest COMMAND task_scheduler_test)
 
 # 테스트 등록 (새로운 독립적인 테스트들)
 if(TARGET test_unity_simple)
@@ -253,6 +259,12 @@ set_tests_properties(LEFXLoaderTest PROPERTIES
 set_tests_properties(ConditionalActivationTest PROPERTIES
     TIMEOUT 120
     LABELS "conditional;activation;lefx;extension;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+set_tests_properties(TaskSchedulerTest PROPERTIES
+    TIMEOUT 120
+    LABELS "scheduler;runtime;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
