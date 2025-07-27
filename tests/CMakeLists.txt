@@ -168,6 +168,7 @@ create_unity_test(diff_model_test "unit/test_diff_model.c")
 create_unity_test(lefx_loader_test "unit/test_lefx_loader.c")
 create_unity_test(conditional_activation_test "unit/test_conditional_activation.c")
 create_unity_test(task_scheduler_test "unit/test_task_scheduler.c")
+create_unity_test(profiler_test "unit/test_profiler.c")
 
 # Unity CTest 통합
 include(CTest)
@@ -189,6 +190,7 @@ add_test(NAME DiffModelTest COMMAND diff_model_test)
 add_test(NAME LEFXLoaderTest COMMAND lefx_loader_test)
 add_test(NAME ConditionalActivationTest COMMAND conditional_activation_test)
 add_test(NAME TaskSchedulerTest COMMAND task_scheduler_test)
+add_test(NAME ProfilerTest COMMAND profiler_test)
 
 # 테스트 등록 (새로운 독립적인 테스트들)
 if(TARGET test_unity_simple)
@@ -265,6 +267,12 @@ set_tests_properties(ConditionalActivationTest PROPERTIES
 set_tests_properties(TaskSchedulerTest PROPERTIES
     TIMEOUT 120
     LABELS "scheduler;runtime;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+set_tests_properties(ProfilerTest PROPERTIES
+    TIMEOUT 120
+    LABELS "profiler;runtime;performance;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
