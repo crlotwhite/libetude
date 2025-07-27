@@ -230,7 +230,7 @@
     - 버퍼 관리 시스템
     - _Requirements: 3.2, 3.3, 4.1, 4.2_
 
-  - [ ] 11.2 STFT/ISTFT 최적화 구현
+  - [x] 11.2 STFT/ISTFT 최적화 구현
     - SIMD 최적화된 STFT/ISTFT
     - 윈도우 함수 최적화
     - 병렬 처리 지원

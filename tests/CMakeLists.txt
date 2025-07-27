@@ -171,6 +171,10 @@ create_unity_test(task_scheduler_test "unit/test_task_scheduler.c")
 create_unity_test(profiler_test "unit/test_profiler.c")
 create_unity_test(error_handling_test "unit/test_error_handling.c")
 
+# 오디오 처리 테스트
+create_unity_test(audio_io_test "unit/test_audio_io.c")
+create_unity_test(stft_test "unit/test_stft.c")
+
 # Unity CTest 통합
 include(CTest)
 
@@ -193,6 +197,10 @@ add_test(NAME ConditionalActivationTest COMMAND conditional_activation_test)
 add_test(NAME TaskSchedulerTest COMMAND task_scheduler_test)
 add_test(NAME ProfilerTest COMMAND profiler_test)
 add_test(NAME ErrorHandlingTest COMMAND error_handling_test)
+
+# 오디오 처리 테스트
+add_test(NAME AudioIOTest COMMAND audio_io_test)
+add_test(NAME STFTTest COMMAND stft_test)
 
 # 테스트 등록 (새로운 독립적인 테스트들)
 if(TARGET test_unity_simple)
