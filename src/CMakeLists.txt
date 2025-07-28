@@ -54,6 +54,7 @@ set(LIBETUDE_CORE_SOURCES
 
     # 플랫폼별 구현
     platform/platform_utils.c
+    platform/desktop_optimization.c
 )
 
 # SIMD 커널 소스 (조건부 컴파일)

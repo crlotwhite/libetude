@@ -38,8 +38,26 @@ target_include_directories(plugin_example PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
+# 데스크톱 최적화 예제
+add_executable(desktop_optimization_example
+    desktop_optimization/main.c
+)
+target_link_libraries(desktop_optimization_example libetude_static)
+target_include_directories(desktop_optimization_example PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+# 플랫폼별 링크 라이브러리 추가
+if(WIN32)
+    target_link_libraries(desktop_optimization_example winmm dsound psapi)
+elseif(APPLE)
+    target_link_libraries(desktop_optimization_example "-framework AudioToolbox" "-framework CoreAudio")
+elseif(UNIX)
+    target_link_libraries(desktop_optimization_example asound pthread m)
+endif()
+
 # 예제 설치
-install(TARGETS basic_tts streaming_example plugin_example
+install(TARGETS basic_tts streaming_example plugin_example desktop_optimization_example
     RUNTIME DESTINATION bin/examples
 )
 
