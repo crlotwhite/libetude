@@ -501,7 +501,7 @@ static void test_unary_operations() {
     TEST_ASSERT(fabsf(val - 2.718282f) < 0.001f, "지수 함수 결과 확인 (0,1)"); // exp(1) ≈ e
 
     // 자연 로그 테스트
-    ETTensor* log_result = et_log(exp_result, NULL, NULL);
+    ETTensor* log_result = et_tensor_log(exp_result, NULL, NULL);
     TEST_ASSERT(log_result != NULL, "자연 로그 연산 성공");
     val = et_get_float(log_result, (size_t[]){0, 0});
     TEST_ASSERT(FLOAT_EQUAL(val, 0.0f), "자연 로그 결과 확인 (0,0)"); // log(1) = 0

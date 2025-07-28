@@ -764,7 +764,7 @@ ETTensor* et_exp(const ETTensor* input, ETTensor* out, const ETTensorOpOptions* 
     return unary_op(input, out, exp_op, options);
 }
 
-ETTensor* et_log(const ETTensor* input, ETTensor* out, const ETTensorOpOptions* options) {
+ETTensor* et_tensor_log(const ETTensor* input, ETTensor* out, const ETTensorOpOptions* options) {
     return unary_op(input, out, log_op, options);
 }
 

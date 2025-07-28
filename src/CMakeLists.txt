@@ -3,6 +3,7 @@
 # 소스 파일 수집
 set(LIBETUDE_CORE_SOURCES
     # 코어 엔진
+    core/api.c
     core/engine.c
     core/init.c
 

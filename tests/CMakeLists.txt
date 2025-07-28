@@ -39,6 +39,9 @@ endfunction()
 # 개별 텐서 테스트
 create_unity_test(tensor_test "unit/test_tensor.c")
 
+# API 테스트
+create_unity_test(api_test "unit/test_api.c")
+
 # 독립적인 테스트들 (libetude 의존성 없음)
 
 # Unity 기본 테스트

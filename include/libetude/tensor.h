@@ -559,7 +559,7 @@ ETTensor* et_exp(const ETTensor* input, ETTensor* out, const ETTensorOpOptions* 
  * @param options 연산 옵션
  * @return 결과 텐서, 실패시 NULL
  */
-ETTensor* et_log(const ETTensor* input, ETTensor* out, const ETTensorOpOptions* options);
+ETTensor* et_tensor_log(const ETTensor* input, ETTensor* out, const ETTensorOpOptions* options);
 
 // =============================================================================
 // 양자화 지원 구조체 및 함수
