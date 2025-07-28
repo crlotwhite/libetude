@@ -183,6 +183,9 @@ create_unity_test(vocoder_test "unit/test_vocoder.c")
 # 데스크톱 최적화 테스트
 create_unity_test(desktop_optimization_test "unit/test_desktop_optimization.c")
 
+# 모바일 최적화 테스트
+create_unity_test(mobile_optimization_test "unit/test_mobile_optimization.c")
+
 # Unity CTest 통합
 include(CTest)
 
@@ -214,6 +217,9 @@ add_test(NAME VocoderTest COMMAND vocoder_test)
 
 # 데스크톱 최적화 테스트
 add_test(NAME DesktopOptimizationTest COMMAND desktop_optimization_test)
+
+# 모바일 최적화 테스트
+add_test(NAME MobileOptimizationTest COMMAND mobile_optimization_test)
 
 # 테스트 등록 (새로운 독립적인 테스트들)
 if(TARGET test_unity_simple)
@@ -334,6 +340,13 @@ set_tests_properties(VocoderTest PROPERTIES
 set_tests_properties(DesktopOptimizationTest PROPERTIES
     TIMEOUT 180
     LABELS "desktop;optimization;multicore;gpu;audio;performance;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# 모바일 최적화 테스트 속성 설정
+set_tests_properties(MobileOptimizationTest PROPERTIES
+    TIMEOUT 300
+    LABELS "mobile;optimization;battery;thermal;memory;power;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 

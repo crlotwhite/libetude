@@ -1,381 +1,513 @@
 /**
  * @file memory_optimization.h
- * @brief LibEtude 메모리 최적화 전략 헤더
+ * @brief 모바일 메모리 최적화 시스템
+ * @author LibEtude Project
+ * @version 1.0.0
  *
- * 인플레이스 연산, 메모리 재사용, 단편화 방지 등의 메모리 최적화 기능을 제공합니다.
+ * 모바일 환경에서의 메모리 사용량 최소화와 효율적인 메모리 관리를 위한 시스템입니다.
  */
 
 #ifndef LIBETUDE_MEMORY_OPTIMIZATION_H
 #define LIBETUDE_MEMORY_OPTIMIZATION_H
 
-#include "libetude/memory.h"
 #include "libetude/types.h"
-#include <stddef.h>
-#include <stdint.h>
-#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// =============================================================================
-// 인플레이스 연산 지원
-// =============================================================================
-
 /**
- * @brief 인플레이스 연산 컨텍스트
- *
- * 메모리 복사 없이 동일한 메모리 위치에서 연산을 수행하기 위한 컨텍스트입니다.
- */
-typedef struct {
-    void* buffer;                   // 작업 버퍼
-    size_t buffer_size;             // 버퍼 크기
-    size_t alignment;               // 메모리 정렬
-    bool is_external;               // 외부 버퍼 여부
-
-    // 연산 추적
-    size_t operation_count;         // 수행된 연산 수
-    size_t bytes_saved;             // 절약된 메모리 바이트
-
-    // 스레드 안전성
-    pthread_mutex_t mutex;
-    bool thread_safe;
-} ETInPlaceContext;
-
-/**
- * @brief 인플레이스 연산 컨텍스트 생성
- * @param buffer_size 작업 버퍼 크기
- * @param alignment 메모리 정렬 요구사항
- * @param thread_safe 스레드 안전성 활성화 여부
- * @return 생성된 컨텍스트 포인터, 실패시 NULL
- */
-ETInPlaceContext* et_create_inplace_context(size_t buffer_size, size_t alignment, bool thread_safe);
-
-/**
- * @brief 외부 버퍼를 사용한 인플레이스 컨텍스트 생성
- * @param buffer 외부 버퍼
- * @param buffer_size 버퍼 크기
- * @param alignment 메모리 정렬
- * @param thread_safe 스레드 안전성 활성화 여부
- * @return 생성된 컨텍스트 포인터, 실패시 NULL
- */
-ETInPlaceContext* et_create_inplace_context_from_buffer(void* buffer, size_t buffer_size,
-                                                       size_t alignment, bool thread_safe);
-
-/**
- * @brief 인플레이스 메모리 복사 (겹치는 영역 안전)
- * @param ctx 인플레이스 컨텍스트
- * @param dest 목적지 주소
- * @param src 소스 주소
- * @param size 복사할 크기
- * @return 성공시 0, 실패시 음수
- */
-int et_inplace_memcpy(ETInPlaceContext* ctx, void* dest, const void* src, size_t size);
-
-/**
- * @brief 인플레이스 메모리 이동 (겹치는 영역 처리)
- * @param ctx 인플레이스 컨텍스트
- * @param dest 목적지 주소
- * @param src 소스 주소
- * @param size 이동할 크기
- * @return 성공시 0, 실패시 음수
- */
-int et_inplace_memmove(ETInPlaceContext* ctx, void* dest, const void* src, size_t size);
-
-/**
- * @brief 인플레이스 버퍼 스왑
- * @param ctx 인플레이스 컨텍스트
- * @param ptr1 첫 번째 버퍼
- * @param ptr2 두 번째 버퍼
- * @param size 스왑할 크기
- * @return 성공시 0, 실패시 음수
- */
-int et_inplace_swap(ETInPlaceContext* ctx, void* ptr1, void* ptr2, size_t size);
-
-/**
- * @brief 인플레이스 컨텍스트 소멸
- * @param ctx 인플레이스 컨텍스트
- */
-void et_destroy_inplace_context(ETInPlaceContext* ctx);
-
-// =============================================================================
-// 메모리 재사용 메커니즘
-// =============================================================================
-
-/**
- * @brief 메모리 재사용 풀
- *
- * 임시 버퍼들을 재사용하여 동적 할당을 최소화하는 풀입니다.
- */
-typedef struct ETMemoryReuseBucket ETMemoryReuseBucket;
-
-struct ETMemoryReuseBucket {
-    size_t size_class;              // 크기 클래스 (2의 거듭제곱)
-    void** buffers;                 // 재사용 가능한 버퍼 배열
-    size_t buffer_count;            // 현재 버퍼 수
-    size_t max_buffers;             // 최대 버퍼 수
-    size_t total_allocations;       // 총 할당 횟수
-    size_t reuse_hits;              // 재사용 성공 횟수
-    ETMemoryReuseBucket* next;      // 다음 버킷
-};
-
-typedef struct {
-    ETMemoryReuseBucket* buckets;   // 크기별 버킷 리스트
-    size_t min_size;                // 최소 관리 크기
-    size_t max_size;                // 최대 관리 크기
-    size_t total_memory;            // 총 관리 메모리
-    size_t peak_memory;             // 최대 메모리 사용량
-
-    // 통계
-    size_t total_requests;          // 총 요청 수
-    size_t reuse_hits;              // 재사용 성공 수
-    size_t cache_misses;            // 캐시 미스 수
-
-    // 정리 정책
-    uint64_t last_cleanup_time;     // 마지막 정리 시간
-    uint64_t cleanup_interval_ms;   // 정리 간격 (밀리초)
-    size_t max_idle_time_ms;        // 최대 유휴 시간
-
-    // 스레드 안전성
-    pthread_mutex_t mutex;
-    bool thread_safe;
-} ETMemoryReusePool;
-
-/**
- * @brief 메모리 재사용 풀 생성
- * @param min_size 최소 관리 크기
- * @param max_size 최대 관리 크기
- * @param max_buffers_per_class 크기 클래스당 최대 버퍼 수
- * @param thread_safe 스레드 안전성 활성화 여부
- * @return 생성된 재사용 풀 포인터, 실패시 NULL
- */
-ETMemoryReusePool* et_create_reuse_pool(size_t min_size, size_t max_size,
-                                       size_t max_buffers_per_class, bool thread_safe);
-
-/**
- * @brief 재사용 풀에서 메모리 할당
- * @param pool 재사용 풀
- * @param size 요청 크기
- * @return 할당된 메모리 포인터, 실패시 NULL
- */
-void* et_reuse_alloc(ETMemoryReusePool* pool, size_t size);
-
-/**
- * @brief 재사용 풀에 메모리 반환
- * @param pool 재사용 풀
- * @param ptr 반환할 메모리 포인터
- * @param size 메모리 크기
- */
-void et_reuse_free(ETMemoryReusePool* pool, void* ptr, size_t size);
-
-/**
- * @brief 재사용 풀 정리 (오래된 버퍼 해제)
- * @param pool 재사용 풀
- * @param force_cleanup 강제 정리 여부
- * @return 해제된 버퍼 수
- */
-size_t et_cleanup_reuse_pool(ETMemoryReusePool* pool, bool force_cleanup);
-
-/**
- * @brief 재사용 풀 통계 조회
- * @param pool 재사용 풀
- * @param total_requests 총 요청 수 (출력)
- * @param reuse_hits 재사용 성공 수 (출력)
- * @param hit_rate 재사용 성공률 (출력)
- */
-void et_get_reuse_pool_stats(ETMemoryReusePool* pool, size_t* total_requests,
-                            size_t* reuse_hits, float* hit_rate);
-
-/**
- * @brief 재사용 풀 소멸
- * @param pool 재사용 풀
- */
-void et_destroy_reuse_pool(ETMemoryReusePool* pool);
-
-// =============================================================================
-// 메모리 단편화 방지
-// =============================================================================
-
-/**
- * @brief 메모리 단편화 분석 결과
- */
-typedef struct {
-    size_t total_free_space;        // 총 자유 공간
-    size_t largest_free_block;      // 최대 자유 블록 크기
-    size_t num_free_blocks;         // 자유 블록 수
-    float fragmentation_ratio;      // 단편화 비율 (0.0 ~ 1.0)
-    float external_fragmentation;   // 외부 단편화 비율
-    size_t wasted_space;            // 낭비된 공간
-} ETFragmentationInfo;
-
-/**
- * @brief 메모리 풀의 단편화 분석
- * @param pool 메모리 풀
- * @param frag_info 단편화 정보 (출력)
- * @return 성공시 0, 실패시 음수
- */
-int et_analyze_fragmentation(ETMemoryPool* pool, ETFragmentationInfo* frag_info);
-
-/**
- * @brief 메모리 풀 압축 (단편화 해소)
- * @param pool 메모리 풀
- * @param aggressive 적극적 압축 여부
- * @return 압축된 바이트 수
- */
-size_t et_compact_memory_pool(ETMemoryPool* pool, bool aggressive);
-
-/**
- * @brief 메모리 풀 최적화 (블록 재배치)
- * @param pool 메모리 풀
- * @return 최적화된 블록 수
- */
-size_t et_optimize_memory_layout(ETMemoryPool* pool);
-
-/**
- * @brief 메모리 할당 전략 설정
+ * 메모리 압박 레벨
  */
 typedef enum {
-    ET_ALLOC_FIRST_FIT = 0,         // First-fit (빠름)
-    ET_ALLOC_BEST_FIT = 1,          // Best-fit (공간 효율적)
-    ET_ALLOC_WORST_FIT = 2,         // Worst-fit (단편화 방지)
-    ET_ALLOC_NEXT_FIT = 3           // Next-fit (캐시 친화적)
-} ETAllocationStrategy;
+    MEMORY_PRESSURE_NONE = 0,       ///< 압박 없음
+    MEMORY_PRESSURE_LOW = 1,        ///< 낮은 압박
+    MEMORY_PRESSURE_MEDIUM = 2,     ///< 중간 압박
+    MEMORY_PRESSURE_HIGH = 3,       ///< 높은 압박
+    MEMORY_PRESSURE_CRITICAL = 4    ///< 임계 압박
+} MemoryPressureLevel;
 
 /**
- * @brief 메모리 풀의 할당 전략 설정
- * @param pool 메모리 풀
- * @param strategy 할당 전략
- * @return 성공시 0, 실패시 음수
+ * 메모리 최적화 전략
  */
-int et_set_allocation_strategy(ETMemoryPool* pool, ETAllocationStrategy strategy);
+typedef enum {
+    MEMORY_STRATEGY_NONE = 0,           ///< 최적화 없음
+    MEMORY_STRATEGY_CONSERVATIVE = 1,   ///< 보수적 최적화
+    MEMORY_STRATEGY_BALANCED = 2,       ///< 균형 최적화
+    MEMORY_STRATEGY_AGGRESSIVE = 3      ///< 적극적 최적화
+} MemoryOptimizationStrategy;
 
 /**
- * @brief 메모리 풀의 자동 압축 설정
- * @param pool 메모리 풀
- * @param enable 자동 압축 활성화 여부
- * @param threshold 압축 임계값 (단편화 비율)
- * @return 성공시 0, 실패시 음수
+ * 메모리 압축 타입
  */
-int et_set_auto_compaction(ETMemoryPool* pool, bool enable, float threshold);
-
-// =============================================================================
-// 스마트 메모리 관리
-// =============================================================================
+typedef enum {
+    MEMORY_COMPRESSION_NONE = 0,    ///< 압축 없음
+    MEMORY_COMPRESSION_LZ4 = 1,     ///< LZ4 압축
+    MEMORY_COMPRESSION_ZSTD = 2,    ///< ZSTD 압축
+    MEMORY_COMPRESSION_CUSTOM = 3   ///< 커스텀 압축
+} MemoryCompressionType;
 
 /**
- * @brief 스마트 메모리 매니저
- *
- * 메모리 사용 패턴을 학습하고 최적화하는 매니저입니다.
+ * 메모리 풀 타입
+ */
+typedef enum {
+    MEMORY_POOL_FIXED = 0,      ///< 고정 크기 풀
+    MEMORY_POOL_DYNAMIC = 1,    ///< 동적 크기 풀
+    MEMORY_POOL_CIRCULAR = 2    ///< 순환 풀
+} MemoryPoolType;
+
+/**
+ * 메모리 최적화 설정
  */
 typedef struct {
-    ETMemoryPool* primary_pool;     // 주 메모리 풀
-    ETMemoryReusePool* reuse_pool;  // 재사용 풀
-    ETInPlaceContext* inplace_ctx;  // 인플레이스 컨텍스트
+    MemoryOptimizationStrategy strategy;    ///< 최적화 전략
+    MemoryCompressionType compression_type; ///< 압축 타입
 
-    // 사용 패턴 추적
-    size_t* size_histogram;         // 크기별 할당 히스토그램
-    size_t histogram_buckets;       // 히스토그램 버킷 수
-    uint64_t* access_timestamps;    // 접근 시간 추적
+    // 메모리 제한 설정
+    size_t max_memory_mb;                   ///< 최대 메모리 사용량 (MB)
+    size_t warning_threshold_mb;            ///< 경고 임계값 (MB)
+    size_t critical_threshold_mb;           ///< 임계 임계값 (MB)
 
-    // 적응적 설정
-    ETAllocationStrategy current_strategy;  // 현재 할당 전략
-    float compaction_threshold;     // 압축 임계값
-    bool auto_optimization;         // 자동 최적화 활성화
+    // 메모리 풀 설정
+    MemoryPoolType pool_type;               ///< 메모리 풀 타입
+    size_t pool_size_mb;                    ///< 메모리 풀 크기 (MB)
+    size_t pool_alignment;                  ///< 메모리 정렬 크기
 
-    // 성능 메트릭
-    uint64_t total_allocations;     // 총 할당 수
-    uint64_t total_frees;           // 총 해제 수
-    uint64_t bytes_saved;           // 절약된 바이트
-    uint64_t optimization_count;    // 최적화 수행 횟수
+    // 압축 설정
+    bool enable_compression;                ///< 압축 활성화
+    float compression_threshold;            ///< 압축 임계값 (0.0-1.0)
+    int compression_level;                  ///< 압축 레벨 (1-9)
 
-    // 스레드 안전성
-    pthread_mutex_t mutex;
-    bool thread_safe;
-} ETSmartMemoryManager;
+    // 가비지 컬렉션 설정
+    bool enable_gc;                         ///< 가비지 컬렉션 활성화
+    int gc_interval_ms;                     ///< GC 간격 (ms)
+    float gc_threshold;                     ///< GC 임계값 (0.0-1.0)
 
-/**
- * @brief 스마트 메모리 매니저 생성
- * @param pool_size 주 메모리 풀 크기
- * @param reuse_pool_config 재사용 풀 설정
- * @param inplace_buffer_size 인플레이스 버퍼 크기
- * @param thread_safe 스레드 안전성 활성화 여부
- * @return 생성된 매니저 포인터, 실패시 NULL
- */
-ETSmartMemoryManager* et_create_smart_memory_manager(size_t pool_size,
-                                                    size_t reuse_pool_config,
-                                                    size_t inplace_buffer_size,
-                                                    bool thread_safe);
+    // 스왑 설정
+    bool enable_swap;                       ///< 스왑 활성화
+    size_t swap_size_mb;                    ///< 스왑 크기 (MB)
+
+    // 캐시 설정
+    bool enable_cache_optimization;         ///< 캐시 최적화 활성화
+    size_t l1_cache_size_kb;               ///< L1 캐시 크기 (KB)
+    size_t l2_cache_size_kb;               ///< L2 캐시 크기 (KB)
+} MemoryOptimizationConfig;
 
 /**
- * @brief 스마트 할당 (최적 전략 자동 선택)
- * @param manager 스마트 메모리 매니저
- * @param size 할당 크기
- * @return 할당된 메모리 포인터, 실패시 NULL
+ * 메모리 사용량 통계
  */
-void* et_smart_alloc(ETSmartMemoryManager* manager, size_t size);
+typedef struct {
+    // 전체 메모리 정보
+    size_t total_memory_mb;                 ///< 총 메모리 (MB)
+    size_t available_memory_mb;             ///< 사용 가능한 메모리 (MB)
+    size_t used_memory_mb;                  ///< 사용 중인 메모리 (MB)
+    size_t free_memory_mb;                  ///< 여유 메모리 (MB)
+
+    // LibEtude 메모리 사용량
+    size_t libetude_memory_mb;              ///< LibEtude 메모리 사용량 (MB)
+    size_t model_memory_mb;                 ///< 모델 메모리 사용량 (MB)
+    size_t tensor_memory_mb;                ///< 텐서 메모리 사용량 (MB)
+    size_t audio_buffer_memory_mb;          ///< 오디오 버퍼 메모리 (MB)
+
+    // 메모리 풀 통계
+    size_t pool_allocated_mb;               ///< 풀에서 할당된 메모리 (MB)
+    size_t pool_free_mb;                    ///< 풀의 여유 메모리 (MB)
+    float pool_fragmentation;               ///< 풀 단편화 비율 (0.0-1.0)
+
+    // 압축 통계
+    size_t compressed_memory_mb;            ///< 압축된 메모리 (MB)
+    size_t uncompressed_memory_mb;          ///< 압축 해제된 메모리 (MB)
+    float compression_ratio;                ///< 압축 비율
+
+    // 성능 지표
+    MemoryPressureLevel pressure_level;     ///< 메모리 압박 레벨
+    float memory_efficiency;                ///< 메모리 효율성 (0.0-1.0)
+    int gc_count;                          ///< GC 실행 횟수
+    int64_t total_gc_time_ms;              ///< 총 GC 시간 (ms)
+
+    // 캐시 통계
+    int cache_hits;                        ///< 캐시 히트 수
+    int cache_misses;                      ///< 캐시 미스 수
+    float cache_hit_ratio;                 ///< 캐시 히트 비율
+} MemoryUsageStats;
 
 /**
- * @brief 스마트 해제 (재사용 풀 고려)
- * @param manager 스마트 메모리 매니저
- * @param ptr 해제할 메모리 포인터
- * @param size 메모리 크기
+ * 메모리 블록 정보
  */
-void et_smart_free(ETSmartMemoryManager* manager, void* ptr, size_t size);
+typedef struct {
+    void* address;                         ///< 메모리 주소
+    size_t size;                           ///< 블록 크기
+    bool is_compressed;                    ///< 압축 여부
+    bool is_cached;                        ///< 캐시 여부
+    int64_t last_access_time;              ///< 마지막 접근 시간
+    int reference_count;                   ///< 참조 카운트
+} MemoryBlockInfo;
 
 /**
- * @brief 메모리 사용 패턴 분석 및 최적화
- * @param manager 스마트 메모리 매니저
- * @return 수행된 최적화 수
+ * 메모리 이벤트 콜백 타입
  */
-size_t et_optimize_memory_usage(ETSmartMemoryManager* manager);
+typedef void (*MemoryEventCallback)(MemoryPressureLevel old_level, MemoryPressureLevel new_level,
+                                   const MemoryUsageStats* stats, void* user_data);
+
+// ============================================================================
+// 메모리 최적화 초기화 및 정리 함수들
+// ============================================================================
 
 /**
- * @brief 스마트 메모리 매니저 통계 조회
- * @param manager 스마트 메모리 매니저
- * @param total_allocations 총 할당 수 (출력)
- * @param bytes_saved 절약된 바이트 (출력)
- * @param optimization_count 최적화 수행 횟수 (출력)
+ * 메모리 최적화 시스템을 초기화합니다
+ *
+ * @return 성공 시 LIBETUDE_SUCCESS
  */
-void et_get_smart_manager_stats(ETSmartMemoryManager* manager,
-                               uint64_t* total_allocations,
-                               uint64_t* bytes_saved,
-                               uint64_t* optimization_count);
+int memory_optimization_init();
 
 /**
- * @brief 스마트 메모리 매니저 소멸
- * @param manager 스마트 메모리 매니저
+ * 메모리 최적화 시스템을 정리합니다
+ *
+ * @return 성공 시 LIBETUDE_SUCCESS
  */
-void et_destroy_smart_memory_manager(ETSmartMemoryManager* manager);
-
-// =============================================================================
-// 유틸리티 함수
-// =============================================================================
+int memory_optimization_cleanup();
 
 /**
- * @brief 크기를 2의 거듭제곱으로 올림
- * @param size 입력 크기
- * @return 2의 거듭제곱으로 올림된 크기
+ * 메모리 최적화 설정을 적용합니다
+ *
+ * @param config 메모리 최적화 설정
+ * @return 성공 시 LIBETUDE_SUCCESS
  */
-size_t et_round_up_to_power_of_2(size_t size);
+int memory_set_optimization_config(const MemoryOptimizationConfig* config);
 
 /**
- * @brief 메모리 사용량 최적화 권장사항 생성
- * @param pool 메모리 풀
- * @param recommendations 권장사항 문자열 버퍼
- * @param buffer_size 버퍼 크기
- * @return 권장사항 수
+ * 현재 메모리 최적화 설정을 가져옵니다
+ *
+ * @param config 설정을 저장할 구조체
+ * @return 성공 시 LIBETUDE_SUCCESS
  */
-int et_generate_memory_recommendations(ETMemoryPool* pool, char* recommendations, size_t buffer_size);
+int memory_get_optimization_config(MemoryOptimizationConfig* config);
+
+// ============================================================================
+// 메모리 사용량 모니터링 함수들
+// ============================================================================
 
 /**
- * @brief 메모리 최적화 리포트 출력
- * @param manager 스마트 메모리 매니저 (NULL 가능)
- * @param pool 메모리 풀
- * @param output_file 출력 파일 (NULL이면 stdout)
+ * 현재 메모리 사용량 통계를 가져옵니다
+ *
+ * @param stats 통계를 저장할 구조체
+ * @return 성공 시 LIBETUDE_SUCCESS
  */
-void et_print_memory_optimization_report(ETSmartMemoryManager* manager,
-                                        ETMemoryPool* pool,
-                                        const char* output_file);
+int memory_get_usage_stats(MemoryUsageStats* stats);
+
+/**
+ * 메모리 사용량을 업데이트합니다
+ *
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_update_usage_stats();
+
+/**
+ * 메모리 압박 레벨을 결정합니다
+ *
+ * @param used_memory_mb 사용 중인 메모리 (MB)
+ * @param total_memory_mb 총 메모리 (MB)
+ * @param config 최적화 설정
+ * @return 메모리 압박 레벨
+ */
+MemoryPressureLevel memory_determine_pressure_level(size_t used_memory_mb, size_t total_memory_mb,
+                                                   const MemoryOptimizationConfig* config);
+
+// ============================================================================
+// 메모리 압박 처리 함수들
+// ============================================================================
+
+/**
+ * 메모리 압박 상황을 처리합니다
+ *
+ * @param engine LibEtude 엔진 핸들
+ * @param pressure_level 압박 레벨
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_handle_pressure(LibEtudeEngine* engine, MemoryPressureLevel pressure_level);
+
+/**
+ * 메모리를 해제합니다
+ *
+ * @param engine LibEtude 엔진 핸들
+ * @param target_mb 목표 해제 메모리 (MB)
+ * @return 실제 해제된 메모리 (MB)
+ */
+size_t memory_free_memory(LibEtudeEngine* engine, size_t target_mb);
+
+/**
+ * 사용하지 않는 메모리를 정리합니다
+ *
+ * @param engine LibEtude 엔진 핸들
+ * @return 정리된 메모리 크기 (MB)
+ */
+size_t memory_cleanup_unused(LibEtudeEngine* engine);
+
+/**
+ * 메모리 단편화를 해소합니다
+ *
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_defragment();
+
+// ============================================================================
+// 메모리 압축 함수들
+// ============================================================================
+
+/**
+ * 메모리 압축을 활성화합니다
+ *
+ * @param compression_type 압축 타입
+ * @param compression_level 압축 레벨 (1-9)
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_enable_compression(MemoryCompressionType compression_type, int compression_level);
+
+/**
+ * 메모리 압축을 비활성화합니다
+ *
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_disable_compression();
+
+/**
+ * 메모리 블록을 압축합니다
+ *
+ * @param data 압축할 데이터
+ * @param size 데이터 크기
+ * @param compressed_data 압축된 데이터를 저장할 포인터
+ * @param compressed_size 압축된 크기를 저장할 포인터
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_compress_block(const void* data, size_t size, void** compressed_data, size_t* compressed_size);
+
+/**
+ * 압축된 메모리 블록을 해제합니다
+ *
+ * @param compressed_data 압축된 데이터
+ * @param compressed_size 압축된 크기
+ * @param data 해제된 데이터를 저장할 포인터
+ * @param size 해제된 크기를 저장할 포인터
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_decompress_block(const void* compressed_data, size_t compressed_size, void** data, size_t* size);
+
+// ============================================================================
+// 메모리 풀 관리 함수들
+// ============================================================================
+
+/**
+ * 메모리 풀을 생성합니다
+ *
+ * @param pool_type 풀 타입
+ * @param size_mb 풀 크기 (MB)
+ * @param alignment 정렬 크기
+ * @return 메모리 풀 핸들
+ */
+void* memory_create_pool(MemoryPoolType pool_type, size_t size_mb, size_t alignment);
+
+/**
+ * 메모리 풀을 해제합니다
+ *
+ * @param pool 메모리 풀 핸들
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_destroy_pool(void* pool);
+
+/**
+ * 메모리 풀에서 메모리를 할당합니다
+ *
+ * @param pool 메모리 풀 핸들
+ * @param size 할당할 크기
+ * @return 할당된 메모리 포인터
+ */
+void* memory_pool_alloc(void* pool, size_t size);
+
+/**
+ * 메모리 풀에 메모리를 반환합니다
+ *
+ * @param pool 메모리 풀 핸들
+ * @param ptr 반환할 메모리 포인터
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_pool_free(void* pool, void* ptr);
+
+/**
+ * 메모리 풀을 리셋합니다
+ *
+ * @param pool 메모리 풀 핸들
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_pool_reset(void* pool);
+
+/**
+ * 메모리 풀 통계를 가져옵니다
+ *
+ * @param pool 메모리 풀 핸들
+ * @param allocated_mb 할당된 메모리를 저장할 포인터 (MB)
+ * @param free_mb 여유 메모리를 저장할 포인터 (MB)
+ * @param fragmentation 단편화 비율을 저장할 포인터
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_pool_get_stats(void* pool, size_t* allocated_mb, size_t* free_mb, float* fragmentation);
+
+// ============================================================================
+// 가비지 컬렉션 함수들
+// ============================================================================
+
+/**
+ * 가비지 컬렉션을 수행합니다
+ *
+ * @param engine LibEtude 엔진 핸들
+ * @return 회수된 메모리 크기 (MB)
+ */
+size_t memory_garbage_collect(LibEtudeEngine* engine);
+
+/**
+ * 자동 가비지 컬렉션을 활성화합니다
+ *
+ * @param interval_ms GC 간격 (ms)
+ * @param threshold GC 임계값 (0.0-1.0)
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_enable_auto_gc(int interval_ms, float threshold);
+
+/**
+ * 자동 가비지 컬렉션을 비활성화합니다
+ *
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_disable_auto_gc();
+
+// ============================================================================
+// 캐시 최적화 함수들
+// ============================================================================
+
+/**
+ * 캐시 최적화를 활성화합니다
+ *
+ * @param l1_cache_size_kb L1 캐시 크기 (KB)
+ * @param l2_cache_size_kb L2 캐시 크기 (KB)
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_enable_cache_optimization(size_t l1_cache_size_kb, size_t l2_cache_size_kb);
+
+/**
+ * 캐시를 플러시합니다
+ *
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_flush_cache();
+
+/**
+ * 캐시 통계를 가져옵니다
+ *
+ * @param hits 캐시 히트 수를 저장할 포인터
+ * @param misses 캐시 미스 수를 저장할 포인터
+ * @param hit_ratio 히트 비율을 저장할 포인터
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_get_cache_stats(int* hits, int* misses, float* hit_ratio);
+
+// ============================================================================
+// 모니터링 및 이벤트 함수들
+// ============================================================================
+
+/**
+ * 메모리 모니터링을 시작합니다
+ *
+ * @param callback 이벤트 콜백
+ * @param user_data 사용자 데이터
+ * @param interval_ms 모니터링 간격 (ms)
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_start_monitoring(MemoryEventCallback callback, void* user_data, int interval_ms);
+
+/**
+ * 메모리 모니터링을 중지합니다
+ *
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_stop_monitoring();
+
+/**
+ * 메모리 이벤트 콜백을 설정합니다
+ *
+ * @param callback 이벤트 콜백
+ * @param user_data 사용자 데이터
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_set_event_callback(MemoryEventCallback callback, void* user_data);
+
+// ============================================================================
+// 통계 및 리포트 함수들
+// ============================================================================
+
+/**
+ * 메모리 최적화 리포트를 생성합니다
+ *
+ * @return 리포트 문자열 (호출자가 해제해야 함)
+ */
+char* memory_generate_optimization_report();
+
+/**
+ * 메모리 사용량 히스토리를 초기화합니다
+ *
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_reset_usage_history();
+
+/**
+ * 메모리 블록 정보를 가져옵니다
+ *
+ * @param blocks 블록 정보 배열
+ * @param max_blocks 최대 블록 수
+ * @param actual_count 실제 블록 수를 저장할 포인터
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_get_block_info(MemoryBlockInfo* blocks, int max_blocks, int* actual_count);
+
+// ============================================================================
+// 플랫폼별 메모리 최적화 함수들
+// ============================================================================
+
+#ifdef ANDROID_PLATFORM
+/**
+ * Android 메모리 트림을 처리합니다
+ *
+ * @param engine LibEtude 엔진 핸들
+ * @param trim_level 트림 레벨
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_android_handle_trim(LibEtudeEngine* engine, int trim_level);
+
+/**
+ * Android 저메모리 킬러를 위한 최적화를 수행합니다
+ *
+ * @param engine LibEtude 엔진 핸들
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_android_optimize_for_lmk(LibEtudeEngine* engine);
+#endif
+
+#ifdef IOS_PLATFORM
+/**
+ * iOS 메모리 경고를 처리합니다
+ *
+ * @param engine LibEtude 엔진 핸들
+ * @param warning_level 경고 레벨
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_ios_handle_memory_warning(LibEtudeEngine* engine, int warning_level);
+
+/**
+ * iOS 메모리 압박 종료를 처리합니다
+ *
+ * @param engine LibEtude 엔진 핸들
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int memory_ios_handle_memory_pressure_ended(LibEtudeEngine* engine);
+#endif
 
 #ifdef __cplusplus
 }

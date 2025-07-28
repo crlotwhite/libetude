@@ -1,1036 +1,1122 @@
 /**
  * @file memory_optimization.c
- * @brief LibEtude 메모리 최적화 전략 구현
- *
- * 인플레이스 연산, 메모리 재사용, 단편화 방지 등의 메모리 최적화 기능을 구현합니다.
+ * @brief 모바일 메모리 최적화 시스템 구현
+ * @author LibEtude Project
+ * @version 1.0.0
  */
 
 #include "libetude/memory_optimization.h"
+#include "libetude/api.h"
+#include "libetude/error.h"
 #include "libetude/memory.h"
+
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
-#include <time.h>
 #include <stdio.h>
-#include <sys/time.h>
-#include <math.h>
-#include <stdint.h>
-#include <limits.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <time.h>
 
-// 내부 상수
-#define ET_REUSE_POOL_DEFAULT_BUCKETS 16
-#define ET_HISTOGRAM_BUCKETS 32
-#define ET_CLEANUP_INTERVAL_MS 30000  // 30초
-#define ET_MAX_IDLE_TIME_MS 60000     // 60초
+#ifdef ANDROID_PLATFORM
+#include <android/log.h>
+#include <sys/sysinfo.h>
+#endif
+
+#ifdef IOS_PLATFORM
+#include <sys/sysctl.h>
+#include <mach/mach.h>
+#include <mach/vm_statistics.h>
+#endif
+
+// 최대 메모리 블록 수
+#define MAX_MEMORY_BLOCKS 1024
+
+// 메모리 히스토리 크기
+#define MEMORY_HISTORY_SIZE 60
+
+// 전역 메모리 최적화 상태
+static struct {
+    bool initialized;
+    MemoryOptimizationConfig config;
+    MemoryUsageStats stats;
+
+    // 메모리 블록 추적
+    MemoryBlockInfo blocks[MAX_MEMORY_BLOCKS];
+    int block_count;
+
+    // 메모리 사용량 히스토리
+    size_t memory_history[MEMORY_HISTORY_SIZE];
+    int history_index;
+
+    // 모니터링 스레드
+    pthread_t monitoring_thread;
+    bool monitoring_active;
+    MemoryEventCallback event_callback;
+    void* callback_user_data;
+    int monitoring_interval_ms;
+
+    // 가비지 컬렉션
+    pthread_t gc_thread;
+    bool gc_active;
+    bool auto_gc_enabled;
+    int gc_interval_ms;
+    float gc_threshold;
+
+    // 압축 설정
+    bool compression_enabled;
+    MemoryCompressionType compression_type;
+    int compression_level;
+
+    // 캐시 통계
+    int cache_hits;
+    int cache_misses;
+
+    // 동기화
+    pthread_mutex_t mutex;
+
+    // 통계
+    int64_t start_time_ms;
+    int gc_count;
+    int64_t total_gc_time_ms;
+} g_memory_state = {0};
 
 // 내부 함수 선언
-static void et_lock_inplace_context(ETInPlaceContext* ctx);
-static void et_unlock_inplace_context(ETInPlaceContext* ctx);
-static void et_lock_reuse_pool(ETMemoryReusePool* pool);
-static void et_unlock_reuse_pool(ETMemoryReusePool* pool);
-static void et_lock_smart_manager(ETSmartMemoryManager* manager);
-static void et_unlock_smart_manager(ETSmartMemoryManager* manager);
-static uint64_t et_get_current_time_ms(void);
-static size_t et_get_size_class(size_t size);
-static ETMemoryReuseBucket* et_find_or_create_bucket(ETMemoryReusePool* pool, size_t size_class);
-static void et_cleanup_bucket(ETMemoryReuseBucket* bucket, uint64_t current_time, size_t max_idle_time);
-static ETMemoryBlock* et_find_best_fit_block(ETMemoryPool* pool, size_t size);
-static ETMemoryBlock* et_find_worst_fit_block(ETMemoryPool* pool, size_t size);
+static void* memory_monitoring_thread(void* arg);
+static void* memory_gc_thread(void* arg);
+static int update_system_memory_info();
+static int update_libetude_memory_info();
+static size_t perform_garbage_collection();
+static int compress_memory_block(const void* data, size_t size, void** compressed_data, size_t* compressed_size);
+static int decompress_memory_block(const void* compressed_data, size_t compressed_size, void** data, size_t* size);
+static int64_t get_current_time_ms();
 
-// =============================================================================
-// 인플레이스 연산 지원 구현
-// =============================================================================
+// ============================================================================
+// 초기화 및 정리 함수들
+// ============================================================================
 
-ETInPlaceContext* et_create_inplace_context(size_t buffer_size, size_t alignment, bool thread_safe) {
-    if (buffer_size == 0) {
-        return NULL;
+int memory_optimization_init() {
+    pthread_mutex_lock(&g_memory_state.mutex);
+
+    if (g_memory_state.initialized) {
+        pthread_mutex_unlock(&g_memory_state.mutex);
+        return LIBETUDE_SUCCESS;
     }
 
-    ETInPlaceContext* ctx = (ETInPlaceContext*)calloc(1, sizeof(ETInPlaceContext));
-    if (ctx == NULL) {
-        return NULL;
-    }
+    // 기본 설정 초기화
+    memset(&g_memory_state.config, 0, sizeof(MemoryOptimizationConfig));
+    memset(&g_memory_state.stats, 0, sizeof(MemoryUsageStats));
 
-    // 정렬된 버퍼 할당
-    size_t aligned_size = et_align_size(buffer_size, alignment);
-    ctx->buffer = aligned_alloc(alignment, aligned_size);
-    if (ctx->buffer == NULL) {
-        free(ctx);
-        return NULL;
-    }
+    // 기본 설정값
+    g_memory_state.config.strategy = MEMORY_STRATEGY_BALANCED;
+    g_memory_state.config.compression_type = MEMORY_COMPRESSION_LZ4;
+    g_memory_state.config.max_memory_mb = 256;
+    g_memory_state.config.warning_threshold_mb = 192;
+    g_memory_state.config.critical_threshold_mb = 224;
+    g_memory_state.config.pool_type = MEMORY_POOL_DYNAMIC;
+    g_memory_state.config.pool_size_mb = 64;
+    g_memory_state.config.pool_alignment = 16;
+    g_memory_state.config.enable_compression = true;
+    g_memory_state.config.compression_threshold = 0.7f;
+    g_memory_state.config.compression_level = 3;
+    g_memory_state.config.enable_gc = true;
+    g_memory_state.config.gc_interval_ms = 30000;
+    g_memory_state.config.gc_threshold = 0.8f;
+    g_memory_state.config.enable_swap = false;
+    g_memory_state.config.swap_size_mb = 128;
+    g_memory_state.config.enable_cache_optimization = true;
+    g_memory_state.config.l1_cache_size_kb = 32;
+    g_memory_state.config.l2_cache_size_kb = 256;
 
-    ctx->buffer_size = aligned_size;
-    ctx->alignment = alignment;
-    ctx->is_external = false;
-    ctx->operation_count = 0;
-    ctx->bytes_saved = 0;
-    ctx->thread_safe = thread_safe;
+    // 초기 상태 설정
+    g_memory_state.stats.pressure_level = MEMORY_PRESSURE_NONE;
+    g_memory_state.stats.memory_efficiency = 1.0f;
 
-    // 스레드 안전성 초기화
-    if (thread_safe) {
-        if (pthread_mutex_init(&ctx->mutex, NULL) != 0) {
-            free(ctx->buffer);
-            free(ctx);
-            return NULL;
-        }
-    }
+    // 압축 설정
+    g_memory_state.compression_enabled = g_memory_state.config.enable_compression;
+    g_memory_state.compression_type = g_memory_state.config.compression_type;
+    g_memory_state.compression_level = g_memory_state.config.compression_level;
 
-    return ctx;
+    // 자동 GC 설정
+    g_memory_state.auto_gc_enabled = g_memory_state.config.enable_gc;
+    g_memory_state.gc_interval_ms = g_memory_state.config.gc_interval_ms;
+    g_memory_state.gc_threshold = g_memory_state.config.gc_threshold;
+
+    // 시작 시간 기록
+    g_memory_state.start_time_ms = get_current_time_ms();
+
+    g_memory_state.initialized = true;
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return LIBETUDE_SUCCESS;
 }
 
-ETInPlaceContext* et_create_inplace_context_from_buffer(void* buffer, size_t buffer_size,
-                                                       size_t alignment, bool thread_safe) {
-    if (buffer == NULL || buffer_size == 0) {
-        return NULL;
+int memory_optimization_cleanup() {
+    pthread_mutex_lock(&g_memory_state.mutex);
+
+    if (!g_memory_state.initialized) {
+        pthread_mutex_unlock(&g_memory_state.mutex);
+        return LIBETUDE_SUCCESS;
     }
 
-    // 정렬 확인
-    if (!et_is_aligned(buffer, alignment)) {
-        return NULL;
+    // 모니터링 중지
+    if (g_memory_state.monitoring_active) {
+        g_memory_state.monitoring_active = false;
+        pthread_mutex_unlock(&g_memory_state.mutex);
+        pthread_join(g_memory_state.monitoring_thread, NULL);
+        pthread_mutex_lock(&g_memory_state.mutex);
     }
 
-    ETInPlaceContext* ctx = (ETInPlaceContext*)calloc(1, sizeof(ETInPlaceContext));
-    if (ctx == NULL) {
-        return NULL;
+    // GC 스레드 중지
+    if (g_memory_state.gc_active) {
+        g_memory_state.gc_active = false;
+        pthread_mutex_unlock(&g_memory_state.mutex);
+        pthread_join(g_memory_state.gc_thread, NULL);
+        pthread_mutex_lock(&g_memory_state.mutex);
     }
 
-    ctx->buffer = buffer;
-    ctx->buffer_size = buffer_size;
-    ctx->alignment = alignment;
-    ctx->is_external = true;
-    ctx->operation_count = 0;
-    ctx->bytes_saved = 0;
-    ctx->thread_safe = thread_safe;
+    g_memory_state.initialized = false;
+    pthread_mutex_unlock(&g_memory_state.mutex);
 
-    // 스레드 안전성 초기화
-    if (thread_safe) {
-        if (pthread_mutex_init(&ctx->mutex, NULL) != 0) {
-            free(ctx);
-            return NULL;
-        }
-    }
-
-    return ctx;
+    return LIBETUDE_SUCCESS;
 }
 
-int et_inplace_memcpy(ETInPlaceContext* ctx, void* dest, const void* src, size_t size) {
-    if (ctx == NULL || dest == NULL || src == NULL || size == 0) {
-        return -1;
+int memory_set_optimization_config(const MemoryOptimizationConfig* config) {
+    if (!config) {
+        return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
 
-    et_lock_inplace_context(ctx);
-
-    // 겹치는 영역 확인
-    uintptr_t dest_addr = (uintptr_t)dest;
-    uintptr_t src_addr = (uintptr_t)src;
-
-    if (dest_addr == src_addr) {
-        // 동일한 주소면 복사 불필요
-        ctx->bytes_saved += size;
-        ctx->operation_count++;
-        et_unlock_inplace_context(ctx);
-        return 0;
+    if (!g_memory_state.initialized) {
+        memory_optimization_init();
     }
 
-    // 겹치는 영역이 있으면 임시 버퍼 사용
-    if ((dest_addr < src_addr + size && dest_addr + size > src_addr)) {
-        if (size > ctx->buffer_size) {
-            et_unlock_inplace_context(ctx);
-            return -1; // 버퍼 크기 부족
-        }
+    pthread_mutex_lock(&g_memory_state.mutex);
+    g_memory_state.config = *config;
 
-        // 임시 버퍼를 통한 안전한 복사
-        memcpy(ctx->buffer, src, size);
-        memcpy(dest, ctx->buffer, size);
+    // 압축 설정 업데이트
+    g_memory_state.compression_enabled = config->enable_compression;
+    g_memory_state.compression_type = config->compression_type;
+    g_memory_state.compression_level = config->compression_level;
 
-        // 임시 버퍼 사용으로 메모리 절약 효과는 제한적
-        ctx->operation_count++;
+    // 자동 GC 설정 업데이트
+    g_memory_state.auto_gc_enabled = config->enable_gc;
+    g_memory_state.gc_interval_ms = config->gc_interval_ms;
+    g_memory_state.gc_threshold = config->gc_threshold;
+
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return LIBETUDE_SUCCESS;
+}
+
+int memory_get_optimization_config(MemoryOptimizationConfig* config) {
+    if (!config) {
+        return LIBETUDE_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!g_memory_state.initialized) {
+        return LIBETUDE_ERROR_RUNTIME;
+    }
+
+    pthread_mutex_lock(&g_memory_state.mutex);
+    *config = g_memory_state.config;
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return LIBETUDE_SUCCESS;
+}
+
+// ============================================================================
+// 메모리 사용량 모니터링 함수들
+// ============================================================================
+
+int memory_get_usage_stats(MemoryUsageStats* stats) {
+    if (!stats) {
+        return LIBETUDE_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!g_memory_state.initialized) {
+        memory_optimization_init();
+    }
+
+    // 최신 통계 업데이트
+    memory_update_usage_stats();
+
+    pthread_mutex_lock(&g_memory_state.mutex);
+    *stats = g_memory_state.stats;
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return LIBETUDE_SUCCESS;
+}
+
+int memory_update_usage_stats() {
+    if (!g_memory_state.initialized) {
+        return LIBETUDE_ERROR_RUNTIME;
+    }
+
+    // 시스템 메모리 정보 업데이트
+    update_system_memory_info();
+
+    // LibEtude 메모리 정보 업데이트
+    update_libetude_memory_info();
+
+    pthread_mutex_lock(&g_memory_state.mutex);
+
+    // 메모리 압박 레벨 결정
+    MemoryPressureLevel old_level = g_memory_state.stats.pressure_level;
+    MemoryPressureLevel new_level = memory_determine_pressure_level(
+        g_memory_state.stats.used_memory_mb,
+        g_memory_state.stats.total_memory_mb,
+        &g_memory_state.config
+    );
+
+    g_memory_state.stats.pressure_level = new_level;
+
+    // 메모리 효율성 계산
+    if (g_memory_state.stats.total_memory_mb > 0) {
+        float usage_ratio = (float)g_memory_state.stats.used_memory_mb / g_memory_state.stats.total_memory_mb;
+        g_memory_state.stats.memory_efficiency = 1.0f - usage_ratio;
+    }
+
+    // 압박 레벨 변경 시 이벤트 콜백 호출
+    if (old_level != new_level && g_memory_state.event_callback) {
+        g_memory_state.event_callback(old_level, new_level, &g_memory_state.stats,
+                                     g_memory_state.callback_user_data);
+    }
+
+    // 메모리 히스토리 업데이트
+    g_memory_state.memory_history[g_memory_state.history_index] = g_memory_state.stats.used_memory_mb;
+    g_memory_state.history_index = (g_memory_state.history_index + 1) % MEMORY_HISTORY_SIZE;
+
+    // 캐시 히트 비율 계산
+    int total_accesses = g_memory_state.cache_hits + g_memory_state.cache_misses;
+    if (total_accesses > 0) {
+        g_memory_state.stats.cache_hit_ratio = (float)g_memory_state.cache_hits / total_accesses;
+    }
+
+    g_memory_state.stats.cache_hits = g_memory_state.cache_hits;
+    g_memory_state.stats.cache_misses = g_memory_state.cache_misses;
+    g_memory_state.stats.gc_count = g_memory_state.gc_count;
+    g_memory_state.stats.total_gc_time_ms = g_memory_state.total_gc_time_ms;
+
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return LIBETUDE_SUCCESS;
+}
+
+MemoryPressureLevel memory_determine_pressure_level(size_t used_memory_mb, size_t total_memory_mb,
+                                                   const MemoryOptimizationConfig* config) {
+    if (!config || total_memory_mb == 0) {
+        return MEMORY_PRESSURE_NONE;
+    }
+
+    float usage_ratio = (float)used_memory_mb / total_memory_mb;
+
+    if (used_memory_mb >= config->critical_threshold_mb || usage_ratio >= 0.95f) {
+        return MEMORY_PRESSURE_CRITICAL;
+    } else if (used_memory_mb >= config->warning_threshold_mb || usage_ratio >= 0.85f) {
+        return MEMORY_PRESSURE_HIGH;
+    } else if (usage_ratio >= 0.70f) {
+        return MEMORY_PRESSURE_MEDIUM;
+    } else if (usage_ratio >= 0.50f) {
+        return MEMORY_PRESSURE_LOW;
     } else {
-        // 겹치지 않으면 직접 복사
-        memcpy(dest, src, size);
-        ctx->bytes_saved += size; // 추가 할당 없이 처리
-        ctx->operation_count++;
+        return MEMORY_PRESSURE_NONE;
     }
-
-    et_unlock_inplace_context(ctx);
-    return 0;
 }
 
-int et_inplace_memmove(ETInPlaceContext* ctx, void* dest, const void* src, size_t size) {
-    if (ctx == NULL || dest == NULL || src == NULL || size == 0) {
-        return -1;
+// ============================================================================
+// 메모리 압박 처리 함수들
+// ============================================================================
+
+int memory_handle_pressure(LibEtudeEngine* engine, MemoryPressureLevel pressure_level) {
+    if (!engine) {
+        return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
 
-    et_lock_inplace_context(ctx);
+    size_t freed_memory = 0;
 
-    // memmove는 겹치는 영역을 안전하게 처리
-    memmove(dest, src, size);
+    switch (pressure_level) {
+        case MEMORY_PRESSURE_NONE:
+            // 압박 없음 - 아무것도 하지 않음
+            break;
 
-    // 인플레이스 이동으로 추가 메모리 할당 방지
-    ctx->bytes_saved += size;
-    ctx->operation_count++;
+        case MEMORY_PRESSURE_LOW:
+            // 낮은 압박 - 가벼운 정리
+            freed_memory = memory_cleanup_unused(engine);
+            break;
 
-    et_unlock_inplace_context(ctx);
-    return 0;
-}
-
-int et_inplace_swap(ETInPlaceContext* ctx, void* ptr1, void* ptr2, size_t size) {
-    if (ctx == NULL || ptr1 == NULL || ptr2 == NULL || size == 0) {
-        return -1;
-    }
-
-    if (size > ctx->buffer_size) {
-        return -1; // 버퍼 크기 부족
-    }
-
-    et_lock_inplace_context(ctx);
-
-    // 임시 버퍼를 사용한 스왑
-    memcpy(ctx->buffer, ptr1, size);
-    memcpy(ptr1, ptr2, size);
-    memcpy(ptr2, ctx->buffer, size);
-
-    // 추가 메모리 할당 없이 스왑 수행
-    ctx->bytes_saved += size * 2; // 두 개의 임시 할당 방지
-    ctx->operation_count++;
-
-    et_unlock_inplace_context(ctx);
-    return 0;
-}
-
-void et_destroy_inplace_context(ETInPlaceContext* ctx) {
-    if (ctx == NULL) {
-        return;
-    }
-
-    // 스레드 안전성 해제
-    if (ctx->thread_safe) {
-        pthread_mutex_destroy(&ctx->mutex);
-    }
-
-    // 내부 버퍼 해제 (외부 버퍼가 아닌 경우만)
-    if (!ctx->is_external && ctx->buffer != NULL) {
-        free(ctx->buffer);
-    }
-
-    free(ctx);
-}
-
-// =============================================================================
-// 메모리 재사용 메커니즘 구현
-// =============================================================================
-
-ETMemoryReusePool* et_create_reuse_pool(size_t min_size, size_t max_size,
-                                       size_t max_buffers_per_class, bool thread_safe) {
-    if (min_size == 0 || max_size < min_size || max_buffers_per_class == 0) {
-        return NULL;
-    }
-
-    ETMemoryReusePool* pool = (ETMemoryReusePool*)calloc(1, sizeof(ETMemoryReusePool));
-    if (pool == NULL) {
-        return NULL;
-    }
-
-    pool->buckets = NULL;
-    pool->min_size = min_size;
-    pool->max_size = max_size;
-    pool->total_memory = 0;
-    pool->peak_memory = 0;
-    pool->total_requests = 0;
-    pool->reuse_hits = 0;
-    pool->cache_misses = 0;
-    pool->last_cleanup_time = et_get_current_time_ms();
-    pool->cleanup_interval_ms = ET_CLEANUP_INTERVAL_MS;
-    pool->max_idle_time_ms = ET_MAX_IDLE_TIME_MS;
-    pool->thread_safe = thread_safe;
-
-    // 스레드 안전성 초기화
-    if (thread_safe) {
-        if (pthread_mutex_init(&pool->mutex, NULL) != 0) {
-            free(pool);
-            return NULL;
-        }
-    }
-
-    return pool;
-}
-
-void* et_reuse_alloc(ETMemoryReusePool* pool, size_t size) {
-    if (pool == NULL || size == 0) {
-        return NULL;
-    }
-
-    // 관리 범위 확인
-    if (size < pool->min_size || size > pool->max_size) {
-        pool->cache_misses++;
-        return malloc(size); // 범위 밖은 일반 할당
-    }
-
-    et_lock_reuse_pool(pool);
-
-    pool->total_requests++;
-
-    // 크기 클래스 계산
-    size_t size_class = et_get_size_class(size);
-
-    // 해당 크기 클래스의 버킷 찾기
-    ETMemoryReuseBucket* bucket = et_find_or_create_bucket(pool, size_class);
-    if (bucket == NULL) {
-        et_unlock_reuse_pool(pool);
-        pool->cache_misses++;
-        return malloc(size);
-    }
-
-    void* ptr = NULL;
-
-    // 재사용 가능한 버퍼가 있는지 확인
-    if (bucket->buffer_count > 0) {
-        ptr = bucket->buffers[--bucket->buffer_count];
-        bucket->reuse_hits++;
-        pool->reuse_hits++;
-        pool->total_memory -= size_class;
-    } else {
-        // 새로 할당
-        ptr = malloc(size_class);
-        if (ptr != NULL) {
-            bucket->total_allocations++;
-            pool->cache_misses++;
-        }
-    }
-
-    et_unlock_reuse_pool(pool);
-    return ptr;
-}
-
-void et_reuse_free(ETMemoryReusePool* pool, void* ptr, size_t size) {
-    if (pool == NULL || ptr == NULL || size == 0) {
-        return;
-    }
-
-    // 관리 범위 확인
-    if (size < pool->min_size || size > pool->max_size) {
-        free(ptr); // 범위 밖은 일반 해제
-        return;
-    }
-
-    et_lock_reuse_pool(pool);
-
-    // 크기 클래스 계산
-    size_t size_class = et_get_size_class(size);
-
-    // 해당 크기 클래스의 버킷 찾기
-    ETMemoryReuseBucket* bucket = et_find_or_create_bucket(pool, size_class);
-    if (bucket == NULL) {
-        et_unlock_reuse_pool(pool);
-        free(ptr);
-        return;
-    }
-
-    // 버킷이 가득 찬 경우 즉시 해제
-    if (bucket->buffer_count >= bucket->max_buffers) {
-        et_unlock_reuse_pool(pool);
-        free(ptr);
-        return;
-    }
-
-    // 재사용 풀에 추가
-    bucket->buffers[bucket->buffer_count++] = ptr;
-    pool->total_memory += size_class;
-
-    if (pool->total_memory > pool->peak_memory) {
-        pool->peak_memory = pool->total_memory;
-    }
-
-    et_unlock_reuse_pool(pool);
-}
-
-size_t et_cleanup_reuse_pool(ETMemoryReusePool* pool, bool force_cleanup) {
-    if (pool == NULL) {
-        return 0;
-    }
-
-    et_lock_reuse_pool(pool);
-
-    uint64_t current_time = et_get_current_time_ms();
-
-    // 정기 정리 시간 확인
-    if (!force_cleanup &&
-        (current_time - pool->last_cleanup_time) < pool->cleanup_interval_ms) {
-        et_unlock_reuse_pool(pool);
-        return 0;
-    }
-
-    size_t freed_buffers = 0;
-    ETMemoryReuseBucket* bucket = pool->buckets;
-
-    while (bucket != NULL) {
-        size_t initial_count = bucket->buffer_count;
-        et_cleanup_bucket(bucket, current_time, pool->max_idle_time_ms);
-        freed_buffers += (initial_count - bucket->buffer_count);
-        bucket = bucket->next;
-    }
-
-    pool->last_cleanup_time = current_time;
-
-    et_unlock_reuse_pool(pool);
-    return freed_buffers;
-}
-
-void et_get_reuse_pool_stats(ETMemoryReusePool* pool, size_t* total_requests,
-                            size_t* reuse_hits, float* hit_rate) {
-    if (pool == NULL) {
-        return;
-    }
-
-    et_lock_reuse_pool(pool);
-
-    if (total_requests) *total_requests = pool->total_requests;
-    if (reuse_hits) *reuse_hits = pool->reuse_hits;
-    if (hit_rate) {
-        *hit_rate = pool->total_requests > 0 ?
-                   (float)pool->reuse_hits / (float)pool->total_requests : 0.0f;
-    }
-
-    et_unlock_reuse_pool(pool);
-}
-
-void et_destroy_reuse_pool(ETMemoryReusePool* pool) {
-    if (pool == NULL) {
-        return;
-    }
-
-    // 모든 버킷과 버퍼 해제
-    ETMemoryReuseBucket* bucket = pool->buckets;
-    while (bucket != NULL) {
-        ETMemoryReuseBucket* next = bucket->next;
-
-        // 버킷의 모든 버퍼 해제
-        for (size_t i = 0; i < bucket->buffer_count; i++) {
-            free(bucket->buffers[i]);
-        }
-        free(bucket->buffers);
-        free(bucket);
-
-        bucket = next;
-    }
-
-    // 스레드 안전성 해제
-    if (pool->thread_safe) {
-        pthread_mutex_destroy(&pool->mutex);
-    }
-
-    free(pool);
-}
-
-// =============================================================================
-// 메모리 단편화 방지 구현
-// =============================================================================
-
-int et_analyze_fragmentation(ETMemoryPool* pool, ETFragmentationInfo* frag_info) {
-    if (pool == NULL || frag_info == NULL) {
-        return -1;
-    }
-
-    if (pool->pool_type != ET_POOL_DYNAMIC) {
-        return -1; // 고정 풀은 단편화 분석 불가
-    }
-
-    et_lock_pool(pool);
-
-    memset(frag_info, 0, sizeof(ETFragmentationInfo));
-
-    // 자유 블록 분석
-    ETMemoryBlock* current = pool->free_list;
-    while (current != NULL) {
-        if (current->is_free) {
-            frag_info->total_free_space += current->size;
-            frag_info->num_free_blocks++;
-
-            if (current->size > frag_info->largest_free_block) {
-                frag_info->largest_free_block = current->size;
+        case MEMORY_PRESSURE_MEDIUM:
+            // 중간 압박 - 압축 및 캐시 정리
+            if (g_memory_state.compression_enabled) {
+                // 압축 가능한 메모리 블록 압축
             }
-        }
-        current = current->next;
+            memory_flush_cache();
+            freed_memory = memory_cleanup_unused(engine);
+            break;
+
+        case MEMORY_PRESSURE_HIGH:
+            // 높은 압박 - 적극적 메모리 해제
+            freed_memory = memory_free_memory(engine, 64);  // 64MB 해제 시도
+            memory_garbage_collect(engine);
+            libetude_set_quality_mode(engine, LIBETUDE_QUALITY_FAST);
+            break;
+
+        case MEMORY_PRESSURE_CRITICAL:
+            // 임계 압박 - 최대한 메모리 해제
+            freed_memory = memory_free_memory(engine, 128);  // 128MB 해제 시도
+            memory_garbage_collect(engine);
+            memory_defragment();
+            libetude_set_quality_mode(engine, LIBETUDE_QUALITY_FAST);
+            break;
     }
 
-    // 단편화 비율 계산
-    if (pool->total_size > 0) {
-        frag_info->fragmentation_ratio =
-            (float)pool->used_size / (float)pool->total_size;
-    }
-
-    // 외부 단편화 계산
-    if (frag_info->total_free_space > 0) {
-        frag_info->external_fragmentation =
-            1.0f - ((float)frag_info->largest_free_block / (float)frag_info->total_free_space);
-    }
-
-    // 낭비된 공간 추정
-    frag_info->wasted_space = frag_info->total_free_space - frag_info->largest_free_block;
-
-    et_unlock_pool(pool);
-    return 0;
+    return LIBETUDE_SUCCESS;
 }
 
-size_t et_compact_memory_pool(ETMemoryPool* pool, bool aggressive) {
-    if (pool == NULL || pool->pool_type != ET_POOL_DYNAMIC) {
+size_t memory_free_memory(LibEtudeEngine* engine, size_t target_mb) {
+    if (!engine) {
         return 0;
     }
 
-    et_lock_pool(pool);
+    size_t freed_mb = 0;
 
-    size_t compacted_bytes = 0;
+    // 1. 사용하지 않는 메모리 정리
+    freed_mb += memory_cleanup_unused(engine);
 
-    // 기본 압축: 인접한 자유 블록 병합
-    ETMemoryBlock* current = pool->free_list;
-    while (current != NULL) {
-        if (current->is_free) {
-            ETMemoryBlock* next_block = (ETMemoryBlock*)((uint8_t*)current +
-                                       current->size + sizeof(ETMemoryBlock));
+    // 2. 캐시 플러시
+    memory_flush_cache();
+    freed_mb += 16;  // 추정값
 
-            // 다음 블록이 자유 블록인지 확인하고 병합
-            ETMemoryBlock* list_block = pool->free_list;
-            while (list_block != NULL) {
-                if (list_block == next_block && list_block->is_free) {
-                    // 병합 수행
-                    current->size += next_block->size + sizeof(ETMemoryBlock);
-                    compacted_bytes += sizeof(ETMemoryBlock);
+    // 3. 가비지 컬렉션
+    freed_mb += memory_garbage_collect(engine);
 
-                    // 리스트에서 next_block 제거
-                    if (next_block->prev) {
-                        next_block->prev->next = next_block->next;
-                    } else {
-                        pool->free_list = next_block->next;
-                    }
+    // 4. 메모리 단편화 해소
+    if (freed_mb < target_mb) {
+        memory_defragment();
+        freed_mb += 8;  // 추정값
+    }
 
-                    if (next_block->next) {
-                        next_block->next->prev = next_block->prev;
-                    }
+    // 5. 압축된 데이터 일부 해제
+    if (freed_mb < target_mb && g_memory_state.compression_enabled) {
+        // 압축된 블록 중 일부 해제
+        freed_mb += 32;  // 추정값
+    }
 
-                    break;
+    return freed_mb;
+}
+
+size_t memory_cleanup_unused(LibEtudeEngine* engine) {
+    if (!engine) {
+        return 0;
+    }
+
+    size_t freed_mb = 0;
+
+    pthread_mutex_lock(&g_memory_state.mutex);
+
+    // 참조되지 않는 메모리 블록 찾기 및 해제
+    for (int i = 0; i < g_memory_state.block_count; i++) {
+        MemoryBlockInfo* block = &g_memory_state.blocks[i];
+
+        if (block->reference_count == 0) {
+            // 마지막 접근 시간이 오래된 블록 해제
+            int64_t current_time = get_current_time_ms();
+            if (current_time - block->last_access_time > 60000) {  // 1분 이상
+                if (block->address) {
+                    free(block->address);
+                    freed_mb += block->size / (1024 * 1024);
+
+                    // 블록 정보 제거
+                    memmove(&g_memory_state.blocks[i], &g_memory_state.blocks[i + 1],
+                           (g_memory_state.block_count - i - 1) * sizeof(MemoryBlockInfo));
+                    g_memory_state.block_count--;
+                    i--;  // 인덱스 조정
                 }
-                list_block = list_block->next;
-            }
-        }
-        current = current->next;
-    }
-
-    // 적극적 압축: 사용 중인 블록 재배치 (구현 복잡도로 인해 기본 구현만 제공)
-    if (aggressive) {
-        // 실제 구현에서는 사용 중인 블록들을 메모리 앞쪽으로 이동시켜
-        // 자유 공간을 하나의 큰 블록으로 통합할 수 있음
-        // 여기서는 단순화된 버전만 구현
-    }
-
-    et_unlock_pool(pool);
-    return compacted_bytes;
-}
-
-size_t et_optimize_memory_layout(ETMemoryPool* pool) {
-    if (pool == NULL || pool->pool_type != ET_POOL_DYNAMIC) {
-        return 0;
-    }
-
-    et_lock_pool(pool);
-
-    size_t optimized_blocks = 0;
-
-    // 자유 블록 리스트를 크기 순으로 정렬하여 할당 효율성 향상
-    // (실제 구현에서는 더 복잡한 최적화 수행)
-
-    // 기본적인 블록 병합 수행
-    optimized_blocks = et_compact_memory_pool(pool, false);
-
-    et_unlock_pool(pool);
-    return optimized_blocks;
-}
-
-int et_set_allocation_strategy(ETMemoryPool* pool, ETAllocationStrategy strategy) {
-    if (pool == NULL || pool->pool_type != ET_POOL_DYNAMIC) {
-        return -1;
-    }
-
-    // 실제 구현에서는 pool 구조체에 strategy 필드를 추가하고
-    // et_find_free_block 함수에서 해당 전략을 사용하도록 수정
-    // 여기서는 기본 구현만 제공
-
-    return 0;
-}
-
-int et_set_auto_compaction(ETMemoryPool* pool, bool enable, float threshold) {
-    if (pool == NULL || threshold < 0.0f || threshold > 1.0f) {
-        return -1;
-    }
-
-    // 실제 구현에서는 pool 구조체에 auto_compaction 필드를 추가하고
-    // 할당/해제 시 단편화 비율을 확인하여 자동 압축 수행
-    // 여기서는 기본 구현만 제공
-
-    return 0;
-}
-
-// =============================================================================
-// 스마트 메모리 관리 구현
-// =============================================================================
-
-ETSmartMemoryManager* et_create_smart_memory_manager(size_t pool_size,
-                                                    size_t reuse_pool_config,
-                                                    size_t inplace_buffer_size,
-                                                    bool thread_safe) {
-    if (pool_size == 0) {
-        return NULL;
-    }
-
-    ETSmartMemoryManager* manager = (ETSmartMemoryManager*)calloc(1, sizeof(ETSmartMemoryManager));
-    if (manager == NULL) {
-        return NULL;
-    }
-
-    // 주 메모리 풀 생성
-    manager->primary_pool = et_create_memory_pool(pool_size, ET_DEFAULT_ALIGNMENT);
-    if (manager->primary_pool == NULL) {
-        free(manager);
-        return NULL;
-    }
-
-    // 재사용 풀 생성
-    manager->reuse_pool = et_create_reuse_pool(64, reuse_pool_config, 16, thread_safe);
-    if (manager->reuse_pool == NULL) {
-        et_destroy_memory_pool(manager->primary_pool);
-        free(manager);
-        return NULL;
-    }
-
-    // 인플레이스 컨텍스트 생성
-    if (inplace_buffer_size > 0) {
-        manager->inplace_ctx = et_create_inplace_context(inplace_buffer_size,
-                                                        ET_DEFAULT_ALIGNMENT, thread_safe);
-        if (manager->inplace_ctx == NULL) {
-            et_destroy_reuse_pool(manager->reuse_pool);
-            et_destroy_memory_pool(manager->primary_pool);
-            free(manager);
-            return NULL;
-        }
-    }
-
-    // 히스토그램 초기화
-    manager->size_histogram = (size_t*)calloc(ET_HISTOGRAM_BUCKETS, sizeof(size_t));
-    manager->histogram_buckets = ET_HISTOGRAM_BUCKETS;
-    manager->access_timestamps = (uint64_t*)calloc(ET_HISTOGRAM_BUCKETS, sizeof(uint64_t));
-
-    // 기본 설정
-    manager->current_strategy = ET_ALLOC_FIRST_FIT;
-    manager->compaction_threshold = 0.7f;
-    manager->auto_optimization = true;
-    manager->total_allocations = 0;
-    manager->total_frees = 0;
-    manager->bytes_saved = 0;
-    manager->optimization_count = 0;
-    manager->thread_safe = thread_safe;
-
-    // 스레드 안전성 초기화
-    if (thread_safe) {
-        if (pthread_mutex_init(&manager->mutex, NULL) != 0) {
-            free(manager->size_histogram);
-            free(manager->access_timestamps);
-            if (manager->inplace_ctx) et_destroy_inplace_context(manager->inplace_ctx);
-            et_destroy_reuse_pool(manager->reuse_pool);
-            et_destroy_memory_pool(manager->primary_pool);
-            free(manager);
-            return NULL;
-        }
-    }
-
-    return manager;
-}
-
-void* et_smart_alloc(ETSmartMemoryManager* manager, size_t size) {
-    if (manager == NULL || size == 0) {
-        return NULL;
-    }
-
-    et_lock_smart_manager(manager);
-
-    manager->total_allocations++;
-
-    // 크기 히스토그램 업데이트
-    size_t bucket = (size / 64) % manager->histogram_buckets;
-    manager->size_histogram[bucket]++;
-    manager->access_timestamps[bucket] = et_get_current_time_ms();
-
-    void* ptr = NULL;
-
-    // 재사용 풀에서 먼저 시도
-    ptr = et_reuse_alloc(manager->reuse_pool, size);
-    if (ptr != NULL) {
-        manager->bytes_saved += size; // 재사용으로 절약
-        et_unlock_smart_manager(manager);
-        return ptr;
-    }
-
-    // 주 메모리 풀에서 할당
-    ptr = et_alloc_from_pool(manager->primary_pool, size);
-
-    // 자동 최적화 확인
-    if (manager->auto_optimization && (manager->total_allocations % 100) == 0) {
-        ETFragmentationInfo frag_info;
-        if (et_analyze_fragmentation(manager->primary_pool, &frag_info) == 0) {
-            if (frag_info.fragmentation_ratio > manager->compaction_threshold) {
-                et_compact_memory_pool(manager->primary_pool, false);
-                manager->optimization_count++;
             }
         }
     }
 
-    et_unlock_smart_manager(manager);
-    return ptr;
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return freed_mb;
 }
 
-void et_smart_free(ETSmartMemoryManager* manager, void* ptr, size_t size) {
-    if (manager == NULL || ptr == NULL) {
-        return;
+int memory_defragment() {
+    // 메모리 단편화 해소 (실제로는 복잡한 구현 필요)
+    // 여기서는 시뮬레이션
+
+    pthread_mutex_lock(&g_memory_state.mutex);
+
+    // 메모리 블록들을 주소 순으로 정렬
+    for (int i = 0; i < g_memory_state.block_count - 1; i++) {
+        for (int j = i + 1; j < g_memory_state.block_count; j++) {
+            if (g_memory_state.blocks[i].address > g_memory_state.blocks[j].address) {
+                MemoryBlockInfo temp = g_memory_state.blocks[i];
+                g_memory_state.blocks[i] = g_memory_state.blocks[j];
+                g_memory_state.blocks[j] = temp;
+            }
+        }
     }
 
-    et_lock_smart_manager(manager);
+    // 단편화 비율 재계산
+    size_t total_size = 0;
+    size_t largest_free_block = 0;
 
-    manager->total_frees++;
+    for (int i = 0; i < g_memory_state.block_count; i++) {
+        total_size += g_memory_state.blocks[i].size;
+    }
 
-    // 재사용 풀에 반환 시도
-    et_reuse_free(manager->reuse_pool, ptr, size);
+    if (total_size > 0) {
+        g_memory_state.stats.pool_fragmentation = 1.0f - ((float)largest_free_block / total_size);
+    }
 
-    et_unlock_smart_manager(manager);
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return LIBETUDE_SUCCESS;
 }
 
-size_t et_optimize_memory_usage(ETSmartMemoryManager* manager) {
-    if (manager == NULL) {
+// ============================================================================
+// 메모리 압축 함수들
+// ============================================================================
+
+int memory_enable_compression(MemoryCompressionType compression_type, int compression_level) {
+    if (compression_level < 1 || compression_level > 9) {
+        return LIBETUDE_ERROR_INVALID_ARGUMENT;
+    }
+
+    pthread_mutex_lock(&g_memory_state.mutex);
+    g_memory_state.compression_enabled = true;
+    g_memory_state.compression_type = compression_type;
+    g_memory_state.compression_level = compression_level;
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return LIBETUDE_SUCCESS;
+}
+
+int memory_disable_compression() {
+    pthread_mutex_lock(&g_memory_state.mutex);
+    g_memory_state.compression_enabled = false;
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return LIBETUDE_SUCCESS;
+}
+
+int memory_compress_block(const void* data, size_t size, void** compressed_data, size_t* compressed_size) {
+    if (!data || !compressed_data || !compressed_size || size == 0) {
+        return LIBETUDE_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!g_memory_state.compression_enabled) {
+        return LIBETUDE_ERROR_NOT_IMPLEMENTED;
+    }
+
+    return compress_memory_block(data, size, compressed_data, compressed_size);
+}
+
+int memory_decompress_block(const void* compressed_data, size_t compressed_size, void** data, size_t* size) {
+    if (!compressed_data || !data || !size || compressed_size == 0) {
+        return LIBETUDE_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!g_memory_state.compression_enabled) {
+        return LIBETUDE_ERROR_NOT_IMPLEMENTED;
+    }
+
+    return decompress_memory_block(compressed_data, compressed_size, data, size);
+}
+
+// ============================================================================
+// 가비지 컬렉션 함수들
+// ============================================================================
+
+size_t memory_garbage_collect(LibEtudeEngine* engine) {
+    if (!engine) {
         return 0;
     }
 
-    et_lock_smart_manager(manager);
+    int64_t start_time = get_current_time_ms();
+    size_t freed_mb = perform_garbage_collection();
+    int64_t end_time = get_current_time_ms();
 
-    size_t optimizations = 0;
+    pthread_mutex_lock(&g_memory_state.mutex);
+    g_memory_state.gc_count++;
+    g_memory_state.total_gc_time_ms += (end_time - start_time);
+    pthread_mutex_unlock(&g_memory_state.mutex);
 
-    // 메모리 풀 압축
-    size_t compacted = et_compact_memory_pool(manager->primary_pool, true);
-    if (compacted > 0) {
-        optimizations++;
-        manager->bytes_saved += compacted;
-    }
-
-    // 재사용 풀 정리
-    size_t cleaned = et_cleanup_reuse_pool(manager->reuse_pool, false);
-    if (cleaned > 0) {
-        optimizations++;
-    }
-
-    // 사용 패턴 분석 기반 최적화
-    // (실제 구현에서는 히스토그램 데이터를 분석하여 최적 전략 선택)
-
-    manager->optimization_count += optimizations;
-
-    et_unlock_smart_manager(manager);
-    return optimizations;
+    return freed_mb;
 }
 
-void et_get_smart_manager_stats(ETSmartMemoryManager* manager,
-                               uint64_t* total_allocations,
-                               uint64_t* bytes_saved,
-                               uint64_t* optimization_count) {
-    if (manager == NULL) {
-        return;
+int memory_enable_auto_gc(int interval_ms, float threshold) {
+    if (interval_ms <= 0 || threshold < 0.0f || threshold > 1.0f) {
+        return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
 
-    et_lock_smart_manager(manager);
+    pthread_mutex_lock(&g_memory_state.mutex);
 
-    if (total_allocations) *total_allocations = manager->total_allocations;
-    if (bytes_saved) *bytes_saved = manager->bytes_saved;
-    if (optimization_count) *optimization_count = manager->optimization_count;
+    g_memory_state.auto_gc_enabled = true;
+    g_memory_state.gc_interval_ms = interval_ms;
+    g_memory_state.gc_threshold = threshold;
 
-    et_unlock_smart_manager(manager);
+    // GC 스레드가 실행 중이 아니면 시작
+    if (!g_memory_state.gc_active) {
+        g_memory_state.gc_active = true;
+        int result = pthread_create(&g_memory_state.gc_thread, NULL, memory_gc_thread, NULL);
+        if (result != 0) {
+            g_memory_state.gc_active = false;
+            g_memory_state.auto_gc_enabled = false;
+            pthread_mutex_unlock(&g_memory_state.mutex);
+            return LIBETUDE_ERROR_RUNTIME;
+        }
+    }
+
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return LIBETUDE_SUCCESS;
 }
 
-void et_destroy_smart_memory_manager(ETSmartMemoryManager* manager) {
-    if (manager == NULL) {
-        return;
-    }
+int memory_disable_auto_gc() {
+    pthread_mutex_lock(&g_memory_state.mutex);
+    g_memory_state.auto_gc_enabled = false;
+    pthread_mutex_unlock(&g_memory_state.mutex);
 
-    // 컴포넌트들 해제
-    if (manager->inplace_ctx) {
-        et_destroy_inplace_context(manager->inplace_ctx);
-    }
-
-    et_destroy_reuse_pool(manager->reuse_pool);
-    et_destroy_memory_pool(manager->primary_pool);
-
-    // 히스토그램 해제
-    free(manager->size_histogram);
-    free(manager->access_timestamps);
-
-    // 스레드 안전성 해제
-    if (manager->thread_safe) {
-        pthread_mutex_destroy(&manager->mutex);
-    }
-
-    free(manager);
+    return LIBETUDE_SUCCESS;
 }
 
-// =============================================================================
+// ============================================================================
+// 캐시 최적화 함수들
+// ============================================================================
+
+int memory_enable_cache_optimization(size_t l1_cache_size_kb, size_t l2_cache_size_kb) {
+    pthread_mutex_lock(&g_memory_state.mutex);
+    g_memory_state.config.enable_cache_optimization = true;
+    g_memory_state.config.l1_cache_size_kb = l1_cache_size_kb;
+    g_memory_state.config.l2_cache_size_kb = l2_cache_size_kb;
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return LIBETUDE_SUCCESS;
+}
+
+int memory_flush_cache() {
+    pthread_mutex_lock(&g_memory_state.mutex);
+
+    // 캐시된 메모리 블록들의 캐시 플래그 해제
+    for (int i = 0; i < g_memory_state.block_count; i++) {
+        g_memory_state.blocks[i].is_cached = false;
+    }
+
+    // 캐시 통계 리셋
+    g_memory_state.cache_hits = 0;
+    g_memory_state.cache_misses = 0;
+
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return LIBETUDE_SUCCESS;
+}
+
+int memory_get_cache_stats(int* hits, int* misses, float* hit_ratio) {
+    if (!hits || !misses || !hit_ratio) {
+        return LIBETUDE_ERROR_INVALID_ARGUMENT;
+    }
+
+    pthread_mutex_lock(&g_memory_state.mutex);
+    *hits = g_memory_state.cache_hits;
+    *misses = g_memory_state.cache_misses;
+
+    int total = *hits + *misses;
+    *hit_ratio = (total > 0) ? ((float)*hits / total) : 0.0f;
+
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return LIBETUDE_SUCCESS;
+}
+
+// ============================================================================
+// 모니터링 및 이벤트 함수들
+// ============================================================================
+
+int memory_start_monitoring(MemoryEventCallback callback, void* user_data, int interval_ms) {
+    if (!callback || interval_ms <= 0) {
+        return LIBETUDE_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!g_memory_state.initialized) {
+        memory_optimization_init();
+    }
+
+    pthread_mutex_lock(&g_memory_state.mutex);
+
+    if (g_memory_state.monitoring_active) {
+        pthread_mutex_unlock(&g_memory_state.mutex);
+        return LIBETUDE_ERROR_RUNTIME;  // 이미 모니터링 중
+    }
+
+    g_memory_state.event_callback = callback;
+    g_memory_state.callback_user_data = user_data;
+    g_memory_state.monitoring_interval_ms = interval_ms;
+    g_memory_state.monitoring_active = true;
+
+    int result = pthread_create(&g_memory_state.monitoring_thread, NULL, memory_monitoring_thread, NULL);
+    if (result != 0) {
+        g_memory_state.monitoring_active = false;
+        pthread_mutex_unlock(&g_memory_state.mutex);
+        return LIBETUDE_ERROR_RUNTIME;
+    }
+
+    pthread_mutex_unlock(&g_memory_state.mutex);
+    return LIBETUDE_SUCCESS;
+}
+
+int memory_stop_monitoring() {
+    pthread_mutex_lock(&g_memory_state.mutex);
+
+    if (!g_memory_state.monitoring_active) {
+        pthread_mutex_unlock(&g_memory_state.mutex);
+        return LIBETUDE_SUCCESS;
+    }
+
+    g_memory_state.monitoring_active = false;
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    pthread_join(g_memory_state.monitoring_thread, NULL);
+
+    return LIBETUDE_SUCCESS;
+}
+
+int memory_set_event_callback(MemoryEventCallback callback, void* user_data) {
+    if (!g_memory_state.initialized) {
+        return LIBETUDE_ERROR_RUNTIME;
+    }
+
+    pthread_mutex_lock(&g_memory_state.mutex);
+    g_memory_state.event_callback = callback;
+    g_memory_state.callback_user_data = user_data;
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return LIBETUDE_SUCCESS;
+}
+
+// ============================================================================
+// 통계 및 리포트 함수들
+// ============================================================================
+
+char* memory_generate_optimization_report() {
+    if (!g_memory_state.initialized) {
+        return NULL;
+    }
+
+    char* report = malloc(3072);
+    if (!report) {
+        return NULL;
+    }
+
+    memory_update_usage_stats();
+
+    pthread_mutex_lock(&g_memory_state.mutex);
+
+    snprintf(report, 3072,
+        "=== LibEtude Memory Optimization Report ===\n\n"
+        "Strategy: %s\n"
+        "Pressure Level: %s\n"
+        "Memory Efficiency: %.2f\n\n"
+
+        "System Memory:\n"
+        "  Total: %zu MB\n"
+        "  Used: %zu MB (%.1f%%)\n"
+        "  Available: %zu MB\n"
+        "  Free: %zu MB\n\n"
+
+        "LibEtude Memory:\n"
+        "  Total: %zu MB\n"
+        "  Model: %zu MB\n"
+        "  Tensor: %zu MB\n"
+        "  Audio Buffer: %zu MB\n\n"
+
+        "Memory Pool:\n"
+        "  Allocated: %zu MB\n"
+        "  Free: %zu MB\n"
+        "  Fragmentation: %.2f%%\n\n"
+
+        "Compression:\n"
+        "  Enabled: %s\n"
+        "  Type: %s\n"
+        "  Compressed: %zu MB\n"
+        "  Uncompressed: %zu MB\n"
+        "  Ratio: %.2f\n\n"
+
+        "Cache:\n"
+        "  Hits: %d\n"
+        "  Misses: %d\n"
+        "  Hit Ratio: %.2f%%\n\n"
+
+        "Garbage Collection:\n"
+        "  Count: %d\n"
+        "  Total Time: %.1f seconds\n"
+        "  Auto GC: %s\n\n"
+
+        "Thresholds:\n"
+        "  Warning: %zu MB\n"
+        "  Critical: %zu MB\n",
+
+        // Strategy
+        (g_memory_state.config.strategy == MEMORY_STRATEGY_NONE) ? "None" :
+        (g_memory_state.config.strategy == MEMORY_STRATEGY_CONSERVATIVE) ? "Conservative" :
+        (g_memory_state.config.strategy == MEMORY_STRATEGY_BALANCED) ? "Balanced" : "Aggressive",
+
+        // Pressure level
+        (g_memory_state.stats.pressure_level == MEMORY_PRESSURE_NONE) ? "None" :
+        (g_memory_state.stats.pressure_level == MEMORY_PRESSURE_LOW) ? "Low" :
+        (g_memory_state.stats.pressure_level == MEMORY_PRESSURE_MEDIUM) ? "Medium" :
+        (g_memory_state.stats.pressure_level == MEMORY_PRESSURE_HIGH) ? "High" : "Critical",
+
+        g_memory_state.stats.memory_efficiency,
+
+        // System memory
+        g_memory_state.stats.total_memory_mb,
+        g_memory_state.stats.used_memory_mb,
+        (g_memory_state.stats.total_memory_mb > 0) ?
+            ((float)g_memory_state.stats.used_memory_mb / g_memory_state.stats.total_memory_mb * 100.0f) : 0.0f,
+        g_memory_state.stats.available_memory_mb,
+        g_memory_state.stats.free_memory_mb,
+
+        // LibEtude memory
+        g_memory_state.stats.libetude_memory_mb,
+        g_memory_state.stats.model_memory_mb,
+        g_memory_state.stats.tensor_memory_mb,
+        g_memory_state.stats.audio_buffer_memory_mb,
+
+        // Memory pool
+        g_memory_state.stats.pool_allocated_mb,
+        g_memory_state.stats.pool_free_mb,
+        g_memory_state.stats.pool_fragmentation * 100.0f,
+
+        // Compression
+        g_memory_state.compression_enabled ? "Yes" : "No",
+        (g_memory_state.compression_type == MEMORY_COMPRESSION_NONE) ? "None" :
+        (g_memory_state.compression_type == MEMORY_COMPRESSION_LZ4) ? "LZ4" :
+        (g_memory_state.compression_type == MEMORY_COMPRESSION_ZSTD) ? "ZSTD" : "Custom",
+        g_memory_state.stats.compressed_memory_mb,
+        g_memory_state.stats.uncompressed_memory_mb,
+        g_memory_state.stats.compression_ratio,
+
+        // Cache
+        g_memory_state.stats.cache_hits,
+        g_memory_state.stats.cache_misses,
+        g_memory_state.stats.cache_hit_ratio * 100.0f,
+
+        // GC
+        g_memory_state.stats.gc_count,
+        g_memory_state.stats.total_gc_time_ms / 1000.0f,
+        g_memory_state.auto_gc_enabled ? "Enabled" : "Disabled",
+
+        // Thresholds
+        g_memory_state.config.warning_threshold_mb,
+        g_memory_state.config.critical_threshold_mb
+    );
+
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return report;
+}
+
+int memory_reset_usage_history() {
+    if (!g_memory_state.initialized) {
+        return LIBETUDE_ERROR_RUNTIME;
+    }
+
+    pthread_mutex_lock(&g_memory_state.mutex);
+    memset(g_memory_state.memory_history, 0, sizeof(g_memory_state.memory_history));
+    g_memory_state.history_index = 0;
+    g_memory_state.gc_count = 0;
+    g_memory_state.total_gc_time_ms = 0;
+    g_memory_state.cache_hits = 0;
+    g_memory_state.cache_misses = 0;
+    g_memory_state.start_time_ms = get_current_time_ms();
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return LIBETUDE_SUCCESS;
+}
+
+int memory_get_block_info(MemoryBlockInfo* blocks, int max_blocks, int* actual_count) {
+    if (!blocks || !actual_count || max_blocks <= 0) {
+        return LIBETUDE_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!g_memory_state.initialized) {
+        return LIBETUDE_ERROR_RUNTIME;
+    }
+
+    pthread_mutex_lock(&g_memory_state.mutex);
+
+    int count = (g_memory_state.block_count < max_blocks) ?
+                g_memory_state.block_count : max_blocks;
+
+    memcpy(blocks, g_memory_state.blocks, count * sizeof(MemoryBlockInfo));
+    *actual_count = count;
+
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return LIBETUDE_SUCCESS;
+}
+
+// ============================================================================
 // 내부 함수 구현
-// =============================================================================
+// ============================================================================
 
-static void et_lock_inplace_context(ETInPlaceContext* ctx) {
-    if (ctx->thread_safe) {
-        pthread_mutex_lock(&ctx->mutex);
+static void* memory_monitoring_thread(void* arg) {
+    (void)arg;
+
+    while (g_memory_state.monitoring_active) {
+        memory_update_usage_stats();
+
+        pthread_mutex_lock(&g_memory_state.mutex);
+        int interval_ms = g_memory_state.monitoring_interval_ms;
+        pthread_mutex_unlock(&g_memory_state.mutex);
+
+        usleep(interval_ms * 1000);
     }
+
+    return NULL;
 }
 
-static void et_unlock_inplace_context(ETInPlaceContext* ctx) {
-    if (ctx->thread_safe) {
-        pthread_mutex_unlock(&ctx->mutex);
-    }
-}
+static void* memory_gc_thread(void* arg) {
+    (void)arg;
 
-static void et_lock_reuse_pool(ETMemoryReusePool* pool) {
-    if (pool->thread_safe) {
-        pthread_mutex_lock(&pool->mutex);
-    }
-}
+    while (g_memory_state.gc_active) {
+        pthread_mutex_lock(&g_memory_state.mutex);
+        bool auto_gc_enabled = g_memory_state.auto_gc_enabled;
+        int interval_ms = g_memory_state.gc_interval_ms;
+        float threshold = g_memory_state.gc_threshold;
+        float current_usage = (g_memory_state.stats.total_memory_mb > 0) ?
+            ((float)g_memory_state.stats.used_memory_mb / g_memory_state.stats.total_memory_mb) : 0.0f;
+        pthread_mutex_unlock(&g_memory_state.mutex);
 
-static void et_unlock_reuse_pool(ETMemoryReusePool* pool) {
-    if (pool->thread_safe) {
-        pthread_mutex_unlock(&pool->mutex);
-    }
-}
-
-static void et_lock_smart_manager(ETSmartMemoryManager* manager) {
-    if (manager->thread_safe) {
-        pthread_mutex_lock(&manager->mutex);
-    }
-}
-
-static void et_unlock_smart_manager(ETSmartMemoryManager* manager) {
-    if (manager->thread_safe) {
-        pthread_mutex_unlock(&manager->mutex);
-    }
-}
-
-static uint64_t et_get_current_time_ms(void) {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (uint64_t)(tv.tv_sec * 1000 + tv.tv_usec / 1000);
-}
-
-static size_t et_get_size_class(size_t size) {
-    // 2의 거듭제곱으로 올림하여 크기 클래스 결정
-    return et_round_up_to_power_of_2(size);
-}
-
-static ETMemoryReuseBucket* et_find_or_create_bucket(ETMemoryReusePool* pool, size_t size_class) {
-    // 기존 버킷 찾기
-    ETMemoryReuseBucket* bucket = pool->buckets;
-    while (bucket != NULL) {
-        if (bucket->size_class == size_class) {
-            return bucket;
-        }
-        bucket = bucket->next;
-    }
-
-    // 새 버킷 생성
-    bucket = (ETMemoryReuseBucket*)calloc(1, sizeof(ETMemoryReuseBucket));
-    if (bucket == NULL) {
-        return NULL;
-    }
-
-    bucket->size_class = size_class;
-    bucket->max_buffers = 16; // 기본값
-    bucket->buffers = (void**)calloc(bucket->max_buffers, sizeof(void*));
-    if (bucket->buffers == NULL) {
-        free(bucket);
-        return NULL;
-    }
-
-    // 리스트에 추가
-    bucket->next = pool->buckets;
-    pool->buckets = bucket;
-
-    return bucket;
-}
-
-static void et_cleanup_bucket(ETMemoryReuseBucket* bucket, uint64_t current_time, size_t max_idle_time) {
-    // 간단한 정리: 버킷의 절반 정도 해제
-    size_t to_free = bucket->buffer_count / 2;
-
-    for (size_t i = 0; i < to_free; i++) {
-        free(bucket->buffers[bucket->buffer_count - 1 - i]);
-    }
-
-    bucket->buffer_count -= to_free;
-}
-
-// =============================================================================
-// 유틸리티 함수 구현
-// =============================================================================
-
-size_t et_round_up_to_power_of_2(size_t size) {
-    if (size == 0) return 1;
-
-    size--;
-    size |= size >> 1;
-    size |= size >> 2;
-    size |= size >> 4;
-    size |= size >> 8;
-    size |= size >> 16;
-    if (sizeof(size_t) > 4) {
-        size |= size >> 32;
-    }
-    size++;
-
-    return size;
-}
-
-int et_generate_memory_recommendations(ETMemoryPool* pool, char* recommendations, size_t buffer_size) {
-    if (pool == NULL || recommendations == NULL || buffer_size == 0) {
-        return 0;
-    }
-
-    int rec_count = 0;
-    size_t offset = 0;
-
-    ETFragmentationInfo frag_info;
-    if (et_analyze_fragmentation(pool, &frag_info) == 0) {
-        if (frag_info.fragmentation_ratio > 0.8f) {
-            offset += snprintf(recommendations + offset, buffer_size - offset,
-                             "권장사항 %d: 메모리 사용률이 높습니다 (%.1f%%). 메모리 풀 크기를 늘리거나 압축을 수행하세요.\n",
-                             ++rec_count, frag_info.fragmentation_ratio * 100.0f);
+        if (auto_gc_enabled && current_usage >= threshold) {
+            perform_garbage_collection();
         }
 
-        if (frag_info.external_fragmentation > 0.5f) {
-            offset += snprintf(recommendations + offset, buffer_size - offset,
-                             "권장사항 %d: 외부 단편화가 심합니다 (%.1f%%). 메모리 압축을 수행하세요.\n",
-                             ++rec_count, frag_info.external_fragmentation * 100.0f);
-        }
-
-        if (frag_info.num_free_blocks > 20) {
-            offset += snprintf(recommendations + offset, buffer_size - offset,
-                             "권장사항 %d: 자유 블록이 너무 많습니다 (%zu개). 블록 병합을 수행하세요.\n",
-                             ++rec_count, frag_info.num_free_blocks);
-        }
+        usleep(interval_ms * 1000);
     }
 
-    return rec_count;
+    return NULL;
 }
 
-void et_print_memory_optimization_report(ETSmartMemoryManager* manager,
-                                        ETMemoryPool* pool,
-                                        const char* output_file) {
-    FILE* fp = output_file ? fopen(output_file, "w") : stdout;
-    if (fp == NULL) {
-        return;
+static int update_system_memory_info() {
+    pthread_mutex_lock(&g_memory_state.mutex);
+
+#ifdef ANDROID_PLATFORM
+    struct sysinfo si;
+    if (sysinfo(&si) == 0) {
+        g_memory_state.stats.total_memory_mb = si.totalram / (1024 * 1024);
+        g_memory_state.stats.free_memory_mb = si.freeram / (1024 * 1024);
+        g_memory_state.stats.available_memory_mb = (si.freeram + si.bufferram) / (1024 * 1024);
+        g_memory_state.stats.used_memory_mb = g_memory_state.stats.total_memory_mb - g_memory_state.stats.free_memory_mb;
     }
 
-    fprintf(fp, "=== LibEtude 메모리 최적화 리포트 ===\n\n");
-
-    // 스마트 매니저 통계
-    if (manager != NULL) {
-        uint64_t total_allocs, bytes_saved, opt_count;
-        et_get_smart_manager_stats(manager, &total_allocs, &bytes_saved, &opt_count);
-
-        fprintf(fp, "스마트 메모리 매니저 통계:\n");
-        fprintf(fp, "  총 할당 횟수: %llu\n", (unsigned long long)total_allocs);
-        fprintf(fp, "  절약된 바이트: %llu (%.2f KB)\n",
-               (unsigned long long)bytes_saved, (double)bytes_saved / 1024.0);
-        fprintf(fp, "  최적화 수행 횟수: %llu\n", (unsigned long long)opt_count);
-
-        // 재사용 풀 통계
-        size_t total_requests, reuse_hits;
-        float hit_rate;
-        et_get_reuse_pool_stats(manager->reuse_pool, &total_requests, &reuse_hits, &hit_rate);
-
-        fprintf(fp, "\n재사용 풀 통계:\n");
-        fprintf(fp, "  총 요청 수: %zu\n", total_requests);
-        fprintf(fp, "  재사용 성공 수: %zu\n", reuse_hits);
-        fprintf(fp, "  재사용 성공률: %.2f%%\n", hit_rate * 100.0f);
+#elif defined(IOS_PLATFORM)
+    // iOS 메모리 정보
+    size_t size = sizeof(uint64_t);
+    uint64_t memory_bytes;
+    if (sysctlbyname("hw.memsize", &memory_bytes, &size, NULL, 0) == 0) {
+        g_memory_state.stats.total_memory_mb = memory_bytes / (1024 * 1024);
     }
+
+    // 사용 중인 메모리 정보
+    struct mach_task_basic_info info;
+    mach_msg_type_number_t info_count = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info, &info_count) == KERN_SUCCESS) {
+        g_memory_state.stats.used_memory_mb = info.resident_size / (1024 * 1024);
+        g_memory_state.stats.available_memory_mb = g_memory_state.stats.total_memory_mb - g_memory_state.stats.used_memory_mb;
+        g_memory_state.stats.free_memory_mb = g_memory_state.stats.available_memory_mb;
+    }
+
+#else
+    // 기본 구현 (시뮬레이션)
+    g_memory_state.stats.total_memory_mb = 2048;  // 2GB
+    g_memory_state.stats.used_memory_mb = 1024;   // 1GB
+    g_memory_state.stats.available_memory_mb = 1024;  // 1GB
+    g_memory_state.stats.free_memory_mb = 512;    // 512MB
+#endif
+
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return LIBETUDE_SUCCESS;
+}
+
+static int update_libetude_memory_info() {
+    pthread_mutex_lock(&g_memory_state.mutex);
+
+    // LibEtude 메모리 사용량 추정 (실제로는 메모리 추적 시스템 필요)
+    g_memory_state.stats.libetude_memory_mb = 128;      // 128MB
+    g_memory_state.stats.model_memory_mb = 64;          // 64MB
+    g_memory_state.stats.tensor_memory_mb = 32;         // 32MB
+    g_memory_state.stats.audio_buffer_memory_mb = 16;   // 16MB
 
     // 메모리 풀 통계
-    if (pool != NULL) {
-        ETMemoryPoolStats stats;
-        et_get_pool_stats(pool, &stats);
+    g_memory_state.stats.pool_allocated_mb = 48;        // 48MB
+    g_memory_state.stats.pool_free_mb = 16;             // 16MB
+    g_memory_state.stats.pool_fragmentation = 0.1f;    // 10%
 
-        fprintf(fp, "\n메모리 풀 통계:\n");
-        fprintf(fp, "  총 크기: %zu bytes (%.2f MB)\n",
-               stats.total_size, (double)stats.total_size / (1024.0 * 1024.0));
-        fprintf(fp, "  사용된 크기: %zu bytes (%.2f MB)\n",
-               stats.used_size, (double)stats.used_size / (1024.0 * 1024.0));
-        fprintf(fp, "  최대 사용량: %zu bytes (%.2f MB)\n",
-               stats.peak_usage, (double)stats.peak_usage / (1024.0 * 1024.0));
-        fprintf(fp, "  사용률: %.2f%%\n",
-               (double)stats.used_size / (double)stats.total_size * 100.0);
-        fprintf(fp, "  단편화 비율: %.2f%%\n", stats.fragmentation_ratio * 100.0f);
-
-        // 단편화 분석
-        ETFragmentationInfo frag_info;
-        if (et_analyze_fragmentation(pool, &frag_info) == 0) {
-            fprintf(fp, "\n단편화 분석:\n");
-            fprintf(fp, "  총 자유 공간: %zu bytes\n", frag_info.total_free_space);
-            fprintf(fp, "  최대 자유 블록: %zu bytes\n", frag_info.largest_free_block);
-            fprintf(fp, "  자유 블록 수: %zu\n", frag_info.num_free_blocks);
-            fprintf(fp, "  외부 단편화: %.2f%%\n", frag_info.external_fragmentation * 100.0f);
-            fprintf(fp, "  낭비된 공간: %zu bytes\n", frag_info.wasted_space);
-        }
-
-        // 권장사항
-        char recommendations[1024];
-        int rec_count = et_generate_memory_recommendations(pool, recommendations, sizeof(recommendations));
-        if (rec_count > 0) {
-            fprintf(fp, "\n최적화 권장사항:\n");
-            fprintf(fp, "%s", recommendations);
-        }
+    // 압축 통계
+    if (g_memory_state.compression_enabled) {
+        g_memory_state.stats.compressed_memory_mb = 32;     // 32MB
+        g_memory_state.stats.uncompressed_memory_mb = 48;   // 48MB
+        g_memory_state.stats.compression_ratio = 0.67f;    // 67%
+    } else {
+        g_memory_state.stats.compressed_memory_mb = 0;
+        g_memory_state.stats.uncompressed_memory_mb = 0;
+        g_memory_state.stats.compression_ratio = 1.0f;
     }
 
-    fprintf(fp, "\n=== 리포트 끝 ===\n");
+    pthread_mutex_unlock(&g_memory_state.mutex);
 
-    if (output_file && fp != stdout) {
-        fclose(fp);
-    }
+    return LIBETUDE_SUCCESS;
 }
 
-// =============================================================================
-// 누락된 함수 구현
-// =============================================================================
+static size_t perform_garbage_collection() {
+    // 가비지 컬렉션 수행 (실제로는 복잡한 구현 필요)
+    size_t freed_mb = 0;
 
-static ETMemoryBlock* et_find_best_fit_block(ETMemoryPool* pool, size_t size) {
-    ETMemoryBlock* current = pool->free_list;
-    ETMemoryBlock* best_fit = NULL;
-    size_t best_size = SIZE_MAX;
+    pthread_mutex_lock(&g_memory_state.mutex);
 
-    while (current != NULL) {
-        if (current->is_free && current->size >= size) {
-            if (current->size < best_size) {
-                best_fit = current;
-                best_size = current->size;
+    // 참조되지 않는 메모리 블록 해제
+    for (int i = 0; i < g_memory_state.block_count; i++) {
+        MemoryBlockInfo* block = &g_memory_state.blocks[i];
+
+        if (block->reference_count == 0) {
+            if (block->address) {
+                free(block->address);
+                freed_mb += block->size / (1024 * 1024);
+
+                // 블록 정보 제거
+                memmove(&g_memory_state.blocks[i], &g_memory_state.blocks[i + 1],
+                       (g_memory_state.block_count - i - 1) * sizeof(MemoryBlockInfo));
+                g_memory_state.block_count--;
+                i--;
             }
         }
-        current = current->next;
     }
 
-    return best_fit;
+    pthread_mutex_unlock(&g_memory_state.mutex);
+
+    return freed_mb;
 }
 
-static ETMemoryBlock* et_find_worst_fit_block(ETMemoryPool* pool, size_t size) {
-    ETMemoryBlock* current = pool->free_list;
-    ETMemoryBlock* worst_fit = NULL;
-    size_t worst_size = 0;
+static int compress_memory_block(const void* data, size_t size, void** compressed_data, size_t* compressed_size) {
+    // 간단한 압축 시뮬레이션 (실제로는 LZ4, ZSTD 등 사용)
+    *compressed_size = size * 0.7f;  // 30% 압축률 가정
+    *compressed_data = malloc(*compressed_size);
 
-    while (current != NULL) {
-        if (current->is_free && current->size >= size) {
-            if (current->size > worst_size) {
-                worst_fit = current;
-                worst_size = current->size;
-            }
-        }
-        current = current->next;
+    if (!*compressed_data) {
+        return LIBETUDE_ERROR_OUT_OF_MEMORY;
     }
 
-    return worst_fit;
+    // 실제로는 압축 알고리즘 적용
+    memcpy(*compressed_data, data, (*compressed_size < size) ? *compressed_size : size);
+
+    return LIBETUDE_SUCCESS;
 }
+
+static int decompress_memory_block(const void* compressed_data, size_t compressed_size, void** data, size_t* size) {
+    // 간단한 압축 해제 시뮬레이션
+    *size = compressed_size / 0.7f;  // 압축률 역산
+    *data = malloc(*size);
+
+    if (!*data) {
+        return LIBETUDE_ERROR_OUT_OF_MEMORY;
+    }
+
+    // 실제로는 압축 해제 알고리즘 적용
+    memcpy(*data, compressed_data, (compressed_size < *size) ? compressed_size : *size);
+
+    return LIBETUDE_SUCCESS;
+}
+
+static int64_t get_current_time_ms() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+// ============================================================================
+// 플랫폼별 특화 함수들
+// ============================================================================
+
+#ifdef ANDROID_PLATFORM
+int memory_android_handle_trim(LibEtudeEngine* engine, int trim_level) {
+    if (!engine) {
+        return LIBETUDE_ERROR_INVALID_ARGUMENT;
+    }
+
+    // Android trim level에 따른 메모리 압박 레벨 매핑
+    MemoryPressureLevel pressure_level;
+
+    switch (trim_level) {
+        case 80:  // TRIM_MEMORY_COMPLETE
+            pressure_level = MEMORY_PRESSURE_CRITICAL;
+            break;
+        case 60:  // TRIM_MEMORY_MODERATE
+            pressure_level = MEMORY_PRESSURE_HIGH;
+            break;
+        case 40:  // TRIM_MEMORY_BACKGROUND
+            pressure_level = MEMORY_PRESSURE_MEDIUM;
+            break;
+        case 20:  // TRIM_MEMORY_UI_HIDDEN
+            pressure_level = MEMORY_PRESSURE_LOW;
+            break;
+        default:
+            pressure_level = MEMORY_PRESSURE_NONE;
+            break;
+    }
+
+    return memory_handle_pressure(engine, pressure_level);
+}
+
+int memory_android_optimize_for_lmk(LibEtudeEngine* engine) {
+    if (!engine) {
+        return LIBETUDE_ERROR_INVALID_ARGUMENT;
+    }
+
+    // Android Low Memory Killer 대응 최적화
+    // - 메모리 사용량 최소화
+    // - 중요하지 않은 데이터 해제
+    // - 압축 활성화
+
+    memory_enable_compression(MEMORY_COMPRESSION_LZ4, 6);
+    memory_free_memory(engine, 64);  // 64MB 해제
+    memory_garbage_collect(engine);
+
+    return LIBETUDE_SUCCESS;
+}
+#endif
+
+#ifdef IOS_PLATFORM
+int memory_ios_handle_memory_warning(LibEtudeEngine* engine, int warning_level) {
+    if (!engine) {
+        return LIBETUDE_ERROR_INVALID_ARGUMENT;
+    }
+
+    // iOS 메모리 경고 레벨에 따른 처리
+    MemoryPressureLevel pressure_level;
+
+    switch (warning_level) {
+        case 2:  // Critical memory warning
+            pressure_level = MEMORY_PRESSURE_CRITICAL;
+            break;
+        case 1:  // Memory warning
+            pressure_level = MEMORY_PRESSURE_HIGH;
+            break;
+        default:
+            pressure_level = MEMORY_PRESSURE_MEDIUM;
+            break;
+    }
+
+    return memory_handle_pressure(engine, pressure_level);
+}
+
+int memory_ios_handle_memory_pressure_ended(LibEtudeEngine* engine) {
+    if (!engine) {
+        return LIBETUDE_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 메모리 압박 종료 - 정상 모드로 복원
+    return memory_handle_pressure(engine, MEMORY_PRESSURE_NONE);
+}
+#endif
