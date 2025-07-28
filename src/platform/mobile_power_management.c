@@ -49,7 +49,7 @@ static void* power_monitoring_thread(void* arg);
 static int update_power_stats();
 static int update_battery_status();
 static int apply_cpu_optimizations(const PowerManagementConfig* config);
-static int apply_gpu_optimizations(LibEtudeEngine* engine, const PowerManagementConfig* config);
+static int apply_gpu_optimizations(void* engine, const PowerManagementConfig* config);
 static int apply_memory_optimizations(const PowerManagementConfig* config);
 static float calculate_energy_efficiency();
 
@@ -125,7 +125,7 @@ int power_management_cleanup() {
 // 전력 프로파일 관리 함수들
 // ============================================================================
 
-int power_set_profile(LibEtudeEngine* engine, PowerProfile profile) {
+int power_set_profile(void* engine, PowerProfile profile) {
     if (!engine) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -192,7 +192,7 @@ int power_set_profile(LibEtudeEngine* engine, PowerProfile profile) {
     return power_apply_config(engine, &config);
 }
 
-int power_get_profile(LibEtudeEngine* engine, PowerProfile* profile) {
+int power_get_profile(void* engine, PowerProfile* profile) {
     if (!engine || !profile) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -208,7 +208,7 @@ int power_get_profile(LibEtudeEngine* engine, PowerProfile* profile) {
     return LIBETUDE_SUCCESS;
 }
 
-int power_apply_config(LibEtudeEngine* engine, const PowerManagementConfig* config) {
+int power_apply_config(void* engine, const PowerManagementConfig* config) {
     if (!engine || !config) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -250,7 +250,7 @@ int power_set_cpu_scaling(CPUScalingPolicy policy, float max_frequency_ratio) {
     return apply_cpu_optimizations(&g_power_state.config);
 }
 
-int power_set_gpu_state(LibEtudeEngine* engine, GPUPowerState state) {
+int power_set_gpu_state(void* engine, GPUPowerState state) {
     if (!engine) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -308,7 +308,7 @@ int power_get_battery_status(BatteryStatus* status) {
 // 자동 최적화 함수들
 // ============================================================================
 
-int power_auto_optimize_for_battery(LibEtudeEngine* engine, const BatteryStatus* battery_status) {
+int power_auto_optimize_for_battery(void* engine, const BatteryStatus* battery_status) {
     if (!engine || !battery_status) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -353,7 +353,7 @@ int power_auto_optimize_for_battery(LibEtudeEngine* engine, const BatteryStatus*
     return LIBETUDE_SUCCESS;
 }
 
-int power_optimize_efficiency(LibEtudeEngine* engine, float target_efficiency) {
+int power_optimize_efficiency(void* engine, float target_efficiency) {
     if (!engine || target_efficiency < 0.0f || target_efficiency > 1.0f) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -381,7 +381,7 @@ int power_optimize_efficiency(LibEtudeEngine* engine, float target_efficiency) {
 // 백그라운드/포그라운드 모드 함수들
 // ============================================================================
 
-int power_enter_background_mode(LibEtudeEngine* engine) {
+int power_enter_background_mode(void* engine) {
     if (!engine) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -400,7 +400,7 @@ int power_enter_background_mode(LibEtudeEngine* engine) {
     return power_apply_config(engine, &config);
 }
 
-int power_enter_foreground_mode(LibEtudeEngine* engine) {
+int power_enter_foreground_mode(void* engine) {
     if (!engine) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -670,7 +670,7 @@ static int apply_cpu_optimizations(const PowerManagementConfig* config) {
     return LIBETUDE_SUCCESS;
 }
 
-static int apply_gpu_optimizations(LibEtudeEngine* engine, const PowerManagementConfig* config) {
+static int apply_gpu_optimizations(void* engine, const PowerManagementConfig* config) {
     if (!engine || !config) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -750,7 +750,7 @@ static float calculate_energy_efficiency() {
 // ============================================================================
 
 #ifdef ANDROID_PLATFORM
-int power_android_optimize_for_doze(LibEtudeEngine* engine) {
+int power_android_optimize_for_doze(void* engine) {
     if (!engine) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -763,7 +763,7 @@ int power_android_optimize_for_doze(LibEtudeEngine* engine) {
     return power_enter_background_mode(engine);
 }
 
-int power_android_handle_app_standby(LibEtudeEngine* engine, bool is_standby) {
+int power_android_handle_app_standby(void* engine, bool is_standby) {
     if (!engine) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -777,7 +777,7 @@ int power_android_handle_app_standby(LibEtudeEngine* engine, bool is_standby) {
 #endif
 
 #ifdef IOS_PLATFORM
-int power_ios_optimize_for_low_power_mode(LibEtudeEngine* engine, bool low_power_mode) {
+int power_ios_optimize_for_low_power_mode(void* engine, bool low_power_mode) {
     if (!engine) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -791,7 +791,7 @@ int power_ios_optimize_for_low_power_mode(LibEtudeEngine* engine, bool low_power
     }
 }
 
-int power_ios_handle_background_refresh(LibEtudeEngine* engine, bool background_refresh_enabled) {
+int power_ios_handle_background_refresh(void* engine, bool background_refresh_enabled) {
     if (!engine) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }

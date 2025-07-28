@@ -10,10 +10,13 @@
 #include "libetude/desktop_optimization.h"
 #include "libetude/error.h"
 #include "libetude/memory.h"
+#include "libetude/task_scheduler.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <time.h>
+#include <unistd.h>
 
 #ifdef _WIN32
     #include <windows.h>
@@ -32,6 +35,13 @@
     #include <unistd.h>
     #include <time.h>
 #endif
+
+// 시간 측정 함수 (임시 구현)
+static uint64_t libetude_get_time_microseconds() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
+}
 
 // ============================================================================
 // 내부 함수 선언
@@ -122,8 +132,8 @@ void libetude_desktop_optimizer_destroy(LibEtudeDesktopOptimizer* optimizer) {
     // 구조체 초기화
     memset(optimizer, 0, sizeof(LibEtudeDesktopOptimizer));
 }
-/
-/ ============================================================================
+
+// ============================================================================
 // 멀티코어 최적화 구현
 // ============================================================================
 
@@ -145,7 +155,7 @@ LibEtudeErrorCode libetude_multicore_optimizer_init(LibEtudeMulticoreOptimizer* 
     multicore->config.cpu_affinity_mask = 0; // 자동 설정
 
     // 작업 스케줄러 생성
-    multicore->scheduler = et_task_scheduler_create(1024, multicore->config.worker_thread_count);
+    multicore->scheduler = et_create_task_scheduler(multicore->config.worker_thread_count);
     if (!multicore->scheduler) {
         return LIBETUDE_ERROR_OUT_OF_MEMORY;
     }
@@ -153,7 +163,7 @@ LibEtudeErrorCode libetude_multicore_optimizer_init(LibEtudeMulticoreOptimizer* 
     // 워커 스레드 초기화
     LibEtudeErrorCode result = _init_multicore_threads(multicore);
     if (result != LIBETUDE_SUCCESS) {
-        libetude_task_scheduler_destroy(multicore->scheduler);
+        et_destroy_task_scheduler(multicore->scheduler);
         return result;
     }
 
@@ -177,7 +187,7 @@ void libetude_multicore_optimizer_destroy(LibEtudeMulticoreOptimizer* multicore)
 
     // 작업 스케줄러 해제
     if (multicore->scheduler) {
-        et_task_scheduler_destroy(multicore->scheduler);
+        et_destroy_task_scheduler(multicore->scheduler);
         multicore->scheduler = NULL;
     }
 
@@ -425,8 +435,9 @@ LibEtudeErrorCode libetude_gpu_execute_kernel(LibEtudeGPUAccelerator* gpu_accel,
         gpu_accel->gpu_kernel_executions;
 
     return result;
-}// ====
-========================================================================
+}
+
+// ============================================================================
 // 오디오 백엔드 최적화 구현
 // ============================================================================
 
@@ -476,7 +487,7 @@ LibEtudeErrorCode libetude_audio_backend_optimizer_init(LibEtudeAudioBackendOpti
     // 오디오 버퍼 초기화
     LibEtudeErrorCode result = _init_audio_buffers(audio_opt);
     if (result != LIBETUDE_SUCCESS) {
-        libetude_audio_close_device(audio_opt->audio_device);
+        et_audio_close_device(audio_opt->audio_device);
         return result;
     }
 
@@ -665,8 +676,9 @@ void libetude_desktop_optimizer_print_stats(const LibEtudeDesktopOptimizer* opti
     printf("Total Inference Time: %llu μs\n", (unsigned long long)optimizer->total_inference_time_us);
     printf("Total Audio Processing Time: %llu μs\n", (unsigned long long)optimizer->total_audio_processing_time_us);
     printf("===============================================\n");
-}// =====
-=======================================================================
+}
+
+// ============================================================================
 // 자동 최적화 구현
 // ============================================================================
 
@@ -1061,8 +1073,9 @@ static void _audio_callback_wrapper(float* buffer, int num_frames, void* user_da
     audio_opt->processing_latency_us = callback_duration;
     audio_opt->buffer_latency_us = (uint64_t)(num_frames * 1000000.0 / 48000.0); // 48kHz 기준
     audio_opt->total_latency_us = audio_opt->processing_latency_us + audio_opt->buffer_latency_us;
-}LibE
-tudeErrorCode libetude_desktop_optimizer_stats_to_json(const LibEtudeDesktopOptimizer* optimizer,
+}
+
+LibEtudeErrorCode libetude_desktop_optimizer_stats_to_json(const LibEtudeDesktopOptimizer* optimizer,
                                                            char* buffer,
                                                            size_t buffer_size) {
     if (!optimizer || !optimizer->initialized || !buffer || buffer_size == 0) {
@@ -1133,15 +1146,9 @@ tudeErrorCode libetude_desktop_optimizer_stats_to_json(const LibEtudeDesktopOpti
     );
 
     if (written >= (int)buffer_size) {
-        return LIBETUDE_ERROR_BUFFER_TOO_SMALL;
+        return LIBETUDE_ERROR_BUFFER_FULL;
     }
 
     return LIBETUDE_SUCCESS;
 }
 
-// 시간 측정 함수 (임시 구현)
-uint64_t libetude_get_time_microseconds() {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
-}

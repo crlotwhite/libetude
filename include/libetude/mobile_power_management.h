@@ -149,7 +149,7 @@ int power_management_cleanup();
  * @param profile 전력 프로파일
  * @return 성공 시 LIBETUDE_SUCCESS
  */
-int power_set_profile(LibEtudeEngine* engine, PowerProfile profile);
+int power_set_profile(void* engine, PowerProfile profile);
 
 /**
  * 현재 전력 프로파일을 가져옵니다
@@ -158,7 +158,7 @@ int power_set_profile(LibEtudeEngine* engine, PowerProfile profile);
  * @param profile 전력 프로파일을 저장할 포인터
  * @return 성공 시 LIBETUDE_SUCCESS
  */
-int power_get_profile(LibEtudeEngine* engine, PowerProfile* profile);
+int power_get_profile(void* engine, PowerProfile* profile);
 
 /**
  * 전력 관리 설정을 적용합니다
@@ -167,7 +167,7 @@ int power_get_profile(LibEtudeEngine* engine, PowerProfile* profile);
  * @param config 전력 관리 설정
  * @return 성공 시 LIBETUDE_SUCCESS
  */
-int power_apply_config(LibEtudeEngine* engine, const PowerManagementConfig* config);
+int power_apply_config(void* engine, const PowerManagementConfig* config);
 
 /**
  * CPU 주파수 스케일링을 설정합니다
@@ -185,7 +185,7 @@ int power_set_cpu_scaling(CPUScalingPolicy policy, float max_frequency_ratio);
  * @param state GPU 전력 상태
  * @return 성공 시 LIBETUDE_SUCCESS
  */
-int power_set_gpu_state(LibEtudeEngine* engine, GPUPowerState state);
+int power_set_gpu_state(void* engine, GPUPowerState state);
 
 /**
  * 현재 전력 사용량 통계를 가져옵니다
@@ -210,7 +210,7 @@ int power_get_battery_status(BatteryStatus* status);
  * @param battery_status 배터리 상태
  * @return 성공 시 LIBETUDE_SUCCESS
  */
-int power_auto_optimize_for_battery(LibEtudeEngine* engine, const BatteryStatus* battery_status);
+int power_auto_optimize_for_battery(void* engine, const BatteryStatus* battery_status);
 
 /**
  * 전력 효율성을 최적화합니다
@@ -219,7 +219,7 @@ int power_auto_optimize_for_battery(LibEtudeEngine* engine, const BatteryStatus*
  * @param target_efficiency 목표 효율성 (0.0-1.0)
  * @return 성공 시 LIBETUDE_SUCCESS
  */
-int power_optimize_efficiency(LibEtudeEngine* engine, float target_efficiency);
+int power_optimize_efficiency(void* engine, float target_efficiency);
 
 /**
  * 백그라운드 모드로 전환합니다
@@ -227,7 +227,7 @@ int power_optimize_efficiency(LibEtudeEngine* engine, float target_efficiency);
  * @param engine LibEtude 엔진 핸들
  * @return 성공 시 LIBETUDE_SUCCESS
  */
-int power_enter_background_mode(LibEtudeEngine* engine);
+int power_enter_background_mode(void* engine);
 
 /**
  * 포그라운드 모드로 전환합니다
@@ -235,7 +235,7 @@ int power_enter_background_mode(LibEtudeEngine* engine);
  * @param engine LibEtude 엔진 핸들
  * @return 성공 시 LIBETUDE_SUCCESS
  */
-int power_enter_foreground_mode(LibEtudeEngine* engine);
+int power_enter_foreground_mode(void* engine);
 
 /**
  * 전력 관리 통계 리포트를 생성합니다
@@ -255,7 +255,7 @@ char* power_generate_report();
  * @param engine LibEtude 엔진 핸들
  * @return 성공 시 LIBETUDE_SUCCESS
  */
-int power_android_optimize_for_doze(LibEtudeEngine* engine);
+int power_android_optimize_for_doze(void* engine);
 
 /**
  * Android 앱 대기 모드를 처리합니다
@@ -264,7 +264,7 @@ int power_android_optimize_for_doze(LibEtudeEngine* engine);
  * @param is_standby 대기 모드 여부
  * @return 성공 시 LIBETUDE_SUCCESS
  */
-int power_android_handle_app_standby(LibEtudeEngine* engine, bool is_standby);
+int power_android_handle_app_standby(void* engine, bool is_standby);
 #endif
 
 #ifdef IOS_PLATFORM
@@ -275,7 +275,7 @@ int power_android_handle_app_standby(LibEtudeEngine* engine, bool is_standby);
  * @param low_power_mode 저전력 모드 여부
  * @return 성공 시 LIBETUDE_SUCCESS
  */
-int power_ios_optimize_for_low_power_mode(LibEtudeEngine* engine, bool low_power_mode);
+int power_ios_optimize_for_low_power_mode(void* engine, bool low_power_mode);
 
 /**
  * iOS 백그라운드 앱 새로고침 설정을 처리합니다
@@ -284,7 +284,7 @@ int power_ios_optimize_for_low_power_mode(LibEtudeEngine* engine, bool low_power
  * @param background_refresh_enabled 백그라운드 새로고침 활성화 여부
  * @return 성공 시 LIBETUDE_SUCCESS
  */
-int power_ios_handle_background_refresh(LibEtudeEngine* engine, bool background_refresh_enabled);
+int power_ios_handle_background_refresh(void* engine, bool background_refresh_enabled);
 #endif
 
 #ifdef __cplusplus

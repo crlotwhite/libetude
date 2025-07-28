@@ -186,6 +186,9 @@ create_unity_test(desktop_optimization_test "unit/test_desktop_optimization.c")
 # 모바일 최적화 테스트
 create_unity_test(mobile_optimization_test "unit/test_mobile_optimization.c")
 
+# 임베디드 최적화 테스트
+create_unity_test(embedded_optimization_test "unit/test_embedded_optimization.c")
+
 # Unity CTest 통합
 include(CTest)
 
@@ -220,6 +223,9 @@ add_test(NAME DesktopOptimizationTest COMMAND desktop_optimization_test)
 
 # 모바일 최적화 테스트
 add_test(NAME MobileOptimizationTest COMMAND mobile_optimization_test)
+
+# 임베디드 최적화 테스트
+add_test(NAME EmbeddedOptimizationTest COMMAND embedded_optimization_test)
 
 # 테스트 등록 (새로운 독립적인 테스트들)
 if(TARGET test_unity_simple)
@@ -347,6 +353,13 @@ set_tests_properties(DesktopOptimizationTest PROPERTIES
 set_tests_properties(MobileOptimizationTest PROPERTIES
     TIMEOUT 300
     LABELS "mobile;optimization;battery;thermal;memory;power;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# 임베디드 최적화 테스트 속성 설정
+set_tests_properties(EmbeddedOptimizationTest PROPERTIES
+    TIMEOUT 300
+    LABELS "embedded;optimization;minimal;memory;power;lowpower;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 

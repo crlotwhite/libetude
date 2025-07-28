@@ -224,7 +224,7 @@ MemoryPressureLevel memory_determine_pressure_level(size_t used_memory_mb, size_
  * @param pressure_level 압박 레벨
  * @return 성공 시 LIBETUDE_SUCCESS
  */
-int memory_handle_pressure(LibEtudeEngine* engine, MemoryPressureLevel pressure_level);
+int memory_handle_pressure(void* engine, MemoryPressureLevel pressure_level);
 
 /**
  * 메모리를 해제합니다
@@ -233,7 +233,7 @@ int memory_handle_pressure(LibEtudeEngine* engine, MemoryPressureLevel pressure_
  * @param target_mb 목표 해제 메모리 (MB)
  * @return 실제 해제된 메모리 (MB)
  */
-size_t memory_free_memory(LibEtudeEngine* engine, size_t target_mb);
+size_t memory_free_memory(void* engine, size_t target_mb);
 
 /**
  * 사용하지 않는 메모리를 정리합니다
@@ -241,7 +241,7 @@ size_t memory_free_memory(LibEtudeEngine* engine, size_t target_mb);
  * @param engine LibEtude 엔진 핸들
  * @return 정리된 메모리 크기 (MB)
  */
-size_t memory_cleanup_unused(LibEtudeEngine* engine);
+size_t memory_cleanup_unused(void* engine);
 
 /**
  * 메모리 단편화를 해소합니다
@@ -361,7 +361,7 @@ int memory_pool_get_stats(void* pool, size_t* allocated_mb, size_t* free_mb, flo
  * @param engine LibEtude 엔진 핸들
  * @return 회수된 메모리 크기 (MB)
  */
-size_t memory_garbage_collect(LibEtudeEngine* engine);
+size_t memory_garbage_collect(void* engine);
 
 /**
  * 자동 가비지 컬렉션을 활성화합니다

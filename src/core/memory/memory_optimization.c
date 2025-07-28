@@ -326,7 +326,7 @@ MemoryPressureLevel memory_determine_pressure_level(size_t used_memory_mb, size_
 // 메모리 압박 처리 함수들
 // ============================================================================
 
-int memory_handle_pressure(LibEtudeEngine* engine, MemoryPressureLevel pressure_level) {
+int memory_handle_pressure(void* engine, MemoryPressureLevel pressure_level) {
     if (!engine) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -371,7 +371,7 @@ int memory_handle_pressure(LibEtudeEngine* engine, MemoryPressureLevel pressure_
     return LIBETUDE_SUCCESS;
 }
 
-size_t memory_free_memory(LibEtudeEngine* engine, size_t target_mb) {
+size_t memory_free_memory(void* engine, size_t target_mb) {
     if (!engine) {
         return 0;
     }
@@ -403,7 +403,7 @@ size_t memory_free_memory(LibEtudeEngine* engine, size_t target_mb) {
     return freed_mb;
 }
 
-size_t memory_cleanup_unused(LibEtudeEngine* engine) {
+size_t memory_cleanup_unused(void* engine) {
     if (!engine) {
         return 0;
     }
@@ -527,7 +527,7 @@ int memory_decompress_block(const void* compressed_data, size_t compressed_size,
 // 가비지 컬렉션 함수들
 // ============================================================================
 
-size_t memory_garbage_collect(LibEtudeEngine* engine) {
+size_t memory_garbage_collect(void* engine) {
     if (!engine) {
         return 0;
     }
@@ -1040,7 +1040,7 @@ static int64_t get_current_time_ms() {
 // ============================================================================
 
 #ifdef ANDROID_PLATFORM
-int memory_android_handle_trim(LibEtudeEngine* engine, int trim_level) {
+int memory_android_handle_trim(void* engine, int trim_level) {
     if (!engine) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -1069,7 +1069,7 @@ int memory_android_handle_trim(LibEtudeEngine* engine, int trim_level) {
     return memory_handle_pressure(engine, pressure_level);
 }
 
-int memory_android_optimize_for_lmk(LibEtudeEngine* engine) {
+int memory_android_optimize_for_lmk(void* engine) {
     if (!engine) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -1088,7 +1088,7 @@ int memory_android_optimize_for_lmk(LibEtudeEngine* engine) {
 #endif
 
 #ifdef IOS_PLATFORM
-int memory_ios_handle_memory_warning(LibEtudeEngine* engine, int warning_level) {
+int memory_ios_handle_memory_warning(void* engine, int warning_level) {
     if (!engine) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -1111,7 +1111,7 @@ int memory_ios_handle_memory_warning(LibEtudeEngine* engine, int warning_level) 
     return memory_handle_pressure(engine, pressure_level);
 }
 
-int memory_ios_handle_memory_pressure_ended(LibEtudeEngine* engine) {
+int memory_ios_handle_memory_pressure_ended(void* engine) {
     if (!engine) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }

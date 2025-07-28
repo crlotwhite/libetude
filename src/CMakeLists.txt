@@ -55,6 +55,7 @@ set(LIBETUDE_CORE_SOURCES
     # 플랫폼별 구현
     platform/platform_utils.c
     platform/desktop_optimization.c
+    platform/embedded_optimization.c
     platform/mobile_power_management.c
     platform/thermal_management.c
 )

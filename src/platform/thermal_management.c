@@ -413,7 +413,7 @@ ThermalState thermal_determine_state(float temperature, const ThermalThresholds*
 // 열 제한 관리 함수들
 // ============================================================================
 
-int thermal_apply_throttling(LibEtudeEngine* engine, ThermalState thermal_state) {
+int thermal_apply_throttling(void* engine, ThermalState thermal_state) {
     if (!engine) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -506,7 +506,7 @@ int thermal_throttle_cpu(float throttle_ratio) {
     return LIBETUDE_SUCCESS;
 }
 
-int thermal_throttle_gpu(LibEtudeEngine* engine, float throttle_ratio) {
+int thermal_throttle_gpu(void* engine, float throttle_ratio) {
     if (!engine || throttle_ratio < 0.0f || throttle_ratio > 1.0f) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -523,7 +523,7 @@ int thermal_throttle_gpu(LibEtudeEngine* engine, float throttle_ratio) {
     return LIBETUDE_SUCCESS;
 }
 
-int thermal_remove_throttling(LibEtudeEngine* engine) {
+int thermal_remove_throttling(void* engine) {
     if (!engine) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -541,7 +541,7 @@ int thermal_remove_throttling(LibEtudeEngine* engine) {
     return LIBETUDE_SUCCESS;
 }
 
-int thermal_predictive_throttling(LibEtudeEngine* engine, float predicted_temperature) {
+int thermal_predictive_throttling(void* engine, float predicted_temperature) {
     if (!engine) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }

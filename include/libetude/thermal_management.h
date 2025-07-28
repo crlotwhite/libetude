@@ -226,7 +226,7 @@ ThermalState thermal_determine_state(float temperature, const ThermalThresholds*
  * @param thermal_state 열 상태
  * @return 성공 시 LIBETUDE_SUCCESS
  */
-int thermal_apply_throttling(LibEtudeEngine* engine, ThermalState thermal_state);
+int thermal_apply_throttling(void* engine, ThermalState thermal_state);
 
 /**
  * CPU 열 제한을 적용합니다
@@ -243,7 +243,7 @@ int thermal_throttle_cpu(float throttle_ratio);
  * @param throttle_ratio 제한 비율 (0.0-1.0)
  * @return 성공 시 LIBETUDE_SUCCESS
  */
-int thermal_throttle_gpu(LibEtudeEngine* engine, float throttle_ratio);
+int thermal_throttle_gpu(void* engine, float throttle_ratio);
 
 /**
  * 모든 열 제한을 해제합니다
@@ -251,7 +251,7 @@ int thermal_throttle_gpu(LibEtudeEngine* engine, float throttle_ratio);
  * @param engine LibEtude 엔진 핸들
  * @return 성공 시 LIBETUDE_SUCCESS
  */
-int thermal_remove_throttling(LibEtudeEngine* engine);
+int thermal_remove_throttling(void* engine);
 
 /**
  * 예측적 열 제한을 수행합니다
@@ -260,7 +260,7 @@ int thermal_remove_throttling(LibEtudeEngine* engine);
  * @param predicted_temperature 예측 온도 (°C)
  * @return 성공 시 LIBETUDE_SUCCESS
  */
-int thermal_predictive_throttling(LibEtudeEngine* engine, float predicted_temperature);
+int thermal_predictive_throttling(void* engine, float predicted_temperature);
 
 // ============================================================================
 // 모니터링 및 이벤트 함수들
