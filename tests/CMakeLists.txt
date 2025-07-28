@@ -175,6 +175,7 @@ create_unity_test(error_handling_test "unit/test_error_handling.c")
 create_unity_test(audio_io_test "unit/test_audio_io.c")
 create_unity_test(stft_test "unit/test_stft.c")
 create_unity_test(mel_scale_test "unit/test_mel_scale.c")
+create_unity_test(vocoder_test "unit/test_vocoder.c")
 
 # Unity CTest 통합
 include(CTest)
@@ -203,6 +204,7 @@ add_test(NAME ErrorHandlingTest COMMAND error_handling_test)
 add_test(NAME AudioIOTest COMMAND audio_io_test)
 add_test(NAME STFTTest COMMAND stft_test)
 add_test(NAME MelScaleTest COMMAND mel_scale_test)
+add_test(NAME VocoderTest COMMAND vocoder_test)
 
 # 테스트 등록 (새로운 독립적인 테스트들)
 if(TARGET test_unity_simple)
@@ -310,6 +312,12 @@ set_tests_properties(STFTTest PROPERTIES
 set_tests_properties(MelScaleTest PROPERTIES
     TIMEOUT 120
     LABELS "audio;mel;dsp;simd;optimization;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+set_tests_properties(VocoderTest PROPERTIES
+    TIMEOUT 120
+    LABELS "audio;vocoder;graph;realtime;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
