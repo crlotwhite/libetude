@@ -263,7 +263,7 @@
     - 모던 C++ 인터페이스
     - _Requirements: 7.2_
 
-  - [ ] 12.3 모바일 바인딩 구현
+  - [x] 12.3 모바일 바인딩 구현
     - Android JNI 인터페이스
     - iOS Objective-C/Swift 인터페이스
     - 모바일 리소스 관리 최적화

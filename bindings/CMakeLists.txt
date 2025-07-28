@@ -25,6 +25,35 @@ if(LIBETUDE_BUILD_OBJC_BINDINGS AND APPLE)
     add_subdirectory(objc)
 endif()
 
+# 모바일 최적화 라이브러리
+option(LIBETUDE_BUILD_MOBILE_OPTIMIZATION "Build mobile optimization utilities" ON)
+if(LIBETUDE_BUILD_MOBILE_OPTIMIZATION)
+    add_library(libetude_mobile_optimization STATIC
+        mobile_optimization.c
+    )
+
+    target_include_directories(libetude_mobile_optimization PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(libetude_mobile_optimization PRIVATE
+        libetude_core
+    )
+
+    # 플랫폼별 컴파일 정의
+    if(ANDROID)
+        target_compile_definitions(libetude_mobile_optimization PRIVATE ANDROID_PLATFORM)
+        target_link_libraries(libetude_mobile_optimization PRIVATE log)
+    elseif(IOS)
+        target_compile_definitions(libetude_mobile_optimization PRIVATE IOS_PLATFORM)
+    endif()
+
+    # 스레드 라이브러리 링크
+    find_package(Threads REQUIRED)
+    target_link_libraries(libetude_mobile_optimization PRIVATE Threads::Threads)
+endif()
+
 # Python 바인딩 빌드 (선택적)
 option(LIBETUDE_BUILD_PYTHON_BINDINGS "Build Python bindings" OFF)
 if(LIBETUDE_BUILD_PYTHON_BINDINGS)

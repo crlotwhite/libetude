@@ -1,0 +1,20 @@
+/**
+ * LibEtude 모듈 맵 (Swift 지원용)
+ */
+
+module LibEtude {
+    header "LibEtudeEngine.h"
+    header "LibEtudeAudioStream.h"
+    header "LibEtudePerformanceStats.h"
+    header "LibEtudeUtils.h"
+
+    export *
+
+    // C API 헤더들
+    module CLibEtude {
+        header "libetude/api.h"
+        header "libetude/types.h"
+        header "libetude/config.h"
+        export *
+    }
+}
