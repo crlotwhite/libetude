@@ -1,0 +1,11 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: LibEtude C++
+Description: LibEtude C++ bindings for voice synthesis AI inference engine
+Version: @LIBETUDE_VERSION_STRING@
+Requires: libetude
+Libs: -L${libdir} -letude_cpp
+Cflags: -I${includedir} -std=c++17
