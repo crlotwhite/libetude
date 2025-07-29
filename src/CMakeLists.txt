@@ -46,6 +46,7 @@ set(LIBETUDE_CORE_SOURCES
     runtime/profiler/profiler.c
     runtime/error/error_handling.c
     runtime/plugin/plugin.c
+    runtime/plugin/plugin_dependency.c
 
     # 오디오 처리
     audio/io/audio_io.c
@@ -170,9 +171,9 @@ elseif(APPLE)
         target_link_libraries(libetude_shared PRIVATE "-framework AudioToolbox" "-framework CoreAudio" dl)
     endif()
 elseif(UNIX)
-    target_link_libraries(libetude_static PRIVATE asound pthread m dl uuid)
+    target_link_libraries(libetude_static PRIVATE asound pthread m dl uuid curl json-c ssl crypto)
     if(NOT LIBETUDE_MINIMAL)
-        target_link_libraries(libetude_shared PRIVATE asound pthread m dl uuid)
+        target_link_libraries(libetude_shared PRIVATE asound pthread m dl uuid curl json-c ssl crypto)
     endif()
 endif()
 

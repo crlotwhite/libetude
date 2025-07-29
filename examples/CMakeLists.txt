@@ -38,6 +38,9 @@ target_include_directories(plugin_example PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
+# 플러그인 의존성 관리 예제
+add_subdirectory(plugin_dependency)
+
 # 데스크톱 최적화 예제
 add_executable(desktop_optimization_example
     desktop_optimization/main.c

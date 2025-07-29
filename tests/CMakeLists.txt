@@ -194,6 +194,9 @@ create_unity_test(embedded_optimization_test "unit/test_embedded_optimization.c"
 # 플러그인 시스템 테스트
 create_unity_test(plugin_test "unit/test_plugin.c")
 
+# 플러그인 의존성 관리 테스트
+create_unity_test(plugin_dependency_test "unit/test_plugin_dependency.c")
+
 # 오디오 효과 플러그인 테스트
 create_unity_test(audio_effects_test "unit/test_audio_effects.c")
 
@@ -239,6 +242,9 @@ add_test(NAME EmbeddedOptimizationTest COMMAND embedded_optimization_test)
 
 # 플러그인 시스템 테스트
 add_test(NAME PluginTest COMMAND plugin_test)
+
+# 플러그인 의존성 관리 테스트
+add_test(NAME PluginDependencyTest COMMAND plugin_dependency_test)
 
 # 오디오 효과 플러그인 테스트
 add_test(NAME AudioEffectsTest COMMAND audio_effects_test)
@@ -383,6 +389,13 @@ set_tests_properties(EmbeddedOptimizationTest PROPERTIES
 set_tests_properties(PluginTest PROPERTIES
     TIMEOUT 120
     LABELS "plugin;runtime;dynamic;extension;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# 플러그인 의존성 관리 테스트 속성 설정
+set_tests_properties(PluginDependencyTest PROPERTIES
+    TIMEOUT 180
+    LABELS "plugin;dependency;version;update;security;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
