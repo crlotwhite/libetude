@@ -861,6 +861,292 @@ static void test_parallel_execution() {
     printf("✓ Parallel execution test passed\n");
 }
 
+// =============================================================================
+// 새로운 테스트 함수들
+// =============================================================================
+
+static void test_graph_memory_management() {
+    printf("Testing graph memory management...\n");
+
+    ETGraph* graph = et_create_graph(10);
+    ETMemoryPool* pool = et_create_memory_pool(2048, 32);
+
+    assert(graph != NULL && pool != NULL);
+
+    // 메모리 집약적인 그래프 생성
+    ETNode* nodes[5];
+    for (int i = 0; i < 5; i++) {
+        char name[32];
+        snprintf(name, sizeof(name), "node_%d", i);
+        nodes[i] = et_create_node(name, "dummy", pool);
+        assert(nodes[i] != NULL);
+        nodes[i]->forward = dummy_forward;
+        et_add_node(graph, nodes[i]);
+    }
+
+    // 선형 연결: node_0 -> node_1 -> node_2 -> node_3 -> node_4
+    for (int i = 0; i < 4; i++) {
+        et_connect_nodes(nodes[i], nodes[i + 1]);
+    }
+
+    // 입출력 노드 설정
+    nodes[0]->is_input_node = true;
+    nodes[4]->is_output_node = true;
+
+    graph->input_nodes = (ETNode**)malloc(sizeof(ETNode*));
+    graph->input_nodes[0] = nodes[0];
+    graph->num_input_nodes = 1;
+
+    graph->output_nodes = (ETNode**)malloc(sizeof(ETNode*));
+    graph->output_nodes[0] = nodes[4];
+    graph->num_output_nodes = 1;
+
+    // 메모리 사용량 확인
+    ETMemoryPoolStats stats_before;
+    et_get_pool_stats(pool, &stats_before);
+
+    // 그래프 실행
+    int result = et_execute_graph(graph, NULL, NULL);
+    assert(result == ET_SUCCESS);
+
+    // 실행 후 메모리 사용량 확인
+    ETMemoryPoolStats stats_after;
+    et_get_pool_stats(pool, &stats_after);
+
+    // 메모리 누수 검사
+    size_t leak_count = et_check_memory_leaks(pool, 1000);
+    assert(leak_count == 0);
+
+    et_destroy_graph(graph);
+    et_destroy_memory_pool(pool);
+    printf("✓ Graph memory management test passed\n");
+}
+
+static void test_graph_error_handling() {
+    printf("Testing graph error handling...\n");
+
+    ETGraph* graph = et_create_graph(5);
+    ETMemoryPool* pool = et_create_memory_pool(1024, 32);
+
+    assert(graph != NULL && pool != NULL);
+
+    // NULL 노드 추가 시도
+    int result = et_add_node(graph, NULL);
+    assert(result != ET_SUCCESS);
+
+    // 유효한 노드 생성
+    ETNode* node1 = et_create_node("node1", "dummy", pool);
+    ETNode* node2 = et_create_node("node2", "dummy", pool);
+    assert(node1 != NULL && node2 != NULL);
+
+    // 노드 추가
+    result = et_add_node(graph, node1);
+    assert(result == ET_SUCCESS);
+    result = et_add_node(graph, node2);
+    assert(result == ET_SUCCESS);
+
+    // 중복 노드 추가 시도
+    result = et_add_node(graph, node1);
+    assert(result != ET_SUCCESS);
+
+    // NULL 연결 시도
+    result = et_connect_nodes(NULL, node2);
+    assert(result != ET_SUCCESS);
+    result = et_connect_nodes(node1, NULL);
+    assert(result != ET_SUCCESS);
+
+    // 유효한 연결
+    result = et_connect_nodes(node1, node2);
+    assert(result == ET_SUCCESS);
+
+    // 중복 연결 시도
+    result = et_connect_nodes(node1, node2);
+    assert(result != ET_SUCCESS);
+
+    // 존재하지 않는 노드 찾기
+    ETNode* not_found = et_find_node_by_name(graph, "nonexistent");
+    assert(not_found == NULL);
+
+    et_destroy_graph(graph);
+    et_destroy_memory_pool(pool);
+    printf("✓ Graph error handling test passed\n");
+}
+
+static void test_complex_graph_topology() {
+    printf("Testing complex graph topology...\n");
+
+    ETGraph* graph = et_create_graph(20);
+    ETMemoryPool* pool = et_create_memory_pool(2048, 32);
+
+    assert(graph != NULL && pool != NULL);
+
+    // 복잡한 그래프 생성: 다이아몬드 패턴
+    //     A
+    //   /   \
+    //  B     C
+    //   \   /
+    //     D
+    ETNode* nodeA = et_create_node("A", "dummy", pool);
+    ETNode* nodeB = et_create_node("B", "dummy", pool);
+    ETNode* nodeC = et_create_node("C", "dummy", pool);
+    ETNode* nodeD = et_create_node("D", "dummy", pool);
+
+    assert(nodeA != NULL && nodeB != NULL && nodeC != NULL && nodeD != NULL);
+
+    // 연산자 설정
+    nodeA->forward = dummy_forward;
+    nodeB->forward = dummy_forward;
+    nodeC->forward = dummy_forward;
+    nodeD->forward = dummy_forward;
+
+    // 노드 속성 설정
+    nodeA->is_input_node = true;
+    nodeD->is_output_node = true;
+
+    et_add_node(graph, nodeA);
+    et_add_node(graph, nodeB);
+    et_add_node(graph, nodeC);
+    et_add_node(graph, nodeD);
+
+    // 다이아몬드 연결
+    et_connect_nodes(nodeA, nodeB);
+    et_connect_nodes(nodeA, nodeC);
+    et_connect_nodes(nodeB, nodeD);
+    et_connect_nodes(nodeC, nodeD);
+
+    // 입출력 노드 배열 설정
+    graph->input_nodes = (ETNode**)malloc(sizeof(ETNode*));
+    graph->input_nodes[0] = nodeA;
+    graph->num_input_nodes = 1;
+
+    graph->output_nodes = (ETNode**)malloc(sizeof(ETNode*));
+    graph->output_nodes[0] = nodeD;
+    graph->num_output_nodes = 1;
+
+    // 순환 참조 검사 (없어야 함)
+    bool has_cycle = et_has_cycle(graph);
+    assert(has_cycle == false);
+
+    // 토폴로지 정렬
+    int result = et_topological_sort(graph);
+    assert(result == ET_SUCCESS);
+    assert(graph->is_sorted == true);
+
+    // 실행 순서 확인
+    assert(graph->execution_order_size == 4);
+    assert(graph->execution_order[0] == nodeA); // A가 첫 번째
+    assert(graph->execution_order[3] == nodeD); // D가 마지막
+
+    // 그래프 실행
+    result = et_execute_graph(graph, NULL, NULL);
+    assert(result == ET_SUCCESS);
+
+    // 모든 노드가 완료 상태인지 확인
+    for (size_t i = 0; i < graph->num_nodes; i++) {
+        assert(graph->nodes[i]->state == ET_NODE_COMPLETED);
+    }
+
+    et_destroy_graph(graph);
+    et_destroy_memory_pool(pool);
+    printf("✓ Complex graph topology test passed\n");
+}
+
+static void test_graph_optimization_edge_cases() {
+    printf("Testing graph optimization edge cases...\n");
+
+    ETGraph* graph = et_create_graph(10);
+    ETMemoryPool* pool = et_create_memory_pool(1024, 32);
+
+    assert(graph != NULL && pool != NULL);
+
+    // 단일 노드 그래프
+    ETNode* single_node = et_create_node("single", "Linear", pool);
+    assert(single_node != NULL);
+    single_node->forward = dummy_forward;
+    single_node->is_input_node = true;
+    single_node->is_output_node = true;
+
+    et_add_node(graph, single_node);
+
+    // 입출력 노드 설정
+    graph->input_nodes = (ETNode**)malloc(sizeof(ETNode*));
+    graph->input_nodes[0] = single_node;
+    graph->num_input_nodes = 1;
+
+    graph->output_nodes = (ETNode**)malloc(sizeof(ETNode*));
+    graph->output_nodes[0] = single_node;
+    graph->num_output_nodes = 1;
+
+    // 단일 노드 그래프 최적화
+    int result = et_optimize_graph(graph, ET_OPT_ALL);
+    assert(result == ET_SUCCESS);
+    assert(graph->is_optimized == true);
+
+    // 단일 노드 그래프 실행
+    result = et_execute_graph(graph, NULL, NULL);
+    assert(result == ET_SUCCESS);
+    assert(single_node->state == ET_NODE_COMPLETED);
+
+    et_destroy_graph(graph);
+    et_destroy_memory_pool(pool);
+    printf("✓ Graph optimization edge cases test passed\n");
+}
+
+static void test_graph_performance_metrics() {
+    printf("Testing graph performance metrics...\n");
+
+    ETGraph* graph = et_create_graph(10);
+    ETMemoryPool* pool = et_create_memory_pool(1024, 32);
+
+    assert(graph != NULL && pool != NULL);
+
+    // 성능 측정을 위한 그래프 생성
+    ETNode* nodes[5];
+    for (int i = 0; i < 5; i++) {
+        char name[32];
+        snprintf(name, sizeof(name), "perf_node_%d", i);
+        nodes[i] = et_create_node(name, "dummy", pool);
+        assert(nodes[i] != NULL);
+        nodes[i]->forward = dummy_forward;
+        et_add_node(graph, nodes[i]);
+    }
+
+    // 선형 연결
+    for (int i = 0; i < 4; i++) {
+        et_connect_nodes(nodes[i], nodes[i + 1]);
+    }
+
+    // 입출력 노드 설정
+    nodes[0]->is_input_node = true;
+    nodes[4]->is_output_node = true;
+
+    graph->input_nodes = (ETNode**)malloc(sizeof(ETNode*));
+    graph->input_nodes[0] = nodes[0];
+    graph->num_input_nodes = 1;
+
+    graph->output_nodes = (ETNode**)malloc(sizeof(ETNode*));
+    graph->output_nodes[0] = nodes[4];
+    graph->num_output_nodes = 1;
+
+    // 여러 번 실행하여 성능 측정
+    const int num_iterations = 100;
+    for (int i = 0; i < num_iterations; i++) {
+        // 노드 상태 초기화
+        for (size_t j = 0; j < graph->num_nodes; j++) {
+            graph->nodes[j]->state = ET_NODE_READY;
+        }
+
+        int result = et_execute_graph(graph, NULL, NULL);
+        assert(result == ET_SUCCESS);
+    }
+
+    printf("Executed graph %d times successfully\n", num_iterations);
+
+    et_destroy_graph(graph);
+    et_destroy_memory_pool(pool);
+    printf("✓ Graph performance metrics test passed\n");
+}
+
 static void test_memory_plan_optimization() {
     printf("Testing memory plan optimization...\n");
 
@@ -1086,6 +1372,13 @@ int main() {
     test_memory_plan_optimization();
     test_execution_performance_comparison();
     test_topological_sort_with_complex_dependencies();
+
+    // 15.2 작업 관련 새로운 테스트들
+    test_graph_memory_management();
+    test_graph_error_handling();
+    test_complex_graph_topology();
+    test_graph_optimization_edge_cases();
+    test_graph_performance_metrics();
 
     printf("\n=== All Graph System Tests Passed! ===\n");
     return 0;

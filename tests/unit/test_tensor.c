@@ -625,6 +625,287 @@ static void test_inplace_operations() {
 }
 
 // =============================================================================
+// 양자화 테스트
+// =============================================================================
+
+static void test_quantization() {
+    print_test_header("양자화 테스트");
+
+    ETMemoryPool* pool = et_create_memory_pool(1024 * 1024, ET_DEFAULT_ALIGNMENT);
+
+    // 테스트용 텐서 생성 (2x3)
+    size_t shape[] = {2, 3};
+    ETTensor* tensor = et_create_tensor(pool, ET_FLOAT32, 2, shape);
+
+    // 데이터 초기화: [[-1.5, 0.0, 1.5], [2.0, -2.0, 0.5]]
+    et_set_float(tensor, (size_t[]){0, 0}, -1.5f);
+    et_set_float(tensor, (size_t[]){0, 1}, 0.0f);
+    et_set_float(tensor, (size_t[]){0, 2}, 1.5f);
+    et_set_float(tensor, (size_t[]){1, 0}, 2.0f);
+    et_set_float(tensor, (size_t[]){1, 1}, -2.0f);
+    et_set_float(tensor, (size_t[]){1, 2}, 0.5f);
+
+    // BF16 양자화 테스트
+    ETTensor* bf16_tensor = et_quantize_to_bfloat16(tensor, NULL, pool);
+    TEST_ASSERT(bf16_tensor != NULL, "BF16 양자화 성공");
+    TEST_ASSERT(bf16_tensor->dtype == ET_BFLOAT16, "BF16 데이터 타입 확인");
+
+    // BF16 역양자화 테스트
+    ETTensor* dequant_tensor = et_dequantize_from_bfloat16(bf16_tensor, NULL, pool);
+    TEST_ASSERT(dequant_tensor != NULL, "BF16 역양자화 성공");
+    TEST_ASSERT(dequant_tensor->dtype == ET_FLOAT32, "역양자화 데이터 타입 확인");
+
+    // 정밀도 확인 (BF16은 정밀도 손실이 있을 수 있음)
+    float original_val = et_get_float(tensor, (size_t[]){0, 0});
+    float dequant_val = et_get_float(dequant_tensor, (size_t[]){0, 0});
+    float diff = fabsf(original_val - dequant_val);
+    TEST_ASSERT(diff < 0.1f, "BF16 양자화/역양자화 정밀도 확인");
+
+    // INT8 양자화 파라미터 계산 테스트
+    ETQuantizationParams params;
+    bool success = et_compute_quantization_params(tensor, ET_INT8, &params);
+    TEST_ASSERT(success, "INT8 양자화 파라미터 계산 성공");
+    TEST_ASSERT(params.scale > 0.0f, "양자화 스케일 양수 확인");
+
+    // INT8 양자화 테스트
+    ETTensor* int8_tensor = et_quantize_to_int8(tensor, NULL, &params, pool);
+    TEST_ASSERT(int8_tensor != NULL, "INT8 양자화 성공");
+    TEST_ASSERT(int8_tensor->dtype == ET_INT8, "INT8 데이터 타입 확인");
+
+    // INT8 역양자화 테스트
+    ETTensor* int8_dequant = et_dequantize_from_int8(int8_tensor, NULL, &params, pool);
+    TEST_ASSERT(int8_dequant != NULL, "INT8 역양자화 성공");
+
+    // 동적 양자화 테스트
+    ETQuantizationInfo quant_info;
+    ETTensor* dynamic_quant = et_dynamic_quantize(tensor, ET_INT8, NULL, &quant_info, pool);
+    TEST_ASSERT(dynamic_quant != NULL, "동적 양자화 성공");
+    TEST_ASSERT(quant_info.quant_type == ET_QUANT_DYNAMIC, "동적 양자화 타입 확인");
+
+    ETTensor* dynamic_dequant = et_dynamic_dequantize(dynamic_quant, NULL, &quant_info, pool);
+    TEST_ASSERT(dynamic_dequant != NULL, "동적 역양자화 성공");
+
+    et_destroy_tensor(tensor);
+    et_destroy_tensor(bf16_tensor);
+    et_destroy_tensor(dequant_tensor);
+    et_destroy_tensor(int8_tensor);
+    et_destroy_tensor(int8_dequant);
+    et_destroy_tensor(dynamic_quant);
+    et_destroy_tensor(dynamic_dequant);
+    et_destroy_memory_pool(pool);
+}
+
+// =============================================================================
+// 메모리 효율성 테스트
+// =============================================================================
+
+static void test_memory_efficiency() {
+    print_test_header("메모리 효율성 테스트");
+
+    ETMemoryPool* pool = et_create_memory_pool(1024 * 1024, ET_DEFAULT_ALIGNMENT);
+
+    // 메모리 풀 초기 상태 확인
+    ETMemoryPoolStats initial_stats;
+    et_get_pool_stats(pool, &initial_stats);
+    TEST_ASSERT(initial_stats.used_size == 0, "초기 메모리 사용량 0 확인");
+
+    // 여러 텐서 생성
+    size_t shape[] = {100, 100};
+    ETTensor* tensors[10];
+
+    for (int i = 0; i < 10; i++) {
+        tensors[i] = et_create_tensor(pool, ET_FLOAT32, 2, shape);
+        TEST_ASSERT(tensors[i] != NULL, "텐서 생성 성공");
+    }
+
+    // 메모리 사용량 확인
+    ETMemoryPoolStats after_alloc_stats;
+    et_get_pool_stats(pool, &after_alloc_stats);
+    TEST_ASSERT(after_alloc_stats.used_size > initial_stats.used_size, "메모리 사용량 증가 확인");
+    TEST_ASSERT(after_alloc_stats.num_allocations >= 10, "할당 횟수 확인");
+
+    // 일부 텐서 해제
+    for (int i = 0; i < 5; i++) {
+        et_destroy_tensor(tensors[i]);
+        tensors[i] = NULL;
+    }
+
+    // 메모리 사용량 감소 확인
+    ETMemoryPoolStats after_free_stats;
+    et_get_pool_stats(pool, &after_free_stats);
+    TEST_ASSERT(after_free_stats.used_size < after_alloc_stats.used_size, "메모리 사용량 감소 확인");
+
+    // 메모리 재사용 테스트 (새로운 텐서 생성)
+    for (int i = 0; i < 5; i++) {
+        tensors[i] = et_create_tensor(pool, ET_FLOAT32, 2, shape);
+        TEST_ASSERT(tensors[i] != NULL, "메모리 재사용 텐서 생성 성공");
+    }
+
+    // 모든 텐서 해제
+    for (int i = 0; i < 10; i++) {
+        if (tensors[i]) {
+            et_destroy_tensor(tensors[i]);
+        }
+    }
+
+    // 메모리 풀 리셋 테스트
+    et_reset_pool(pool);
+    ETMemoryPoolStats reset_stats;
+    et_get_pool_stats(pool, &reset_stats);
+    TEST_ASSERT(reset_stats.used_size == 0, "메모리 풀 리셋 후 사용량 0 확인");
+    TEST_ASSERT(reset_stats.num_resets > 0, "리셋 횟수 확인");
+
+    et_destroy_memory_pool(pool);
+}
+
+// =============================================================================
+// 브로드캐스팅 테스트
+// =============================================================================
+
+static void test_broadcasting() {
+    print_test_header("브로드캐스팅 테스트");
+
+    ETMemoryPool* pool = et_create_memory_pool(1024 * 1024, ET_DEFAULT_ALIGNMENT);
+
+    // 브로드캐스팅 가능한 텐서들 생성
+    size_t shape_a[] = {2, 3};
+    size_t shape_b[] = {1, 3};
+    size_t shape_c[] = {2, 1};
+
+    ETTensor* tensor_a = et_create_tensor(pool, ET_FLOAT32, 2, shape_a); // (2, 3)
+    ETTensor* tensor_b = et_create_tensor(pool, ET_FLOAT32, 2, shape_b); // (1, 3)
+    ETTensor* tensor_c = et_create_tensor(pool, ET_FLOAT32, 2, shape_c); // (2, 1)
+
+    // 데이터 초기화
+    et_fill_tensor(tensor_a, 1.0f);
+    et_fill_tensor(tensor_b, 2.0f);
+    et_fill_tensor(tensor_c, 3.0f);
+
+    // 브로드캐스팅 가능 여부 확인
+    TEST_ASSERT(et_can_broadcast(tensor_a, tensor_b), "브로드캐스팅 가능 (2,3) + (1,3)");
+    TEST_ASSERT(et_can_broadcast(tensor_a, tensor_c), "브로드캐스팅 가능 (2,3) + (2,1)");
+
+    // 브로드캐스팅 연산 테스트
+    ETTensorOpOptions options = {0};
+    options.broadcast = true;
+
+    ETTensor* result_ab = et_add(tensor_a, tensor_b, NULL, &options);
+    TEST_ASSERT(result_ab != NULL, "브로드캐스팅 덧셈 성공 (2,3) + (1,3)");
+    TEST_ASSERT(result_ab->shape[0] == 2 && result_ab->shape[1] == 3, "브로드캐스팅 결과 모양 확인");
+
+    ETTensor* result_ac = et_add(tensor_a, tensor_c, NULL, &options);
+    TEST_ASSERT(result_ac != NULL, "브로드캐스팅 덧셈 성공 (2,3) + (2,1)");
+
+    // 결과 값 확인
+    float val = et_get_float(result_ab, (size_t[]){0, 0});
+    TEST_ASSERT(FLOAT_EQUAL(val, 3.0f), "브로드캐스팅 결과 값 확인"); // 1.0 + 2.0 = 3.0
+
+    val = et_get_float(result_ac, (size_t[]){0, 0});
+    TEST_ASSERT(FLOAT_EQUAL(val, 4.0f), "브로드캐스팅 결과 값 확인"); // 1.0 + 3.0 = 4.0
+
+    et_destroy_tensor(tensor_a);
+    et_destroy_tensor(tensor_b);
+    et_destroy_tensor(tensor_c);
+    et_destroy_tensor(result_ab);
+    et_destroy_tensor(result_ac);
+    et_destroy_memory_pool(pool);
+}
+
+// =============================================================================
+// 텐서 슬라이싱 테스트
+// =============================================================================
+
+static void test_tensor_slicing() {
+    print_test_header("텐서 슬라이싱 테스트");
+
+    ETMemoryPool* pool = et_create_memory_pool(1024 * 1024, ET_DEFAULT_ALIGNMENT);
+
+    // 3D 텐서 생성 (2x3x4)
+    size_t shape[] = {2, 3, 4};
+    ETTensor* tensor = et_create_tensor(pool, ET_FLOAT32, 3, shape);
+
+    // 데이터 초기화 (순차적으로)
+    for (size_t i = 0; i < 2; i++) {
+        for (size_t j = 0; j < 3; j++) {
+            for (size_t k = 0; k < 4; k++) {
+                et_set_float(tensor, (size_t[]){i, j, k}, (float)(i * 12 + j * 4 + k));
+            }
+        }
+    }
+
+    // 슬라이스 정의: [0:2, 1:3, 0:2] -> (2, 2, 2)
+    ETSlice slices[] = {
+        {0, 2, 1}, // 첫 번째 차원: 0부터 2까지 (전체)
+        {1, 3, 1}, // 두 번째 차원: 1부터 3까지
+        {0, 2, 1}  // 세 번째 차원: 0부터 2까지
+    };
+
+    ETTensor* sliced = et_slice_tensor(tensor, slices);
+    TEST_ASSERT(sliced != NULL, "텐서 슬라이싱 성공");
+    TEST_ASSERT(sliced->shape[0] == 2 && sliced->shape[1] == 2 && sliced->shape[2] == 2,
+                "슬라이싱 결과 모양 확인");
+
+    // 슬라이싱된 데이터 확인
+    float val = et_get_float(sliced, (size_t[]){0, 0, 0});
+    float expected = et_get_float(tensor, (size_t[]){0, 1, 0}); // 원본의 (0,1,0)
+    TEST_ASSERT(FLOAT_EQUAL(val, expected), "슬라이싱 데이터 확인 (0,0,0)");
+
+    val = et_get_float(sliced, (size_t[]){1, 1, 1});
+    expected = et_get_float(tensor, (size_t[]){1, 2, 1}); // 원본의 (1,2,1)
+    TEST_ASSERT(FLOAT_EQUAL(val, expected), "슬라이싱 데이터 확인 (1,1,1)");
+
+    et_destroy_tensor(tensor);
+    et_destroy_tensor(sliced);
+    et_destroy_memory_pool(pool);
+}
+
+// =============================================================================
+// 텐서 유효성 검사 테스트
+// =============================================================================
+
+static void test_tensor_validation() {
+    print_test_header("텐서 유효성 검사 테스트");
+
+    ETMemoryPool* pool = et_create_memory_pool(1024 * 1024, ET_DEFAULT_ALIGNMENT);
+
+    // 유효한 텐서 생성
+    size_t shape[] = {2, 3};
+    ETTensor* valid_tensor = et_create_tensor(pool, ET_FLOAT32, 2, shape);
+    TEST_ASSERT(et_validate_tensor(valid_tensor), "유효한 텐서 검증 성공");
+
+    // NULL 텐서 검증
+    TEST_ASSERT(!et_validate_tensor(NULL), "NULL 텐서 검증 실패");
+
+    // 손상된 텐서 시뮬레이션 (매직 넘버 변경)
+    uint32_t original_magic = valid_tensor->magic;
+    valid_tensor->magic = 0xDEADBEEF;
+    TEST_ASSERT(!et_validate_tensor(valid_tensor), "손상된 텐서 검증 실패");
+    valid_tensor->magic = original_magic; // 복원
+
+    // 연속성 확인 테스트
+    TEST_ASSERT(et_is_contiguous(valid_tensor), "연속 메모리 텐서 확인");
+
+    // 비연속 텐서 생성 (전치)
+    ETTensor* transposed = et_transpose_tensor(valid_tensor);
+    if (transposed) {
+        // 전치된 텐서는 비연속일 수 있음
+        bool is_contiguous = et_is_contiguous(transposed);
+        printf("전치된 텐서 연속성: %s\n", is_contiguous ? "연속" : "비연속");
+
+        // 연속 메모리로 변환 테스트
+        ETTensor* contiguous = et_make_contiguous(transposed, pool);
+        TEST_ASSERT(contiguous != NULL, "연속 메모리 변환 성공");
+        TEST_ASSERT(et_is_contiguous(contiguous), "변환된 텐서 연속성 확인");
+
+        et_destroy_tensor(contiguous);
+        et_destroy_tensor(transposed);
+    }
+
+    et_destroy_tensor(valid_tensor);
+    et_destroy_memory_pool(pool);
+}
+
+// =============================================================================
 // 메인 테스트 함수
 // =============================================================================
 
@@ -642,6 +923,11 @@ int main() {
     test_unary_operations();
     test_advanced_transformation();
     test_inplace_operations();
+    test_quantization();
+    test_memory_efficiency();
+    test_broadcasting();
+    test_tensor_slicing();
+    test_tensor_validation();
 
     print_test_summary();
 

@@ -6,6 +6,7 @@
 #include "unity.h"
 #include "libetude/memory.h"
 #include <string.h>
+#include <stdlib.h>
 
 // 테스트 상수
 #define TEST_POOL_SIZE (1024 * 1024)  // 1MB
@@ -95,7 +96,8 @@ void test_alignment(void) {
         TEST_ASSERT_NOT_NULL(ptr);
 
         // 정렬 확인 - 동적 풀에서는 블록 헤더로 인해 정렬이 달라질 수 있음
-        uintptr_t addr = (uintptr_t)ptr;
+        // 정렬 확인 - 동적 풀에서는 블록 헤더로 인해 정렬이 달라질 수 있음
+        // uintptr_t addr = (uintptr_t)ptr;
         char msg[64];
         snprintf(msg, sizeof(msg), "Allocation of size %zu at address %p", sizes[i], ptr);
         printf("%s\n", msg); // 디버그 출력
@@ -209,6 +211,189 @@ void test_leak_detection(void) {
     et_free_to_pool(test_pool, leak_ptr);
 }
 
+void test_memory_corruption_detection(void) {
+    test_pool = et_create_memory_pool(TEST_POOL_SIZE, ET_DEFAULT_ALIGNMENT);
+    TEST_ASSERT_NOT_NULL(test_pool);
+
+    // 메모리 할당
+    void* ptr = et_alloc_from_pool(test_pool, 128);
+    TEST_ASSERT_NOT_NULL(ptr);
+
+    // 메모리 손상 검사 (정상 상태)
+    size_t corruption_count = et_check_memory_corruption(test_pool);
+    TEST_ASSERT_EQUAL(0, corruption_count);
+
+    // 메모리 해제
+    et_free_to_pool(test_pool, ptr);
+}
+
+void test_memory_pool_validation(void) {
+    test_pool = et_create_memory_pool(TEST_POOL_SIZE, ET_DEFAULT_ALIGNMENT);
+    TEST_ASSERT_NOT_NULL(test_pool);
+
+    // 유효한 메모리 풀 검증
+    TEST_ASSERT_TRUE(et_validate_memory_pool(test_pool));
+
+    // NULL 포인터 검증
+    TEST_ASSERT_FALSE(et_validate_memory_pool(NULL));
+}
+
+void test_aligned_allocation(void) {
+    test_pool = et_create_memory_pool(TEST_POOL_SIZE, ET_DEFAULT_ALIGNMENT);
+    TEST_ASSERT_NOT_NULL(test_pool);
+
+    // 다양한 정렬 크기로 할당 테스트
+    size_t alignments[] = {16, 32, 64, 128};
+    size_t num_alignments = sizeof(alignments) / sizeof(alignments[0]);
+
+    for (size_t i = 0; i < num_alignments; i++) {
+        void* ptr = et_alloc_aligned_from_pool(test_pool, 256, alignments[i]);
+        TEST_ASSERT_NOT_NULL(ptr);
+
+        // 정렬 확인
+        TEST_ASSERT_TRUE(et_is_aligned(ptr, alignments[i]));
+
+        et_free_to_pool(test_pool, ptr);
+    }
+}
+
+void test_memory_pool_with_options(void) {
+    ETMemoryPoolOptions options = {0};
+    options.pool_type = ET_POOL_DYNAMIC;
+    options.mem_type = ET_MEM_CPU;
+    options.alignment = 64;
+    options.thread_safe = true;
+    options.enable_leak_detection = true;
+
+    test_pool = et_create_memory_pool_with_options(TEST_POOL_SIZE, &options);
+    TEST_ASSERT_NOT_NULL(test_pool);
+
+    // 옵션이 제대로 설정되었는지 확인
+    TEST_ASSERT_TRUE(et_validate_memory_pool(test_pool));
+
+    // 할당 테스트
+    void* ptr = et_alloc_from_pool(test_pool, 128);
+    TEST_ASSERT_NOT_NULL(ptr);
+    TEST_ASSERT_TRUE(et_is_aligned(ptr, 64));
+
+    et_free_to_pool(test_pool, ptr);
+}
+
+void test_external_memory_pool(void) {
+    // 외부 메모리 버퍼 생성
+    size_t buffer_size = 4096;
+    void* external_buffer = malloc(buffer_size);
+    TEST_ASSERT_NOT_NULL(external_buffer);
+
+    ETMemoryPoolOptions options = {0};
+    options.pool_type = ET_POOL_DYNAMIC;
+    options.mem_type = ET_MEM_CPU;
+    options.alignment = ET_DEFAULT_ALIGNMENT;
+
+    test_pool = et_create_memory_pool_from_buffer(external_buffer, buffer_size, &options);
+    TEST_ASSERT_NOT_NULL(test_pool);
+
+    // 외부 메모리를 사용한 할당 테스트
+    void* ptr = et_alloc_from_pool(test_pool, 256);
+    TEST_ASSERT_NOT_NULL(ptr);
+
+    // 포인터가 외부 버퍼 범위 내에 있는지 확인
+    TEST_ASSERT_GREATER_OR_EQUAL(ptr, external_buffer);
+    TEST_ASSERT_LESS_THAN(ptr, (char*)external_buffer + buffer_size);
+
+    et_free_to_pool(test_pool, ptr);
+
+    // 메모리 풀 해제 (외부 버퍼는 수동으로 해제해야 함)
+    et_destroy_memory_pool(test_pool);
+    test_pool = NULL;
+    free(external_buffer);
+}
+
+void test_runtime_allocator(void) {
+    RTAllocator* allocator = rt_create_allocator(TEST_POOL_SIZE, ET_DEFAULT_ALIGNMENT);
+    TEST_ASSERT_NOT_NULL(allocator);
+
+    // 기본 할당 테스트
+    void* ptr1 = rt_alloc(allocator, 128);
+    TEST_ASSERT_NOT_NULL(ptr1);
+
+    void* ptr2 = rt_alloc(allocator, 256);
+    TEST_ASSERT_NOT_NULL(ptr2);
+
+    // 정렬된 할당 테스트
+    void* aligned_ptr = rt_alloc_aligned(allocator, 512, 64);
+    TEST_ASSERT_NOT_NULL(aligned_ptr);
+    TEST_ASSERT_TRUE(et_is_aligned(aligned_ptr, 64));
+
+    // calloc 테스트
+    void* zero_ptr = rt_calloc(allocator, 10, sizeof(int));
+    TEST_ASSERT_NOT_NULL(zero_ptr);
+
+    // 0으로 초기화되었는지 확인
+    int* int_ptr = (int*)zero_ptr;
+    for (int i = 0; i < 10; i++) {
+        TEST_ASSERT_EQUAL(0, int_ptr[i]);
+    }
+
+    // 재할당 테스트
+    void* realloc_ptr = rt_realloc(allocator, ptr1, 256);
+    TEST_ASSERT_NOT_NULL(realloc_ptr);
+
+    // 통계 확인
+    size_t used_size = rt_get_used_size(allocator);
+    TEST_ASSERT_GREATER_THAN(0, used_size);
+
+    size_t total_size = rt_get_total_size(allocator);
+    TEST_ASSERT_GREATER_OR_EQUAL(TEST_POOL_SIZE, total_size);
+
+    // 메모리 해제
+    rt_free(allocator, realloc_ptr);
+    rt_free(allocator, ptr2);
+    rt_free(allocator, aligned_ptr);
+    rt_free(allocator, zero_ptr);
+
+    // 할당자 유효성 검사
+    TEST_ASSERT_TRUE(rt_validate_allocator(allocator));
+
+    rt_destroy_allocator(allocator);
+}
+
+void test_memory_fragmentation(void) {
+    test_pool = et_create_memory_pool(TEST_POOL_SIZE, ET_DEFAULT_ALIGNMENT);
+    TEST_ASSERT_NOT_NULL(test_pool);
+
+    // 단편화를 유발하는 할당 패턴
+    void* ptrs[20];
+
+    // 다양한 크기로 할당
+    for (int i = 0; i < 20; i++) {
+        size_t size = (i % 4 + 1) * 64; // 64, 128, 192, 256 바이트
+        ptrs[i] = et_alloc_from_pool(test_pool, size);
+        TEST_ASSERT_NOT_NULL(ptrs[i]);
+    }
+
+    // 홀수 인덱스만 해제 (단편화 유발)
+    for (int i = 1; i < 20; i += 2) {
+        et_free_to_pool(test_pool, ptrs[i]);
+        ptrs[i] = NULL;
+    }
+
+    // 통계 확인
+    ETMemoryPoolStats stats;
+    et_get_pool_stats(test_pool, &stats);
+
+    // 단편화 비율 확인 (0.0 ~ 1.0 범위)
+    TEST_ASSERT_GREATER_OR_EQUAL(0.0f, stats.fragmentation_ratio);
+    TEST_ASSERT_LESS_OR_EQUAL(1.0f, stats.fragmentation_ratio);
+
+    // 남은 포인터들 해제
+    for (int i = 0; i < 20; i += 2) {
+        if (ptrs[i]) {
+            et_free_to_pool(test_pool, ptrs[i]);
+        }
+    }
+}
+
 // Unity 테스트 러너
 int main(void) {
     UNITY_BEGIN();
@@ -222,6 +407,13 @@ int main(void) {
     RUN_TEST(test_pool_reset);
     RUN_TEST(test_error_handling);
     RUN_TEST(test_leak_detection);
+    RUN_TEST(test_memory_corruption_detection);
+    RUN_TEST(test_memory_pool_validation);
+    RUN_TEST(test_aligned_allocation);
+    RUN_TEST(test_memory_pool_with_options);
+    RUN_TEST(test_external_memory_pool);
+    RUN_TEST(test_runtime_allocator);
+    RUN_TEST(test_memory_fragmentation);
 
     return UNITY_END();
 }
