@@ -5,11 +5,11 @@
 #include <stdio.h>
 #include <time.h>
 #include <sys/stat.h>
-#include <curl/curl.h>
-#include <json-c/json.h>
-#include <openssl/sha.h>
-#include <openssl/rsa.h>
-#include <openssl/pem.h>
+// #include <curl/curl.h>  // 임시로 비활성화
+// #include <json-c/json.h>  // 임시로 비활성화
+// #include <openssl/sha.h>  // 임시로 비활성화
+// #include <openssl/rsa.h>  // 임시로 비활성화
+// #include <openssl/pem.h>  // 임시로 비활성화
 
 // 의존성 캐시 구조체
 struct DependencyCache {

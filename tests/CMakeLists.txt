@@ -176,6 +176,10 @@ create_unity_test(task_scheduler_test "unit/test_task_scheduler.c")
 create_unity_test(profiler_test "unit/test_profiler.c")
 create_unity_test(error_handling_test "unit/test_error_handling.c")
 
+# LEF 포맷 포괄적 테스트 (15.3 작업)
+create_unity_test(lef_format_comprehensive_test "unit/test_lef_format_comprehensive.c")
+create_unity_test(lefx_extension_comprehensive_test "unit/test_lefx_extension_comprehensive.c")
+
 # 오디오 처리 테스트
 create_unity_test(audio_io_test "unit/test_audio_io.c")
 create_unity_test(stft_test "unit/test_stft.c")
@@ -224,6 +228,10 @@ add_test(NAME ConditionalActivationTest COMMAND conditional_activation_test)
 add_test(NAME TaskSchedulerTest COMMAND task_scheduler_test)
 add_test(NAME ProfilerTest COMMAND profiler_test)
 add_test(NAME ErrorHandlingTest COMMAND error_handling_test)
+
+# LEF 포맷 포괄적 테스트 (15.3 작업)
+add_test(NAME LEFFormatComprehensiveTest COMMAND lef_format_comprehensive_test)
+add_test(NAME LEFXExtensionComprehensiveTest COMMAND lefx_extension_comprehensive_test)
 
 # 오디오 처리 테스트
 add_test(NAME AudioIOTest COMMAND audio_io_test)
@@ -288,6 +296,19 @@ set_tests_properties(LEFFormatTest PROPERTIES
 set_tests_properties(LEFXFormatTest PROPERTIES
     TIMEOUT 60
     LABELS "lefx;format;extension;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# LEF 포맷 포괄적 테스트 속성 설정 (15.3 작업)
+set_tests_properties(LEFFormatComprehensiveTest PROPERTIES
+    TIMEOUT 300
+    LABELS "lef;format;comprehensive;quantization;compression;streaming;mmap;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+set_tests_properties(LEFXExtensionComprehensiveTest PROPERTIES
+    TIMEOUT 300
+    LABELS "lefx;extension;comprehensive;speaker;language;effect;differential;plugin;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 

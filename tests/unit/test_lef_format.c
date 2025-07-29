@@ -3,6 +3,7 @@
 #include <string.h>
 #include <assert.h>
 #include <time.h>
+#include <math.h>
 #include "libetude/lef_format.h"
 
 // 테스트 결과 카운터
@@ -19,6 +20,11 @@ static int tests_passed = 0;
             printf("✗ %s\n", message); \
         } \
     } while(0)
+
+// 부동소수점 비교 함수
+static int float_equals(float a, float b, float tolerance) {
+    return fabsf(a - b) < tolerance;
+}
 
 /**
  * LEF 헤더 초기화 및 검증 테스트
@@ -432,6 +438,253 @@ void test_version_management() {
 }
 
 /**
+ * 압축 기능 테스트
+ */
+void test_compression_functionality() {
+    printf("\n=== 압축 기능 테스트 ===\n");
+
+    const char* test_filename = "test_compression.lef";
+
+    // 압축 없는 모델 생성
+    LEFSerializationContext* ctx_no_comp = lef_create_serialization_context("test_no_compression.lef");
+    TEST_ASSERT(ctx_no_comp != NULL, "압축 없는 컨텍스트 생성");
+
+    lef_set_model_info(ctx_no_comp, "NoCompModel", "1.0", "Test", "압축 없는 모델");
+    lef_set_model_architecture(ctx_no_comp, 256, 80, 512, 2, 8, 1000);
+    lef_set_audio_config(ctx_no_comp, 22050, 80, 256, 1024);
+
+    // 테스트 레이어 추가
+    float test_data[1000];
+    for (int i = 0; i < 1000; i++) {
+        test_data[i] = (float)i * 0.001f;
+    }
+
+    LEFLayerData layer_data = {
+        .layer_id = 0,
+        .layer_kind = LEF_LAYER_LINEAR,
+        .quant_type = LEF_QUANT_NONE,
+        .weight_data = test_data,
+        .data_size = sizeof(test_data),
+        .layer_meta = NULL,
+        .meta_size = 0,
+        .quant_params = NULL
+    };
+
+    lef_add_layer(ctx_no_comp, &layer_data);
+    lef_finalize_model(ctx_no_comp);
+    lef_destroy_serialization_context(ctx_no_comp);
+
+    // 압축 있는 모델 생성
+    LEFSerializationContext* ctx_comp = lef_create_serialization_context(test_filename);
+    TEST_ASSERT(ctx_comp != NULL, "압축 있는 컨텍스트 생성");
+
+    lef_set_model_info(ctx_comp, "CompModel", "1.0", "Test", "압축 있는 모델");
+    lef_set_model_architecture(ctx_comp, 256, 80, 512, 2, 8, 1000);
+    lef_set_audio_config(ctx_comp, 22050, 80, 256, 1024);
+
+    // 압축 활성화
+    int result = lef_enable_compression(ctx_comp, 6);
+    TEST_ASSERT(result == LEF_SUCCESS, "압축 활성화");
+    TEST_ASSERT(ctx_comp->compression_enabled == true, "압축 상태 확인");
+
+    lef_add_layer(ctx_comp, &layer_data);
+    lef_finalize_model(ctx_comp);
+    lef_destroy_serialization_context(ctx_comp);
+
+    // 파일 크기 비교
+    FILE* file_no_comp = fopen("test_no_compression.lef", "rb");
+    FILE* file_comp = fopen(test_filename, "rb");
+
+    if (file_no_comp && file_comp) {
+        fseek(file_no_comp, 0, SEEK_END);
+        long size_no_comp = ftell(file_no_comp);
+        fseek(file_comp, 0, SEEK_END);
+        long size_comp = ftell(file_comp);
+
+        printf("압축 없음: %ld 바이트, 압축 있음: %ld 바이트\n", size_no_comp, size_comp);
+
+        // 압축된 파일이 더 작거나 비슷해야 함 (테스트 데이터가 단순해서 압축 효과가 클 수 있음)
+        TEST_ASSERT(size_comp <= size_no_comp, "압축 효과 확인");
+
+        fclose(file_no_comp);
+        fclose(file_comp);
+    }
+
+    // 압축된 모델 로딩 및 검증
+    LEFModel* model = lef_load_model(test_filename);
+    TEST_ASSERT(model != NULL, "압축된 모델 로딩");
+    TEST_ASSERT(model->header.flags & LEF_FLAG_COMPRESSED, "압축 플래그 확인");
+
+    void* loaded_data = lef_get_layer_data(model, 0);
+    TEST_ASSERT(loaded_data != NULL, "압축된 레이어 데이터 접근");
+
+    // 데이터 정확성 검증
+    float* float_data = (float*)loaded_data;
+    bool data_correct = true;
+    for (int i = 0; i < 100; i++) { // 처음 100개만 검사
+        if (!float_equals(float_data[i], test_data[i], 1e-6f)) {
+            data_correct = false;
+            break;
+        }
+    }
+    TEST_ASSERT(data_correct, "압축 해제 후 데이터 정확성");
+
+    lef_unload_model(model);
+
+    // 파일 정리
+    remove("test_no_compression.lef");
+    remove(test_filename);
+}
+
+/**
+ * 양자화 통합 테스트
+ */
+void test_quantization_integration() {
+    printf("\n=== 양자화 통합 테스트 ===\n");
+
+    const char* test_filename = "test_quantization.lef";
+
+    LEFSerializationContext* ctx = lef_create_serialization_context(test_filename);
+    TEST_ASSERT(ctx != NULL, "양자화 테스트 컨텍스트 생성");
+
+    lef_set_model_info(ctx, "QuantModel", "1.0", "Test", "양자화 테스트 모델");
+    lef_set_model_architecture(ctx, 256, 80, 512, 3, 8, 1000);
+    lef_set_audio_config(ctx, 22050, 80, 256, 1024);
+
+    // 다양한 양자화 타입으로 레이어 추가
+    struct {
+        LEFQuantizationType quant_type;
+        const char* description;
+    } quant_tests[] = {
+        {LEF_QUANT_NONE, "FP32 레이어"},
+        {LEF_QUANT_BF16, "BF16 레이어"},
+        {LEF_QUANT_INT8, "INT8 레이어"}
+    };
+
+    for (int i = 0; i < 3; i++) {
+        float test_data[500];
+        for (int j = 0; j < 500; j++) {
+            test_data[j] = ((float)rand() / RAND_MAX - 0.5f) * 2.0f;
+        }
+
+        LEFLayerData layer_data = {
+            .layer_id = i,
+            .layer_kind = LEF_LAYER_LINEAR,
+            .quant_type = quant_tests[i].quant_type,
+            .weight_data = test_data,
+            .data_size = sizeof(test_data),
+            .layer_meta = NULL,
+            .meta_size = 0,
+            .quant_params = NULL
+        };
+
+        int result = lef_add_layer(ctx, &layer_data);
+        TEST_ASSERT(result == LEF_SUCCESS, quant_tests[i].description);
+    }
+
+    int result = lef_finalize_model(ctx);
+    TEST_ASSERT(result == LEF_SUCCESS, "양자화 모델 저장 완료");
+    lef_destroy_serialization_context(ctx);
+
+    // 양자화된 모델 로딩 및 검증
+    LEFModel* model = lef_load_model(test_filename);
+    TEST_ASSERT(model != NULL, "양자화 모델 로딩");
+    TEST_ASSERT(model->header.flags & LEF_FLAG_QUANTIZED, "양자화 플래그 확인");
+
+    // 각 레이어의 양자화 타입 확인
+    for (int i = 0; i < 3; i++) {
+        const LEFLayerHeader* header = lef_get_layer_header(model, i);
+        TEST_ASSERT(header != NULL, "양자화 레이어 헤더 존재");
+        TEST_ASSERT(header->quantization_type == quant_tests[i].quant_type, "양자화 타입 일치");
+
+        void* layer_data = lef_get_layer_data(model, i);
+        TEST_ASSERT(layer_data != NULL, "양자화 레이어 데이터 존재");
+    }
+
+    lef_unload_model(model);
+    remove(test_filename);
+}
+
+/**
+ * 대용량 모델 테스트
+ */
+void test_large_model_handling() {
+    printf("\n=== 대용량 모델 테스트 ===\n");
+
+    const char* test_filename = "test_large_model.lef";
+
+    LEFSerializationContext* ctx = lef_create_serialization_context(test_filename);
+    TEST_ASSERT(ctx != NULL, "대용량 모델 컨텍스트 생성");
+
+    lef_set_model_info(ctx, "LargeModel", "1.0", "Test", "대용량 테스트 모델");
+    lef_set_model_architecture(ctx, 1024, 256, 2048, 10, 16, 50000);
+    lef_set_audio_config(ctx, 48000, 256, 1024, 4096);
+    lef_enable_compression(ctx, 9); // 최대 압축
+
+    // 큰 레이어들 추가
+    for (int i = 0; i < 10; i++) {
+        size_t data_size = 10000 * sizeof(float); // 10K floats per layer
+        float* large_data = (float*)malloc(data_size);
+        TEST_ASSERT(large_data != NULL, "대용량 레이어 데이터 할당");
+
+        // 의미있는 패턴으로 데이터 채우기
+        for (size_t j = 0; j < 10000; j++) {
+            large_data[j] = sinf((float)j * 0.001f) * cosf((float)i * 0.1f);
+        }
+
+        LEFLayerData layer_data = {
+            .layer_id = i,
+            .layer_kind = (i % 2 == 0) ? LEF_LAYER_LINEAR : LEF_LAYER_ATTENTION,
+            .quant_type = (i < 5) ? LEF_QUANT_BF16 : LEF_QUANT_INT8,
+            .weight_data = large_data,
+            .data_size = data_size,
+            .layer_meta = NULL,
+            .meta_size = 0,
+            .quant_params = NULL
+        };
+
+        int result = lef_add_layer(ctx, &layer_data);
+        TEST_ASSERT(result == LEF_SUCCESS, "대용량 레이어 추가");
+
+        free(large_data);
+    }
+
+    int result = lef_finalize_model(ctx);
+    TEST_ASSERT(result == LEF_SUCCESS, "대용량 모델 저장 완료");
+    lef_destroy_serialization_context(ctx);
+
+    // 파일 크기 확인
+    FILE* file = fopen(test_filename, "rb");
+    if (file) {
+        fseek(file, 0, SEEK_END);
+        long file_size = ftell(file);
+        fclose(file);
+
+        printf("대용량 모델 파일 크기: %ld 바이트 (%.2f MB)\n",
+               file_size, (double)file_size / (1024 * 1024));
+        TEST_ASSERT(file_size > 100000, "대용량 모델 파일 크기 확인"); // 최소 100KB
+    }
+
+    // 대용량 모델 로딩 테스트
+    LEFModel* model = lef_load_model(test_filename);
+    TEST_ASSERT(model != NULL, "대용량 모델 로딩");
+    TEST_ASSERT(model->meta.num_layers == 10, "대용량 모델 레이어 수 확인");
+
+    // 모든 레이어 접근 테스트
+    for (int i = 0; i < 10; i++) {
+        void* layer_data = lef_get_layer_data(model, i);
+        TEST_ASSERT(layer_data != NULL, "대용량 모델 레이어 데이터 접근");
+
+        const LEFLayerHeader* header = lef_get_layer_header(model, i);
+        TEST_ASSERT(header != NULL, "대용량 모델 레이어 헤더 접근");
+        TEST_ASSERT(header->data_size == 10000 * sizeof(float), "대용량 레이어 크기 확인");
+    }
+
+    lef_unload_model(model);
+    remove(test_filename);
+}
+
+/**
  * 에러 처리 테스트
  */
 void test_error_handling() {
@@ -461,6 +714,24 @@ void test_error_handling() {
     }
 
     remove("test.lef");
+
+    // 파일 권한 에러 시뮬레이션 (읽기 전용 디렉토리)
+    LEFSerializationContext* ctx_readonly = lef_create_serialization_context("/root/readonly_test.lef");
+    TEST_ASSERT(ctx_readonly == NULL, "읽기 전용 디렉토리 에러 처리");
+
+    // 잘못된 파일 형식 처리
+    FILE* invalid_file = fopen("invalid_format.lef", "wb");
+    if (invalid_file) {
+        // 잘못된 매직 넘버 쓰기
+        uint32_t wrong_magic = 0xDEADBEEF;
+        fwrite(&wrong_magic, sizeof(uint32_t), 1, invalid_file);
+        fclose(invalid_file);
+
+        LEFModel* invalid_model = lef_load_model("invalid_format.lef");
+        TEST_ASSERT(invalid_model == NULL, "잘못된 파일 형식 처리");
+
+        remove("invalid_format.lef");
+    }
 }
 
 int main() {
@@ -481,6 +752,11 @@ int main() {
     test_serialization_context();
     test_layer_serialization();
     test_version_management();
+
+    // 고급 기능 테스트
+    test_compression_functionality();
+    test_quantization_integration();
+    test_large_model_handling();
     test_error_handling();
 
     printf("\n=====================================\n");

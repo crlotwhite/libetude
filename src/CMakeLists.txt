@@ -46,7 +46,7 @@ set(LIBETUDE_CORE_SOURCES
     runtime/profiler/profiler.c
     runtime/error/error_handling.c
     runtime/plugin/plugin.c
-    runtime/plugin/plugin_dependency.c
+    runtime/plugin/plugin_dependency_stub.c
 
     # 오디오 처리
     audio/io/audio_io.c
