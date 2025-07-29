@@ -156,6 +156,8 @@ endif()
 
 # 개별 테스트 실행 파일들 (독립적으로 실행 가능)
 create_unity_test(fast_math_test "unit/test_fast_math.c")
+create_unity_test(simd_kernels_test "unit/test_simd_kernels.c")
+create_unity_test(kernels_test "unit/test_kernels.c")
 create_unity_test(memory_test "unit/test_memory.c")
 create_unity_test(memory_optimization_test "unit/test_memory_optimization.c")
 create_unity_test(memory_allocator_test "unit/test_memory_allocator.c")
@@ -194,6 +196,8 @@ include(CTest)
 
 # 테스트 등록
 add_test(NAME TensorTest COMMAND tensor_test)
+add_test(NAME SIMDKernelsTest COMMAND simd_kernels_test)
+add_test(NAME KernelsTest COMMAND kernels_test)
 add_test(NAME MemoryTest COMMAND memory_test)
 add_test(NAME MemoryOptimizationTest COMMAND memory_optimization_test)
 add_test(NAME MemoryAllocatorTest COMMAND memory_allocator_test)

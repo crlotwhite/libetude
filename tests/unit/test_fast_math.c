@@ -1,6 +1,11 @@
 /**
  * @file test_fast_math.c
  * @brief FastApprox 기반 고속 수학 함수 단위 테스트 (Unity)
+ *
+ * 고속 수학 함수의 정확성과 성능을 테스트합니다.
+ * - 다양한 입력 범위에 대한 정확성 테스트
+ * - 성능 벤치마크 테스트
+ * - 음성 특화 수학 함수 테스트
  */
 
 #include "unity.h"
@@ -9,11 +14,33 @@
 #include <float.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <time.h>
 
 // 테스트 허용 오차
 #define TOLERANCE_HIGH 0.01f    // 1% 오차
 #define TOLERANCE_MED 0.05f     // 5% 오차
 #define TOLERANCE_LOW 0.1f      // 10% 오차
+
+// 성능 테스트 설정
+#define PERFORMANCE_ITERATIONS 10000
+#define BENCHMARK_WARMUP_ITERATIONS 100
+
+// 테스트 데이터 크기들
+static const size_t test_sizes[] = {100, 500, 1000, 5000, 10000};
+static const size_t num_test_sizes = sizeof(test_sizes) / sizeof(test_sizes[0]);
+
+// 성능 측정 구조체
+typedef struct {
+    const char* function_name;
+    size_t data_size;
+    double fast_time_ms;
+    double standard_time_ms;
+    double speedup_ratio;
+} MathPerformanceResult;
+
+static MathPerformanceResult* math_performance_results = NULL;
+static size_t math_performance_result_count = 0;
+static size_t math_performance_result_capacity = 0;
 
 // 상대 오차 계산 함수
 static float relative_error(float expected, float actual) {
@@ -23,9 +50,39 @@ static float relative_error(float expected, float actual) {
     return fabsf((actual - expected) / expected);
 }
 
+// 성능 측정 유틸리티 함수
+static double get_time_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000.0 + ts.tv_nsec / 1000000.0;
+}
+
+static void record_math_performance_result(const char* function_name, size_t data_size,
+                                         double fast_time_ms, double standard_time_ms) {
+    if (math_performance_result_count >= math_performance_result_capacity) {
+        return; // 용량 초과
+    }
+
+    MathPerformanceResult* result = &math_performance_results[math_performance_result_count++];
+    result->function_name = function_name;
+    result->data_size = data_size;
+    result->fast_time_ms = fast_time_ms;
+    result->standard_time_ms = standard_time_ms;
+    result->speedup_ratio = standard_time_ms / fast_time_ms;
+}
+
 // 테스트 설정 함수
 void setUp(void) {
     TEST_ASSERT_EQUAL(0, et_fast_math_init());
+
+    // 성능 결과 배열 초기화
+    if (!math_performance_results) {
+        math_performance_result_capacity = 1000;
+        math_performance_results = (MathPerformanceResult*)malloc(
+            math_performance_result_capacity * sizeof(MathPerformanceResult));
+        TEST_ASSERT_NOT_NULL(math_performance_results);
+        math_performance_result_count = 0;
+    }
 }
 
 // 테스트 정리 함수
@@ -288,6 +345,260 @@ void test_cleanup_safety(void) {
 }
 
 // =============================================================================
+// 성능 비교 테스트들
+// =============================================================================
+
+void test_exponential_performance(void) {
+    printf("\n=== Exponential Function Performance Tests ===\n");
+
+    for (size_t i = 0; i < num_test_sizes; i++) {
+        size_t size = test_sizes[i];
+        printf("Benchmarking exp() with %zu elements... ", size);
+
+        float* input = (float*)malloc(size * sizeof(float));
+        float* fast_output = (float*)malloc(size * sizeof(float));
+        float* std_output = (float*)malloc(size * sizeof(float));
+
+        TEST_ASSERT_NOT_NULL(input);
+        TEST_ASSERT_NOT_NULL(fast_output);
+        TEST_ASSERT_NOT_NULL(std_output);
+
+        // 테스트 데이터 생성 (-5 ~ 5 범위)
+        for (size_t j = 0; j < size; j++) {
+            input[j] = -5.0f + 10.0f * ((float)j / size);
+        }
+
+        // 워밍업
+        for (int w = 0; w < BENCHMARK_WARMUP_ITERATIONS; w++) {
+            et_fast_exp_vec(input, fast_output, size);
+            for (size_t j = 0; j < size; j++) {
+                std_output[j] = expf(input[j]);
+            }
+        }
+
+        // Fast 버전 측정
+        double fast_start = get_time_ms();
+        for (int iter = 0; iter < PERFORMANCE_ITERATIONS; iter++) {
+            et_fast_exp_vec(input, fast_output, size);
+        }
+        double fast_end = get_time_ms();
+        double fast_time = (fast_end - fast_start) / PERFORMANCE_ITERATIONS;
+
+        // Standard 버전 측정
+        double std_start = get_time_ms();
+        for (int iter = 0; iter < PERFORMANCE_ITERATIONS; iter++) {
+            for (size_t j = 0; j < size; j++) {
+                std_output[j] = expf(input[j]);
+            }
+        }
+        double std_end = get_time_ms();
+        double std_time = (std_end - std_start) / PERFORMANCE_ITERATIONS;
+
+        record_math_performance_result("exp", size, fast_time, std_time);
+
+        printf("Fast: %.3fms, Std: %.3fms, Speedup: %.2fx\n",
+               fast_time, std_time, std_time / fast_time);
+
+        free(input);
+        free(fast_output);
+        free(std_output);
+    }
+}
+
+void test_logarithm_performance(void) {
+    printf("\n=== Logarithm Function Performance Tests ===\n");
+
+    for (size_t i = 0; i < num_test_sizes; i++) {
+        size_t size = test_sizes[i];
+        printf("Benchmarking log() with %zu elements... ", size);
+
+        float* input = (float*)malloc(size * sizeof(float));
+        float* fast_output = (float*)malloc(size * sizeof(float));
+        float* std_output = (float*)malloc(size * sizeof(float));
+
+        TEST_ASSERT_NOT_NULL(input);
+        TEST_ASSERT_NOT_NULL(fast_output);
+        TEST_ASSERT_NOT_NULL(std_output);
+
+        // 테스트 데이터 생성 (0.1 ~ 10 범위)
+        for (size_t j = 0; j < size; j++) {
+            input[j] = 0.1f + 9.9f * ((float)j / size);
+        }
+
+        // 워밍업
+        for (int w = 0; w < BENCHMARK_WARMUP_ITERATIONS; w++) {
+            et_fast_log_vec(input, fast_output, size);
+            for (size_t j = 0; j < size; j++) {
+                std_output[j] = logf(input[j]);
+            }
+        }
+
+        // Fast 버전 측정
+        double fast_start = get_time_ms();
+        for (int iter = 0; iter < PERFORMANCE_ITERATIONS; iter++) {
+            et_fast_log_vec(input, fast_output, size);
+        }
+        double fast_end = get_time_ms();
+        double fast_time = (fast_end - fast_start) / PERFORMANCE_ITERATIONS;
+
+        // Standard 버전 측정
+        double std_start = get_time_ms();
+        for (int iter = 0; iter < PERFORMANCE_ITERATIONS; iter++) {
+            for (size_t j = 0; j < size; j++) {
+                std_output[j] = logf(input[j]);
+            }
+        }
+        double std_end = get_time_ms();
+        double std_time = (std_end - std_start) / PERFORMANCE_ITERATIONS;
+
+        record_math_performance_result("log", size, fast_time, std_time);
+
+        printf("Fast: %.3fms, Std: %.3fms, Speedup: %.2fx\n",
+               fast_time, std_time, std_time / fast_time);
+
+        free(input);
+        free(fast_output);
+        free(std_output);
+    }
+}
+
+void test_trigonometric_performance(void) {
+    printf("\n=== Trigonometric Functions Performance Tests ===\n");
+
+    for (size_t i = 0; i < num_test_sizes; i++) {
+        size_t size = test_sizes[i];
+        printf("Benchmarking sin() with %zu elements... ", size);
+
+        float* input = (float*)malloc(size * sizeof(float));
+
+        TEST_ASSERT_NOT_NULL(input);
+
+        // 테스트 데이터 생성 (0 ~ 2π 범위)
+        for (size_t j = 0; j < size; j++) {
+            input[j] = 2.0f * M_PI * ((float)j / size);
+        }
+
+        // 워밍업
+        for (int w = 0; w < BENCHMARK_WARMUP_ITERATIONS; w++) {
+            for (size_t j = 0; j < size; j++) {
+                volatile float fast_result = et_fast_sin(input[j]);
+                volatile float std_result = sinf(input[j]);
+                (void)fast_result;
+                (void)std_result;
+            }
+        }
+
+        // Fast 버전 측정
+        double fast_start = get_time_ms();
+        for (int iter = 0; iter < PERFORMANCE_ITERATIONS; iter++) {
+            for (size_t j = 0; j < size; j++) {
+                volatile float result = et_fast_sin(input[j]);
+                (void)result;
+            }
+        }
+        double fast_end = get_time_ms();
+        double fast_time = (fast_end - fast_start) / PERFORMANCE_ITERATIONS;
+
+        // Standard 버전 측정
+        double std_start = get_time_ms();
+        for (int iter = 0; iter < PERFORMANCE_ITERATIONS; iter++) {
+            for (size_t j = 0; j < size; j++) {
+                volatile float result = sinf(input[j]);
+                (void)result;
+            }
+        }
+        double std_end = get_time_ms();
+        double std_time = (std_end - std_start) / PERFORMANCE_ITERATIONS;
+
+        record_math_performance_result("sin", size, fast_time, std_time);
+
+        printf("Fast: %.3fms, Std: %.3fms, Speedup: %.2fx\n",
+               fast_time, std_time, std_time / fast_time);
+
+        free(input);
+    }
+}
+
+void test_activation_functions_performance(void) {
+    printf("\n=== Activation Functions Performance Tests ===\n");
+
+    for (size_t i = 0; i < num_test_sizes; i++) {
+        size_t size = test_sizes[i];
+        printf("Benchmarking tanh() with %zu elements... ", size);
+
+        float* input = (float*)malloc(size * sizeof(float));
+        float* fast_output = (float*)malloc(size * sizeof(float));
+        float* std_output = (float*)malloc(size * sizeof(float));
+
+        TEST_ASSERT_NOT_NULL(input);
+        TEST_ASSERT_NOT_NULL(fast_output);
+        TEST_ASSERT_NOT_NULL(std_output);
+
+        // 테스트 데이터 생성 (-3 ~ 3 범위)
+        for (size_t j = 0; j < size; j++) {
+            input[j] = -3.0f + 6.0f * ((float)j / size);
+        }
+
+        // 워밍업
+        for (int w = 0; w < BENCHMARK_WARMUP_ITERATIONS; w++) {
+            et_fast_tanh_vec(input, fast_output, size);
+            for (size_t j = 0; j < size; j++) {
+                std_output[j] = tanhf(input[j]);
+            }
+        }
+
+        // Fast 버전 측정
+        double fast_start = get_time_ms();
+        for (int iter = 0; iter < PERFORMANCE_ITERATIONS; iter++) {
+            et_fast_tanh_vec(input, fast_output, size);
+        }
+        double fast_end = get_time_ms();
+        double fast_time = (fast_end - fast_start) / PERFORMANCE_ITERATIONS;
+
+        // Standard 버전 측정
+        double std_start = get_time_ms();
+        for (int iter = 0; iter < PERFORMANCE_ITERATIONS; iter++) {
+            for (size_t j = 0; j < size; j++) {
+                std_output[j] = tanhf(input[j]);
+            }
+        }
+        double std_end = get_time_ms();
+        double std_time = (std_end - std_start) / PERFORMANCE_ITERATIONS;
+
+        record_math_performance_result("tanh", size, fast_time, std_time);
+
+        printf("Fast: %.3fms, Std: %.3fms, Speedup: %.2fx\n",
+               fast_time, std_time, std_time / fast_time);
+
+        free(input);
+        free(fast_output);
+        free(std_output);
+    }
+}
+
+// 성능 결과 출력 함수
+void print_math_performance_results(void) {
+    if (math_performance_result_count == 0) {
+        return;
+    }
+
+    printf("\n=== Math Performance Results Summary ===\n");
+    printf("%-15s %-10s %-15s %-15s %-10s\n", "Function", "Size", "Fast (ms)", "Std (ms)", "Speedup");
+    printf("%-15s %-10s %-15s %-15s %-10s\n", "--------", "----", "---------", "--------", "-------");
+
+    for (size_t i = 0; i < math_performance_result_count; i++) {
+        MathPerformanceResult* result = &math_performance_results[i];
+        printf("%-15s %-10zu %-15.6f %-15.6f %-10.2fx\n",
+               result->function_name,
+               result->data_size,
+               result->fast_time_ms,
+               result->standard_time_ms,
+               result->speedup_ratio);
+    }
+    printf("\n");
+}
+
+// =============================================================================
 // 음성 특화 수학 함수 테스트들
 // =============================================================================
 
@@ -542,40 +853,44 @@ void test_db_conversion(void) {
 
 // Unity 테스트 러너
 int main(void) {
+    printf("LibEtude Fast Math Test Suite\n");
+    printf("=============================\n");
+
     UNITY_BEGIN();
 
     // 초기화 테스트
+    printf("\n>>> INITIALIZATION TESTS <<<\n");
     RUN_TEST(test_fast_math_initialization);
 
-    // 지수 함수 테스트
+    // 기본 함수 정확성 테스트
+    printf("\n>>> ACCURACY TESTS <<<\n");
     RUN_TEST(test_exponential_basic_values);
     RUN_TEST(test_exponential_extreme_values);
     RUN_TEST(test_exponential_edge_cases);
-
-    // 로그 함수 테스트
     RUN_TEST(test_logarithm_basic_values);
     RUN_TEST(test_logarithm_special_values);
-
-    // 삼각함수 테스트
     RUN_TEST(test_sine_function);
     RUN_TEST(test_cosine_function);
     RUN_TEST(test_trigonometric_identities);
-
-    // 활성화 함수 테스트
     RUN_TEST(test_hyperbolic_tangent);
     RUN_TEST(test_sigmoid_function);
     RUN_TEST(test_activation_function_properties);
 
     // 벡터화된 함수 테스트
+    printf("\n>>> VECTORIZED FUNCTION TESTS <<<\n");
     RUN_TEST(test_vectorized_exponential);
     RUN_TEST(test_vectorized_logarithm);
     RUN_TEST(test_vectorized_hyperbolic_tangent);
 
-    // 성능 및 안전성 테스트
-    RUN_TEST(test_performance_characteristics);
-    RUN_TEST(test_cleanup_safety);
+    // 성능 비교 테스트
+    printf("\n>>> PERFORMANCE COMPARISON TESTS <<<\n");
+    RUN_TEST(test_exponential_performance);
+    RUN_TEST(test_logarithm_performance);
+    RUN_TEST(test_trigonometric_performance);
+    RUN_TEST(test_activation_functions_performance);
 
     // 음성 특화 수학 함수 테스트
+    printf("\n>>> VOICE-SPECIFIC MATH TESTS <<<\n");
     RUN_TEST(test_hz_to_mel_conversion);
     RUN_TEST(test_mel_to_hz_conversion);
     RUN_TEST(test_mel_filterbank_creation);
@@ -587,5 +902,20 @@ int main(void) {
     RUN_TEST(test_interpolation_functions);
     RUN_TEST(test_db_conversion);
 
+    // 안전성 테스트
+    printf("\n>>> SAFETY TESTS <<<\n");
+    RUN_TEST(test_performance_characteristics);
+    RUN_TEST(test_cleanup_safety);
+
+    // 성능 결과 출력
+    print_math_performance_results();
+
+    // 메모리 정리
+    if (math_performance_results) {
+        free(math_performance_results);
+        math_performance_results = NULL;
+    }
+
+    printf("\n>>> TEST SUMMARY <<<\n");
     return UNITY_END();
 }

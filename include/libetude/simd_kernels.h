@@ -455,6 +455,70 @@ LIBETUDE_API uint32_t simd_kernels_get_features(void);
  */
 LIBETUDE_API void simd_kernels_print_info(void);
 
+// ============================================================================
+// 테스트용 호환성 함수들 (Legacy API)
+// ============================================================================
+
+/**
+ * @brief SIMD 커널 시스템 초기화 (테스트 호환성)
+ */
+LIBETUDE_API LibEtudeErrorCode et_init_simd_kernels(void);
+
+/**
+ * @brief SIMD 커널 시스템 정리 (테스트 호환성)
+ */
+LIBETUDE_API void et_cleanup_simd_kernels(void);
+
+/**
+ * @brief 벡터 덧셈 (테스트 호환성)
+ */
+LIBETUDE_API void et_simd_vector_add(const float* a, const float* b, float* result, size_t size);
+
+/**
+ * @brief 벡터 곱셈 (테스트 호환성)
+ */
+LIBETUDE_API void et_simd_vector_mul(const float* a, const float* b, float* result, size_t size);
+
+/**
+ * @brief 벡터 내적 (테스트 호환성)
+ */
+LIBETUDE_API float et_simd_dot_product(const float* a, const float* b, size_t size);
+
+/**
+ * @brief 행렬-벡터 곱셈 (테스트 호환성)
+ */
+LIBETUDE_API void et_simd_matrix_vector_mul(const float* matrix, const float* vector, float* result, size_t rows, size_t cols);
+
+/**
+ * @brief ReLU 활성화 함수 (테스트 호환성)
+ */
+LIBETUDE_API void et_simd_relu(const float* input, float* output, size_t size);
+
+/**
+ * @brief Sigmoid 활성화 함수 (테스트 호환성)
+ */
+LIBETUDE_API void et_simd_sigmoid(const float* input, float* output, size_t size);
+
+/**
+ * @brief Tanh 활성화 함수 (테스트 호환성)
+ */
+LIBETUDE_API void et_simd_tanh(const float* input, float* output, size_t size);
+
+/**
+ * @brief SSE 지원 여부 확인
+ */
+LIBETUDE_API bool et_has_sse_support(void);
+
+/**
+ * @brief AVX 지원 여부 확인
+ */
+LIBETUDE_API bool et_has_avx_support(void);
+
+/**
+ * @brief NEON 지원 여부 확인
+ */
+LIBETUDE_API bool et_has_neon_support(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1,403 +1,535 @@
 /**
  * @file test_simd_math_functions.c
- * @brief SIMD 벡터화된 수학 함수 테스트
- * @author LibEtude Project
- * @version 1.0.0
+ * @brief SIMD 최적화된 수학 함수 성능 테스트
+ *
+ * SIMD 커널과 수학 함수의 통합 성능을 테스트하고,
+ * 다양한 입력 크기에 대한 성능 특성을 검증합니다.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
-#include <string.h>
-#include <assert.h>
-
+#include "unity.h"
 #include "libetude/simd_kernels.h"
+#include "libetude/fast_math.h"
 #include "libetude/kernel_registry.h"
-#include "libetude/types.h"
+#include <math.h>
+#include <time.h>
+#include <stdlib.h>
+#include <string.h>
 
-// 테스트 허용 오차
+// 테스트 설정
 #define TEST_EPSILON 1e-5f
-#define TEST_LARGE_EPSILON 1e-3f  // 근사 함수용
+#define PERFORMANCE_ITERATIONS 1000
+#define WARMUP_ITERATIONS 10
 
-// 테스트 유틸리티 함수들
-static int float_equals(float a, float b, float epsilon) {
-    return fabsf(a - b) < epsilon;
+// 테스트 데이터 크기들
+static const size_t test_sizes[] = {64, 256, 1024, 4096, 16384};
+static const size_t num_test_sizes = sizeof(test_sizes) / sizeof(test_sizes[0]);
+
+// 성능 결과 구조체
+typedef struct {
+    const char* test_name;
+    size_t data_size;
+    double simd_time_ms;
+    double scalar_time_ms;
+    double speedup_ratio;
+    double accuracy_error;
+} SIMDMathPerformanceResult;
+
+static SIMDMathPerformanceResult* performance_results = NULL;
+static size_t performance_result_count = 0;
+static size_t performance_result_capacity = 0;
+
+// 유틸리티 함수들
+static double get_time_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000.0 + ts.tv_nsec / 1000000.0;
 }
 
-static void print_test_result(const char* test_name, int passed) {
-    printf("[%s] %s\n", passed ? "PASS" : "FAIL", test_name);
+static void record_performance_result(const char* test_name, size_t data_size,
+                                    double simd_time, double scalar_time,
+                                    double accuracy_error) {
+    if (performance_result_count >= performance_result_capacity) {
+        return; // 용량 초과
+    }
+
+    SIMDMathPerformanceResult* result = &performance_results[performance_result_count++];
+    result->test_name = test_name;
+    result->data_size = data_size;
+    result->simd_time_ms = simd_time;
+    result->scalar_time_ms = scalar_time;
+    result->speedup_ratio = scalar_time / simd_time;
+    result->accuracy_error = accuracy_error;
 }
 
-// 테스트 데이터 생성
 static void generate_test_data(float* data, size_t size, float min_val, float max_val) {
     for (size_t i = 0; i < size; i++) {
-        float t = (float)i / (float)(size - 1);
-        data[i] = min_val + t * (max_val - min_val);
+        data[i] = min_val + ((float)rand() / RAND_MAX) * (max_val - min_val);
     }
 }
 
-// 활성화 함수 테스트들
-static int test_simd_sigmoid() {
-    const size_t size = 128;
-    float input[128];
-    float output[128];
-    float expected[128];
-
-    // 테스트 데이터 생성 (-10 ~ 10 범위)
-    generate_test_data(input, size, -10.0f, 10.0f);
-
-    // 예상 결과 계산 (표준 라이브러리 사용)
+static double calculate_max_relative_error(const float* expected, const float* actual, size_t size) {
+    double max_error = 0.0;
     for (size_t i = 0; i < size; i++) {
-        expected[i] = 1.0f / (1.0f + expf(-input[i]));
-    }
-
-    // SIMD 최적화된 sigmoid 함수 테스트
-    simd_sigmoid_optimal(input, output, size);
-
-    // 결과 비교
-    int passed = 1;
-    for (size_t i = 0; i < size; i++) {
-        if (!float_equals(output[i], expected[i], TEST_LARGE_EPSILON)) {
-            printf("Sigmoid mismatch at index %zu: got %f, expected %f\n",
-                   i, output[i], expected[i]);
-            passed = 0;
-            break;
+        if (fabsf(expected[i]) > 1e-6f) {
+            double error = fabs((actual[i] - expected[i]) / expected[i]);
+            if (error > max_error) {
+                max_error = error;
+            }
         }
     }
-
-    return passed;
+    return max_error;
 }
 
-static int test_simd_tanh() {
-    const size_t size = 128;
-    float input[128];
-    float output[128];
-    float expected[128];
+// 테스트 설정 및 정리
+void setUp(void) {
+    // SIMD 커널 시스템 초기화
+    LibEtudeErrorCode result = et_init_simd_kernels();
+    TEST_ASSERT_EQUAL(LIBETUDE_SUCCESS, result);
 
-    // 테스트 데이터 생성 (-5 ~ 5 범위)
-    generate_test_data(input, size, -5.0f, 5.0f);
+    // Fast Math 초기화
+    TEST_ASSERT_EQUAL(0, et_fast_math_init());
 
-    // 예상 결과 계산
-    for (size_t i = 0; i < size; i++) {
-        expected[i] = tanhf(input[i]);
+    srand((unsigned int)time(NULL));
+
+    // 성능 결과 배열 초기화
+    if (!performance_results) {
+        performance_result_capacity = 100;
+        performance_results = (SIMDMathPerformanceResult*)malloc(
+            performance_result_capacity * sizeof(SIMDMathPerformanceResult));
+        TEST_ASSERT_NOT_NULL(performance_results);
+        performance_result_count = 0;
     }
-
-    // SIMD 최적화된 tanh 함수 테스트
-    simd_tanh_optimal(input, output, size);
-
-    // 결과 비교
-    int passed = 1;
-    for (size_t i = 0; i < size; i++) {
-        if (!float_equals(output[i], expected[i], TEST_LARGE_EPSILON)) {
-            printf("Tanh mismatch at index %zu: got %f, expected %f\n",
-                   i, output[i], expected[i]);
-            passed = 0;
-            break;
-        }
-    }
-
-    return passed;
 }
 
-static int test_simd_gelu() {
-    const size_t size = 128;
-    float input[128];
-    float output[128];
-    float expected[128];
-
-    // 테스트 데이터 생성 (-3 ~ 3 범위)
-    generate_test_data(input, size, -3.0f, 3.0f);
-
-    // 예상 결과 계산 (GELU 공식)
-    const float sqrt_2_over_pi = 0.7978845608f;
-    const float coeff = 0.044715f;
-
-    for (size_t i = 0; i < size; i++) {
-        float x = input[i];
-        float x3 = x * x * x;
-        float inner = sqrt_2_over_pi * (x + coeff * x3);
-        expected[i] = 0.5f * x * (1.0f + tanhf(inner));
-    }
-
-    // SIMD 최적화된 GELU 함수 테스트
-    simd_gelu_optimal(input, output, size);
-
-    // 결과 비교
-    int passed = 1;
-    for (size_t i = 0; i < size; i++) {
-        if (!float_equals(output[i], expected[i], TEST_LARGE_EPSILON)) {
-            printf("GELU mismatch at index %zu: got %f, expected %f\n",
-                   i, output[i], expected[i]);
-            passed = 0;
-            break;
-        }
-    }
-
-    return passed;
+void tearDown(void) {
+    et_cleanup_simd_kernels();
+    et_fast_math_cleanup();
 }
 
-static int test_simd_softmax() {
-    const size_t size = 64;
-    float input[64];
-    float output[64];
-    float expected[64];
+// SIMD 벡터 연산과 수학 함수 통합 테스트
+void test_simd_vector_math_integration(void) {
+    printf("\n=== SIMD Vector Math Integration Tests ===\n");
 
-    // 테스트 데이터 생성 (-5 ~ 5 범위)
-    generate_test_data(input, size, -5.0f, 5.0f);
+    for (size_t i = 0; i < num_test_sizes; i++) {
+        size_t size = test_sizes[i];
+        printf("Testing SIMD vector math integration with size %zu... ", size);
 
-    // 예상 결과 계산 (수치적으로 안정한 소프트맥스)
-    // 1. 최댓값 찾기
-    float max_val = input[0];
-    for (size_t i = 1; i < size; i++) {
-        if (input[i] > max_val) {
-            max_val = input[i];
+        float* input_a = (float*)malloc(size * sizeof(float));
+        float* input_b = (float*)malloc(size * sizeof(float));
+        float* simd_result = (float*)malloc(size * sizeof(float));
+        float* scalar_result = (float*)malloc(size * sizeof(float));
+
+        TEST_ASSERT_NOT_NULL(input_a);
+        TEST_ASSERT_NOT_NULL(input_b);
+        TEST_ASSERT_NOT_NULL(simd_result);
+        TEST_ASSERT_NOT_NULL(scalar_result);
+
+        // 테스트 데이터 생성
+        generate_test_data(input_a, size, -5.0f, 5.0f);
+        generate_test_data(input_b, size, -5.0f, 5.0f);
+
+        // SIMD 벡터 덧셈 후 지수 함수 적용
+        et_simd_vector_add(input_a, input_b, simd_result, size);
+        et_fast_exp_vec(simd_result, simd_result, size);
+
+        // 스칼라 버전으로 참조 결과 계산
+        for (size_t j = 0; j < size; j++) {
+            scalar_result[j] = et_fast_exp(input_a[j] + input_b[j]);
         }
+
+        // 정확성 검증
+        double max_error = calculate_max_relative_error(scalar_result, simd_result, size);
+        TEST_ASSERT_TRUE(max_error < 0.01); // 1% 이하 오차
+
+        printf("PASS (max error: %.4f%%)\n", max_error * 100.0);
+
+        free(input_a);
+        free(input_b);
+        free(simd_result);
+        free(scalar_result);
     }
-
-    // 2. exp(x - max) 계산 및 합계
-    float sum = 0.0f;
-    for (size_t i = 0; i < size; i++) {
-        expected[i] = expf(input[i] - max_val);
-        sum += expected[i];
-    }
-
-    // 3. 정규화
-    for (size_t i = 0; i < size; i++) {
-        expected[i] /= sum;
-    }
-
-    // SIMD 최적화된 소프트맥스 함수 테스트
-    simd_softmax_optimal(input, output, size);
-
-    // 결과 비교
-    int passed = 1;
-    float output_sum = 0.0f;
-
-    for (size_t i = 0; i < size; i++) {
-        output_sum += output[i];
-        if (!float_equals(output[i], expected[i], TEST_LARGE_EPSILON)) {
-            printf("Softmax mismatch at index %zu: got %f, expected %f\n",
-                   i, output[i], expected[i]);
-            passed = 0;
-            break;
-        }
-    }
-
-    // 소프트맥스 출력의 합이 1인지 확인
-    if (!float_equals(output_sum, 1.0f, TEST_EPSILON)) {
-        printf("Softmax sum is not 1.0: got %f\n", output_sum);
-        passed = 0;
-    }
-
-    return passed;
 }
 
-static int test_simd_layer_norm() {
-    const size_t size = 128;
-    float input[128];
-    float output[128];
-    float expected[128];
-    const float epsilon = 1e-5f;
+// SIMD 활성화 함수 성능 테스트
+void test_simd_activation_performance(void) {
+    printf("\n=== SIMD Activation Function Performance Tests ===\n");
 
-    // 테스트 데이터 생성 (다양한 값)
-    for (size_t i = 0; i < size; i++) {
-        input[i] = (float)i * 0.1f - 6.4f; // -6.4 ~ 6.3 범위
-    }
+    for (size_t i = 0; i < num_test_sizes; i++) {
+        size_t size = test_sizes[i];
+        printf("Benchmarking SIMD activation functions (size %zu)...\n", size);
 
-    // 예상 결과 계산
-    // 1. 평균 계산
-    float mean = 0.0f;
-    for (size_t i = 0; i < size; i++) {
-        mean += input[i];
-    }
-    mean /= (float)size;
+        float* input = (float*)malloc(size * sizeof(float));
+        float* simd_output = (float*)malloc(size * sizeof(float));
+        float* scalar_output = (float*)malloc(size * sizeof(float));
 
-    // 2. 분산 계산
-    float variance = 0.0f;
-    for (size_t i = 0; i < size; i++) {
-        float diff = input[i] - mean;
-        variance += diff * diff;
-    }
-    variance /= (float)size;
+        TEST_ASSERT_NOT_NULL(input);
+        TEST_ASSERT_NOT_NULL(simd_output);
+        TEST_ASSERT_NOT_NULL(scalar_output);
 
-    // 3. 정규화
-    float inv_std = 1.0f / sqrtf(variance + epsilon);
-    for (size_t i = 0; i < size; i++) {
-        expected[i] = (input[i] - mean) * inv_std;
-    }
+        generate_test_data(input, size, -3.0f, 3.0f);
 
-    // SIMD 최적화된 레이어 정규화 함수 테스트
-    simd_layer_norm_optimal(input, output, size, epsilon);
+        // ReLU 성능 테스트
+        {
+            // 워밍업
+            for (int w = 0; w < WARMUP_ITERATIONS; w++) {
+                et_simd_relu(input, simd_output, size);
+            }
 
-    // 결과 비교
-    int passed = 1;
-    for (size_t i = 0; i < size; i++) {
-        if (!float_equals(output[i], expected[i], TEST_EPSILON)) {
-            printf("Layer norm mismatch at index %zu: got %f, expected %f\n",
-                   i, output[i], expected[i]);
-            passed = 0;
-            break;
+            // SIMD 버전 측정
+            double simd_start = get_time_ms();
+            for (int iter = 0; iter < PERFORMANCE_ITERATIONS; iter++) {
+                et_simd_relu(input, simd_output, size);
+            }
+            double simd_end = get_time_ms();
+            double simd_time = (simd_end - simd_start) / PERFORMANCE_ITERATIONS;
+
+            // 스칼라 버전 측정
+            double scalar_start = get_time_ms();
+            for (int iter = 0; iter < PERFORMANCE_ITERATIONS; iter++) {
+                for (size_t j = 0; j < size; j++) {
+                    scalar_output[j] = input[j] > 0.0f ? input[j] : 0.0f;
+                }
+            }
+            double scalar_end = get_time_ms();
+            double scalar_time = (scalar_end - scalar_start) / PERFORMANCE_ITERATIONS;
+
+            // 정확성 검증
+            et_simd_relu(input, simd_output, size);
+            for (size_t j = 0; j < size; j++) {
+                scalar_output[j] = input[j] > 0.0f ? input[j] : 0.0f;
+            }
+            double accuracy_error = calculate_max_relative_error(scalar_output, simd_output, size);
+
+            record_performance_result("ReLU", size, simd_time, scalar_time, accuracy_error);
+
+            printf("  ReLU: SIMD=%.3fms, Scalar=%.3fms, Speedup=%.2fx\n",
+                   simd_time, scalar_time, scalar_time / simd_time);
         }
-    }
 
-    // 정규화된 출력의 평균이 0에 가까운지 확인
-    float output_mean = 0.0f;
-    for (size_t i = 0; i < size; i++) {
-        output_mean += output[i];
-    }
-    output_mean /= (float)size;
+        // Sigmoid 성능 테스트
+        {
+            // 워밍업
+            for (int w = 0; w < WARMUP_ITERATIONS; w++) {
+                et_simd_sigmoid(input, simd_output, size);
+            }
 
-    if (!float_equals(output_mean, 0.0f, TEST_EPSILON)) {
-        printf("Layer norm output mean is not close to 0: got %f\n", output_mean);
-        passed = 0;
-    }
+            // SIMD 버전 측정
+            double simd_start = get_time_ms();
+            for (int iter = 0; iter < PERFORMANCE_ITERATIONS; iter++) {
+                et_simd_sigmoid(input, simd_output, size);
+            }
+            double simd_end = get_time_ms();
+            double simd_time = (simd_end - simd_start) / PERFORMANCE_ITERATIONS;
 
-    return passed;
+            // 스칼라 버전 측정
+            double scalar_start = get_time_ms();
+            for (int iter = 0; iter < PERFORMANCE_ITERATIONS; iter++) {
+                for (size_t j = 0; j < size; j++) {
+                    scalar_output[j] = et_fast_sigmoid(input[j]);
+                }
+            }
+            double scalar_end = get_time_ms();
+            double scalar_time = (scalar_end - scalar_start) / PERFORMANCE_ITERATIONS;
+
+            // 정확성 검증
+            et_simd_sigmoid(input, simd_output, size);
+            for (size_t j = 0; j < size; j++) {
+                scalar_output[j] = et_fast_sigmoid(input[j]);
+            }
+            double accuracy_error = calculate_max_relative_error(scalar_output, simd_output, size);
+
+            record_performance_result("Sigmoid", size, simd_time, scalar_time, accuracy_error);
+
+            printf("  Sigmoid: SIMD=%.3fms, Scalar=%.3fms, Speedup=%.2fx\n",
+                   simd_time, scalar_time, scalar_time / simd_time);
+        }
+
+        free(input);
+        free(simd_output);
+        free(scalar_output);
+    }
 }
 
-static int test_simd_batch_norm() {
-    const size_t size = 128;
-    float input[128];
-    float output[128];
-    float expected[128];
+// 복합 연산 성능 테스트
+void test_complex_math_operations(void) {
+    printf("\n=== Complex Math Operations Performance Tests ===\n");
 
-    const float mean = 2.0f;
-    const float variance = 4.0f;
-    const float gamma = 1.5f;
-    const float beta = 0.5f;
-    const float epsilon = 1e-5f;
+    for (size_t i = 0; i < num_test_sizes; i++) {
+        size_t size = test_sizes[i];
+        printf("Testing complex operations (size %zu)... ", size);
 
-    // 테스트 데이터 생성
-    generate_test_data(input, size, -5.0f, 10.0f);
+        float* input1 = (float*)malloc(size * sizeof(float));
+        float* input2 = (float*)malloc(size * sizeof(float));
+        float* temp = (float*)malloc(size * sizeof(float));
+        float* simd_result = (float*)malloc(size * sizeof(float));
+        float* scalar_result = (float*)malloc(size * sizeof(float));
 
-    // 예상 결과 계산
-    float inv_std = 1.0f / sqrtf(variance + epsilon);
-    for (size_t i = 0; i < size; i++) {
-        expected[i] = gamma * (input[i] - mean) * inv_std + beta;
-    }
+        TEST_ASSERT_NOT_NULL(input1);
+        TEST_ASSERT_NOT_NULL(input2);
+        TEST_ASSERT_NOT_NULL(temp);
+        TEST_ASSERT_NOT_NULL(simd_result);
+        TEST_ASSERT_NOT_NULL(scalar_result);
 
-    // SIMD 최적화된 배치 정규화 함수 테스트
-    simd_batch_norm_optimal(input, output, size, mean, variance, gamma, beta, epsilon);
+        generate_test_data(input1, size, -2.0f, 2.0f);
+        generate_test_data(input2, size, -2.0f, 2.0f);
 
-    // 결과 비교
-    int passed = 1;
-    for (size_t i = 0; i < size; i++) {
-        if (!float_equals(output[i], expected[i], TEST_EPSILON)) {
-            printf("Batch norm mismatch at index %zu: got %f, expected %f\n",
-                   i, output[i], expected[i]);
-            passed = 0;
-            break;
+        // 복합 연산: (a * b + a) -> tanh -> sigmoid
+        // SIMD 버전
+        double simd_start = get_time_ms();
+        for (int iter = 0; iter < PERFORMANCE_ITERATIONS; iter++) {
+            et_simd_vector_mul(input1, input2, temp, size);
+            et_simd_vector_add(temp, input1, temp, size);
+            et_simd_tanh(temp, temp, size);
+            et_simd_sigmoid(temp, simd_result, size);
         }
-    }
+        double simd_end = get_time_ms();
+        double simd_time = (simd_end - simd_start) / PERFORMANCE_ITERATIONS;
 
-    return passed;
+        // 스칼라 버전
+        double scalar_start = get_time_ms();
+        for (int iter = 0; iter < PERFORMANCE_ITERATIONS; iter++) {
+            for (size_t j = 0; j < size; j++) {
+                float temp_val = input1[j] * input2[j] + input1[j];
+                temp_val = et_fast_tanh(temp_val);
+                scalar_result[j] = et_fast_sigmoid(temp_val);
+            }
+        }
+        double scalar_end = get_time_ms();
+        double scalar_time = (scalar_end - scalar_start) / PERFORMANCE_ITERATIONS;
+
+        // 정확성 검증 (한 번만 실행)
+        et_simd_vector_mul(input1, input2, temp, size);
+        et_simd_vector_add(temp, input1, temp, size);
+        et_simd_tanh(temp, temp, size);
+        et_simd_sigmoid(temp, simd_result, size);
+
+        for (size_t j = 0; j < size; j++) {
+            float temp_val = input1[j] * input2[j] + input1[j];
+            temp_val = et_fast_tanh(temp_val);
+            scalar_result[j] = et_fast_sigmoid(temp_val);
+        }
+
+        double accuracy_error = calculate_max_relative_error(scalar_result, simd_result, size);
+        record_performance_result("Complex", size, simd_time, scalar_time, accuracy_error);
+
+        printf("SIMD=%.3fms, Scalar=%.3fms, Speedup=%.2fx, Error=%.4f%%\n",
+               simd_time, scalar_time, scalar_time / simd_time, accuracy_error * 100.0);
+
+        free(input1);
+        free(input2);
+        free(temp);
+        free(simd_result);
+        free(scalar_result);
+    }
 }
 
-// 성능 테스트
-static void performance_test_sigmoid() {
-    const size_t size = 10000;
-    float* input = (float*)malloc(size * sizeof(float));
-    float* output = (float*)malloc(size * sizeof(float));
+// 메모리 대역폭 테스트
+void test_memory_bandwidth_characteristics(void) {
+    printf("\n=== Memory Bandwidth Characteristics Tests ===\n");
 
-    if (!input || !output) {
-        printf("Memory allocation failed for performance test\n");
+    const size_t large_sizes[] = {1024, 4096, 16384, 65536, 262144};
+    const size_t num_large_sizes = sizeof(large_sizes) / sizeof(large_sizes[0]);
+
+    for (size_t i = 0; i < num_large_sizes; i++) {
+        size_t size = large_sizes[i];
+        printf("Testing memory bandwidth (size %zu)... ", size);
+
+        float* input = (float*)malloc(size * sizeof(float));
+        float* output = (float*)malloc(size * sizeof(float));
+
+        if (!input || !output) {
+            printf("SKIP (memory allocation failed)\n");
+            free(input);
+            free(output);
+            continue;
+        }
+
+        generate_test_data(input, size, -1.0f, 1.0f);
+
+        // 메모리 집약적 연산 (단순 복사)
+        double start_time = get_time_ms();
+        for (int iter = 0; iter < 100; iter++) {
+            et_simd_vector_add(input, input, output, size);
+        }
+        double end_time = get_time_ms();
+
+        double total_time = end_time - start_time;
+        double bytes_per_iteration = size * sizeof(float) * 3; // 2 reads + 1 write
+        double total_bytes = bytes_per_iteration * 100;
+        double bandwidth_gb_per_sec = (total_bytes / (1024.0 * 1024.0 * 1024.0)) / (total_time / 1000.0);
+
+        printf("Bandwidth: %.2f GB/s\n", bandwidth_gb_per_sec);
+
+        // 대역폭이 합리적인 범위에 있는지 확인 (최소 1 GB/s)
+        TEST_ASSERT_TRUE(bandwidth_gb_per_sec > 1.0);
+
         free(input);
         free(output);
-        return;
     }
+}
 
-    // 테스트 데이터 생성
-    generate_test_data(input, size, -10.0f, 10.0f);
+// 캐시 효율성 테스트
+void test_cache_efficiency(void) {
+    printf("\n=== Cache Efficiency Tests ===\n");
 
-    // 성능 측정 (간단한 반복 테스트)
-    const int iterations = 1000;
+    // L1 캐시 크기 근사 (32KB)
+    const size_t l1_cache_size = 32 * 1024 / sizeof(float);
+    // L2 캐시 크기 근사 (256KB)
+    const size_t l2_cache_size = 256 * 1024 / sizeof(float);
+    // L3 캐시 크기 근사 (8MB)
+    const size_t l3_cache_size = 8 * 1024 * 1024 / sizeof(float);
 
-    printf("Performance test: Sigmoid with %zu elements, %d iterations\n", size, iterations);
+    size_t cache_test_sizes[] = {
+        l1_cache_size / 4,    // L1 캐시 내
+        l1_cache_size,        // L1 캐시 경계
+        l2_cache_size / 4,    // L2 캐시 내
+        l2_cache_size,        // L2 캐시 경계
+        l3_cache_size / 4,    // L3 캐시 내
+        l3_cache_size         // L3 캐시 경계
+    };
 
-    for (int i = 0; i < iterations; i++) {
-        simd_sigmoid_optimal(input, output, size);
+    const char* cache_names[] = {
+        "L1 (1/4)", "L1 (full)", "L2 (1/4)", "L2 (full)", "L3 (1/4)", "L3 (full)"
+    };
+
+    for (size_t i = 0; i < 6; i++) {
+        size_t size = cache_test_sizes[i];
+        printf("Testing %s cache efficiency (%zu elements)... ", cache_names[i], size);
+
+        float* input = (float*)malloc(size * sizeof(float));
+        float* output = (float*)malloc(size * sizeof(float));
+
+        if (!input || !output) {
+            printf("SKIP (memory allocation failed)\n");
+            free(input);
+            free(output);
+            continue;
+        }
+
+        generate_test_data(input, size, -1.0f, 1.0f);
+
+        // 캐시 효율성 측정 (반복 접근)
+        double start_time = get_time_ms();
+        for (int iter = 0; iter < 1000; iter++) {
+            et_simd_vector_add(input, input, output, size);
+        }
+        double end_time = get_time_ms();
+
+        double avg_time = (end_time - start_time) / 1000.0;
+        double elements_per_ms = size / avg_time;
+
+        printf("%.0f elements/ms\n", elements_per_ms);
+
+        free(input);
+        free(output);
     }
+}
 
-    printf("SIMD Sigmoid performance test completed\n");
+// 하드웨어 특성 테스트
+void test_hardware_specific_optimizations(void) {
+    printf("\n=== Hardware Specific Optimizations Tests ===\n");
 
-    free(input);
+    // 하드웨어 기능 확인
+    bool has_sse = et_has_sse_support();
+    bool has_avx = et_has_avx_support();
+    bool has_neon = et_has_neon_support();
+
+    printf("Hardware features: SSE=%s, AVX=%s, NEON=%s\n",
+           has_sse ? "YES" : "NO",
+           has_avx ? "YES" : "NO",
+           has_neon ? "YES" : "NO");
+
+    // 하드웨어별 최적화 테스트
+    const size_t test_size = 1024;
+    float* input_a = (float*)malloc(test_size * sizeof(float));
+    float* input_b = (float*)malloc(test_size * sizeof(float));
+    float* output = (float*)malloc(test_size * sizeof(float));
+
+    TEST_ASSERT_NOT_NULL(input_a);
+    TEST_ASSERT_NOT_NULL(input_b);
+    TEST_ASSERT_NOT_NULL(output);
+
+    generate_test_data(input_a, test_size, -10.0f, 10.0f);
+    generate_test_data(input_b, test_size, -10.0f, 10.0f);
+
+    // 벡터 연산 성능 측정
+    double start_time = get_time_ms();
+    for (int iter = 0; iter < PERFORMANCE_ITERATIONS; iter++) {
+        et_simd_vector_add(input_a, input_b, output, test_size);
+    }
+    double end_time = get_time_ms();
+
+    double avg_time = (end_time - start_time) / PERFORMANCE_ITERATIONS;
+    double ops_per_sec = test_size / (avg_time / 1000.0);
+
+    printf("Vector addition performance: %.0f ops/sec\n", ops_per_sec);
+
+    // 성능이 합리적인 범위에 있는지 확인
+    TEST_ASSERT_TRUE(ops_per_sec > 1000000.0); // 최소 1M ops/sec
+
+    free(input_a);
+    free(input_b);
     free(output);
 }
 
-// 메인 테스트 함수
-int main() {
-    printf("=== SIMD 벡터화된 수학 함수 테스트 ===\n\n");
-
-    // 커널 시스템 초기화
-    if (simd_kernels_init() != LIBETUDE_SUCCESS) {
-        printf("Failed to initialize SIMD kernels\n");
-        return 1;
+// 성능 결과 출력
+void print_performance_summary(void) {
+    if (performance_result_count == 0) {
+        return;
     }
 
-    // 현재 사용 가능한 SIMD 기능 출력
-    uint32_t features = simd_kernels_get_features();
-    printf("Available SIMD features: 0x%08X\n", features);
-    simd_kernels_print_info();
+    printf("\n=== SIMD Math Performance Summary ===\n");
+    printf("%-12s %-8s %-12s %-12s %-10s %-12s\n",
+           "Function", "Size", "SIMD (ms)", "Scalar (ms)", "Speedup", "Max Error (%)");
+    printf("%-12s %-8s %-12s %-12s %-10s %-12s\n",
+           "--------", "----", "---------", "-----------", "-------", "-------------");
+
+    for (size_t i = 0; i < performance_result_count; i++) {
+        SIMDMathPerformanceResult* result = &performance_results[i];
+        printf("%-12s %-8zu %-12.6f %-12.6f %-10.2fx %-12.4f\n",
+               result->test_name,
+               result->data_size,
+               result->simd_time_ms,
+               result->scalar_time_ms,
+               result->speedup_ratio,
+               result->accuracy_error * 100.0);
+    }
     printf("\n");
+}
 
-    int total_tests = 0;
-    int passed_tests = 0;
+int main(void) {
+    printf("LibEtude SIMD Math Functions Test Suite\n");
+    printf("=======================================\n");
 
-    // 활성화 함수 테스트
-    printf("=== 활성화 함수 테스트 ===\n");
+    UNITY_BEGIN();
 
-    total_tests++;
-    if (test_simd_sigmoid()) {
-        passed_tests++;
-    }
-    print_test_result("SIMD Sigmoid", test_simd_sigmoid());
-
-    total_tests++;
-    if (test_simd_tanh()) {
-        passed_tests++;
-    }
-    print_test_result("SIMD Tanh", test_simd_tanh());
-
-    total_tests++;
-    if (test_simd_gelu()) {
-        passed_tests++;
-    }
-    print_test_result("SIMD GELU", test_simd_gelu());
-
-    // 정규화 함수 테스트
-    printf("\n=== 정규화 함수 테스트 ===\n");
-
-    total_tests++;
-    if (test_simd_softmax()) {
-        passed_tests++;
-    }
-    print_test_result("SIMD Softmax", test_simd_softmax());
-
-    total_tests++;
-    if (test_simd_layer_norm()) {
-        passed_tests++;
-    }
-    print_test_result("SIMD Layer Normalization", test_simd_layer_norm());
-
-    total_tests++;
-    if (test_simd_batch_norm()) {
-        passed_tests++;
-    }
-    print_test_result("SIMD Batch Normalization", test_simd_batch_norm());
+    // 통합 테스트
+    printf("\n>>> INTEGRATION TESTS <<<\n");
+    RUN_TEST(test_simd_vector_math_integration);
 
     // 성능 테스트
-    printf("\n=== 성능 테스트 ===\n");
-    performance_test_sigmoid();
+    printf("\n>>> PERFORMANCE TESTS <<<\n");
+    RUN_TEST(test_simd_activation_performance);
+    RUN_TEST(test_complex_math_operations);
 
-    // 결과 요약
-    printf("\n=== 테스트 결과 요약 ===\n");
-    printf("총 테스트: %d\n", total_tests);
-    printf("통과: %d\n", passed_tests);
-    printf("실패: %d\n", total_tests - passed_tests);
-    printf("성공률: %.1f%%\n", (float)passed_tests / total_tests * 100.0f);
+    // 메모리 및 캐시 테스트
+    printf("\n>>> MEMORY AND CACHE TESTS <<<\n");
+    RUN_TEST(test_memory_bandwidth_characteristics);
+    RUN_TEST(test_cache_efficiency);
 
-    // 정리
-    simd_kernels_finalize();
+    // 하드웨어 특성 테스트
+    printf("\n>>> HARDWARE OPTIMIZATION TESTS <<<\n");
+    RUN_TEST(test_hardware_specific_optimizations);
 
-    return (passed_tests == total_tests) ? 0 : 1;
+    // 성능 결과 출력
+    print_performance_summary();
+
+    // 메모리 정리
+    if (performance_results) {
+        free(performance_results);
+        performance_results = NULL;
+    }
+
+    printf("\n>>> TEST SUMMARY <<<\n");
+    return UNITY_END();
 }

@@ -248,11 +248,15 @@ LIBETUDE_API void kernel_registry_finalize(void) {
  * @brief 커널을 레지스트리에 등록합니다
  */
 LIBETUDE_API LibEtudeErrorCode kernel_registry_register(const KernelInfo* kernel_info) {
+    printf("Attempting to register kernel: %s\n", kernel_info ? kernel_info->name : "NULL");
+
     if (!g_kernel_registry.initialized) {
+        printf("Registry not initialized!\n");
         return LIBETUDE_ERROR_NOT_INITIALIZED;
     }
 
     if (!kernel_info || !kernel_info->name || !kernel_info->kernel_func) {
+        printf("Invalid kernel info!\n");
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
 
@@ -273,6 +277,8 @@ LIBETUDE_API LibEtudeErrorCode kernel_registry_register(const KernelInfo* kernel
     // 새 커널 등록
     g_kernel_registry.kernels[g_kernel_registry.kernel_count] = *kernel_info;
     g_kernel_registry.kernel_count++;
+
+    printf("Successfully registered kernel: %s (total: %zu)\n", kernel_info->name, g_kernel_registry.kernel_count);
 
     return LIBETUDE_SUCCESS;
 }

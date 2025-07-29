@@ -835,6 +835,104 @@ float simd_bfloat16_adaptive_threshold(const float* input, size_t size, float qu
     return max_abs; // fallback
 }
 
+// ============================================================================
+// 테스트용 호환성 함수들 구현 (Legacy API)
+// ============================================================================
+
+/**
+ * @brief SIMD 커널 시스템 초기화 (테스트 호환성)
+ */
+LibEtudeErrorCode et_init_simd_kernels(void) {
+    return simd_kernels_init();
+}
+
+/**
+ * @brief SIMD 커널 시스템 정리 (테스트 호환성)
+ */
+void et_cleanup_simd_kernels(void) {
+    simd_kernels_finalize();
+}
+
+/**
+ * @brief 벡터 덧셈 (테스트 호환성)
+ */
+void et_simd_vector_add(const float* a, const float* b, float* result, size_t size) {
+    simd_vector_add_optimal(a, b, result, size);
+}
+
+/**
+ * @brief 벡터 곱셈 (테스트 호환성)
+ */
+void et_simd_vector_mul(const float* a, const float* b, float* result, size_t size) {
+    simd_vector_mul_optimal(a, b, result, size);
+}
+
+/**
+ * @brief 벡터 내적 (테스트 호환성)
+ */
+float et_simd_dot_product(const float* a, const float* b, size_t size) {
+    return simd_vector_dot_optimal(a, b, size);
+}
+
+/**
+ * @brief 행렬-벡터 곱셈 (테스트 호환성)
+ */
+void et_simd_matrix_vector_mul(const float* matrix, const float* vector, float* result, size_t rows, size_t cols) {
+    // 행렬-벡터 곱셈: result = matrix * vector
+    // matrix는 row-major 형태 (rows x cols)
+    // vector는 cols 크기
+    // result는 rows 크기
+
+    for (size_t i = 0; i < rows; i++) {
+        result[i] = simd_vector_dot_optimal(&matrix[i * cols], vector, cols);
+    }
+}
+
+/**
+ * @brief ReLU 활성화 함수 (테스트 호환성)
+ */
+void et_simd_relu(const float* input, float* output, size_t size) {
+    simd_relu_optimal(input, output, size);
+}
+
+/**
+ * @brief Sigmoid 활성화 함수 (테스트 호환성)
+ */
+void et_simd_sigmoid(const float* input, float* output, size_t size) {
+    simd_sigmoid_optimal(input, output, size);
+}
+
+/**
+ * @brief Tanh 활성화 함수 (테스트 호환성)
+ */
+void et_simd_tanh(const float* input, float* output, size_t size) {
+    simd_tanh_optimal(input, output, size);
+}
+
+/**
+ * @brief SSE 지원 여부 확인
+ */
+bool et_has_sse_support(void) {
+    uint32_t features = simd_kernels_get_features();
+    return (features & LIBETUDE_SIMD_SSE) != 0 || (features & LIBETUDE_SIMD_SSE2) != 0;
+}
+
+/**
+ * @brief AVX 지원 여부 확인
+ */
+bool et_has_avx_support(void) {
+    uint32_t features = simd_kernels_get_features();
+    return (features & LIBETUDE_SIMD_AVX) != 0;
+}
+
+/**
+ * @brief NEON 지원 여부 확인
+ */
+bool et_has_neon_support(void) {
+    uint32_t features = simd_kernels_get_features();
+    return (features & LIBETUDE_SIMD_NEON) != 0;
+}
+
 /**
  * @brief 음성 특화 BF16 양자화 파라미터 튜닝
  */

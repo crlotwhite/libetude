@@ -10,6 +10,7 @@
 #include "libetude/kernel_registry.h"
 #include <math.h>
 #include <string.h>
+#include <stdio.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -247,6 +248,8 @@ void cpu_apply_mel_filterbank(const float* spectrogram, float* mel_spec,
  * @brief CPU 커널들을 등록합니다
  */
 void register_cpu_kernels(void) {
+    printf("Registering CPU kernels...\n");
+
     // 벡터 연산 커널 등록
     KernelInfo kernel_info;
 
@@ -352,4 +355,6 @@ void register_cpu_kernels(void) {
     kernel_info.optimal_size = 0;
     kernel_info.performance_score = 1.0f;
     kernel_registry_register(&kernel_info);
+
+    printf("CPU kernels registration completed.\n");
 }
