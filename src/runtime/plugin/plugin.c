@@ -634,6 +634,38 @@ PluginError plugin_chain_set_bypass(PluginChain* chain, PluginInstance* plugin, 
     return ET_ERROR_INVALID_ARGUMENT; // Plugin not found
 }
 
+// 파라미터 설정/조회 함수들
+PluginError plugin_set_parameter_by_id(PluginInstance* plugin, int param_id, PluginParamValue value) {
+    if (!plugin || param_id < 0 || param_id >= plugin->num_parameters) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (plugin->functions.set_parameter) {
+        PluginError result = plugin->functions.set_parameter(plugin->context, param_id, value);
+        if (result == ET_SUCCESS && plugin->param_values) {
+            plugin->param_values[param_id] = value;
+        }
+        return result;
+    }
+
+    return ET_ERROR_NOT_IMPLEMENTED;
+}
+
+PluginError plugin_get_parameter_by_id(PluginInstance* plugin, int param_id, PluginParamValue* value) {
+    if (!plugin || !value || param_id < 0 || param_id >= plugin->num_parameters) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (plugin->functions.get_parameter) {
+        return plugin->functions.get_parameter(plugin->context, param_id, value);
+    } else if (plugin->param_values) {
+        *value = plugin->param_values[param_id];
+        return ET_SUCCESS;
+    }
+
+    return ET_ERROR_NOT_IMPLEMENTED;
+}
+
 // Plugin registration
 PluginError plugin_register(PluginRegistry* registry, PluginInstance* plugin) {
     if (!registry || !plugin) {

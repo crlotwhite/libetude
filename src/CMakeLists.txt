@@ -52,6 +52,11 @@ set(LIBETUDE_CORE_SOURCES
     audio/dsp/stft.c
     audio/dsp/mel_scale.c
     audio/vocoder/vocoder.c
+    audio/effects/audio_effects.c
+    audio/effects/reverb_plugin.c
+    audio/effects/equalizer_plugin.c
+    audio/effects/delay_plugin.c
+    audio/effects/compressor_plugin.c
 
     # 플랫폼별 구현
     platform/platform_utils.c
