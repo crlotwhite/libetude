@@ -45,6 +45,7 @@ set(LIBETUDE_CORE_SOURCES
     runtime/scheduler/task_scheduler_simple.c
     runtime/profiler/profiler.c
     runtime/error/error_handling.c
+    runtime/plugin/plugin.c
 
     # 오디오 처리
     audio/io/audio_io.c
@@ -159,14 +160,14 @@ if(WIN32)
         target_link_libraries(libetude_shared PRIVATE winmm dsound psapi)
     endif()
 elseif(APPLE)
-    target_link_libraries(libetude_static PRIVATE "-framework AudioToolbox" "-framework CoreAudio")
+    target_link_libraries(libetude_static PRIVATE "-framework AudioToolbox" "-framework CoreAudio" dl)
     if(NOT LIBETUDE_MINIMAL)
-        target_link_libraries(libetude_shared PRIVATE "-framework AudioToolbox" "-framework CoreAudio")
+        target_link_libraries(libetude_shared PRIVATE "-framework AudioToolbox" "-framework CoreAudio" dl)
     endif()
 elseif(UNIX)
-    target_link_libraries(libetude_static PRIVATE asound pthread m)
+    target_link_libraries(libetude_static PRIVATE asound pthread m dl uuid)
     if(NOT LIBETUDE_MINIMAL)
-        target_link_libraries(libetude_shared PRIVATE asound pthread m)
+        target_link_libraries(libetude_shared PRIVATE asound pthread m dl uuid)
     endif()
 endif()
 
