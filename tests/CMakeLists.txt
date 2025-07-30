@@ -204,6 +204,12 @@ create_unity_test(plugin_dependency_test "unit/test_plugin_dependency.c")
 # 오디오 효과 플러그인 테스트
 create_unity_test(audio_effects_test "unit/test_audio_effects.c")
 
+# 통합 테스트 (16번 작업)
+create_unity_test(integration_pipeline_test "integration/test_pipeline.c")
+create_unity_test(integration_streaming_test "integration/test_streaming.c")
+create_unity_test(integration_performance_test "integration/test_performance.c")
+create_unity_test(integration_platform_test "integration/test_platform.c")
+
 # Unity CTest 통합
 include(CTest)
 
@@ -256,6 +262,12 @@ add_test(NAME PluginDependencyTest COMMAND plugin_dependency_test)
 
 # 오디오 효과 플러그인 테스트
 add_test(NAME AudioEffectsTest COMMAND audio_effects_test)
+
+# 통합 테스트 등록 (16번 작업)
+add_test(NAME IntegrationPipelineTest COMMAND integration_pipeline_test)
+add_test(NAME IntegrationStreamingTest COMMAND integration_streaming_test)
+add_test(NAME IntegrationPerformanceTest COMMAND integration_performance_test)
+add_test(NAME IntegrationPlatformTest COMMAND integration_platform_test)
 
 # 테스트 등록 (새로운 독립적인 테스트들)
 if(TARGET test_unity_simple)
@@ -427,6 +439,31 @@ set_tests_properties(AudioEffectsTest PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
+# 통합 테스트 속성 설정 (16번 작업)
+set_tests_properties(IntegrationPipelineTest PROPERTIES
+    TIMEOUT 300
+    LABELS "integration;pipeline;endtoend;text2audio;streaming;error;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+set_tests_properties(IntegrationStreamingTest PROPERTIES
+    TIMEOUT 300
+    LABELS "integration;streaming;realtime;latency;buffer;audio;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+set_tests_properties(IntegrationPerformanceTest PROPERTIES
+    TIMEOUT 600
+    LABELS "integration;performance;latency;throughput;memory;cpu;profiling;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+set_tests_properties(IntegrationPlatformTest PROPERTIES
+    TIMEOUT 600
+    LABELS "integration;platform;desktop;mobile;embedded;crossplatform;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
 if(TARGET test_unity_simple)
     set_tests_properties(UnityBasicTest PROPERTIES
         TIMEOUT 30
@@ -537,6 +574,42 @@ add_custom_target(run_fast_math
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
+# 통합 테스트 실행 타겟 (16번 작업)
+add_custom_target(run_integration_tests
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L "integration"
+    DEPENDS integration_pipeline_test integration_streaming_test integration_performance_test integration_platform_test
+    COMMENT "모든 통합 테스트 실행"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+add_custom_target(run_pipeline_test
+    COMMAND integration_pipeline_test
+    DEPENDS integration_pipeline_test
+    COMMENT "엔드투엔드 파이프라인 테스트 실행"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+add_custom_target(run_streaming_test
+    COMMAND integration_streaming_test
+    DEPENDS integration_streaming_test
+    COMMENT "실시간 스트리밍 테스트 실행"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+add_custom_target(run_performance_test
+    COMMAND integration_performance_test
+    DEPENDS integration_performance_test
+    COMMENT "성능 측정 테스트 실행"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+add_custom_target(run_platform_test
+    COMMAND integration_platform_test
+    DEPENDS integration_platform_test
+    COMMENT "플랫폼별 테스트 실행"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
 # 테스트 요약 정보 출력 타겟
 add_custom_target(test_info
     COMMAND ${CMAKE_COMMAND} -E echo "=== LibEtude 테스트 정보 ==="
@@ -550,11 +623,21 @@ add_custom_target(test_info
     COMMAND ${CMAKE_COMMAND} -E echo "  - run_math_functions: 수학 함수 테스트"
     COMMAND ${CMAKE_COMMAND} -E echo "  - run_fast_math: 고속 수학 함수 테스트"
     COMMAND ${CMAKE_COMMAND} -E echo ""
+    COMMAND ${CMAKE_COMMAND} -E echo "통합 테스트 타겟:"
+    COMMAND ${CMAKE_COMMAND} -E echo "  - run_integration_tests: 모든 통합 테스트 실행"
+    COMMAND ${CMAKE_COMMAND} -E echo "  - run_pipeline_test: 엔드투엔드 파이프라인 테스트"
+    COMMAND ${CMAKE_COMMAND} -E echo "  - run_streaming_test: 실시간 스트리밍 테스트"
+    COMMAND ${CMAKE_COMMAND} -E echo "  - run_performance_test: 성능 측정 테스트"
+    COMMAND ${CMAKE_COMMAND} -E echo "  - run_platform_test: 플랫폼별 테스트"
+    COMMAND ${CMAKE_COMMAND} -E echo ""
     COMMAND ${CMAKE_COMMAND} -E echo "CTest 명령어:"
     COMMAND ${CMAKE_COMMAND} -E echo "  - ctest: 모든 테스트 실행"
     COMMAND ${CMAKE_COMMAND} -E echo "  - ctest -L tensor: 텐서 테스트만"
     COMMAND ${CMAKE_COMMAND} -E echo "  - ctest -L standalone: 독립적인 테스트만"
     COMMAND ${CMAKE_COMMAND} -E echo "  - ctest -L math: 수학 관련 테스트만"
+    COMMAND ${CMAKE_COMMAND} -E echo "  - ctest -L integration: 통합 테스트만"
+    COMMAND ${CMAKE_COMMAND} -E echo "  - ctest -L performance: 성능 테스트만"
+    COMMAND ${CMAKE_COMMAND} -E echo "  - ctest -L platform: 플랫폼별 테스트만"
     COMMAND ${CMAKE_COMMAND} -E echo "  - ctest --verbose: 상세한 출력"
     COMMENT "테스트 정보 출력"
 )
