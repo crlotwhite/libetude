@@ -1,0 +1,128 @@
+; LibEtude NSIS 설치 스크립트 템플릿
+; Copyright (c) 2025 LibEtude Project
+
+!define PRODUCT_NAME "LibEtude"
+!define PRODUCT_VERSION "@CPACK_PACKAGE_VERSION@"
+!define PRODUCT_PUBLISHER "LibEtude Project"
+!define PRODUCT_WEB_SITE "https://github.com/libetude/libetude"
+!define PRODUCT_DIR_REGKEY "Software\Microsoft\Windows\CurrentVersion\App Paths\libetude"
+!define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
+!define PRODUCT_UNINST_ROOT_KEY "HKLM"
+
+; MUI 설정
+!include "MUI2.nsh"
+
+; MUI 페이지 설정
+!define MUI_ABORTWARNING
+!define MUI_ICON "@CMAKE_CURRENT_SOURCE_DIR@\cmake\libetude.ico"
+!define MUI_UNICON "@CMAKE_CURRENT_SOURCE_DIR@\cmake\libetude.ico"
+
+; 설치 페이지
+!insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_LICENSE "@CMAKE_CURRENT_SOURCE_DIR@\LICENSE"
+!insertmacro MUI_PAGE_COMPONENTS
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+!insertmacro MUI_PAGE_FINISH
+
+; 제거 페이지
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+
+; 언어 설정
+!insertmacro MUI_LANGUAGE "Korean"
+!insertmacro MUI_LANGUAGE "English"
+
+; 설치 관리자 속성
+Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
+OutFile "@CPACK_TOPLEVEL_DIRECTORY@/@CPACK_OUTPUT_FILE_NAME@"
+InstallDir "$PROGRAMFILES\${PRODUCT_NAME}"
+InstallDirRegKey HKLM "${PRODUCT_DIR_REGKEY}" ""
+ShowInstDetails show
+ShowUnInstDetails show
+
+; 버전 정보
+VIProductVersion "@CPACK_PACKAGE_VERSION@.0"
+VIAddVersionKey /LANG=${LANG_KOREAN} "ProductName" "${PRODUCT_NAME}"
+VIAddVersionKey /LANG=${LANG_KOREAN} "Comments" "AI 음성 합성 추론 엔진"
+VIAddVersionKey /LANG=${LANG_KOREAN} "CompanyName" "${PRODUCT_PUBLISHER}"
+VIAddVersionKey /LANG=${LANG_KOREAN} "LegalTrademarks" ""
+VIAddVersionKey /LANG=${LANG_KOREAN} "LegalCopyright" "© 2025 LibEtude Project"
+VIAddVersionKey /LANG=${LANG_KOREAN} "FileDescription" "${PRODUCT_NAME} 설치 관리자"
+VIAddVersionKey /LANG=${LANG_KOREAN} "FileVersion" "${PRODUCT_VERSION}"
+
+; 컴포넌트 섹션
+Section "런타임 라이브러리" SEC01
+  SectionIn RO
+  SetOutPath "$INSTDIR\bin"
+  @CPACK_NSIS_EXTRA_INSTALL_COMMANDS@
+
+  ; 레지스트리 키 생성
+  WriteRegStr HKLM "${PRODUCT_DIR_REGKEY}" "" "$INSTDIR\bin\libetude.exe"
+  WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "DisplayName" "$(^Name)"
+  WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "UninstallString" "$INSTDIR\uninst.exe"
+  WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "DisplayIcon" "$INSTDIR\bin\libetude.exe"
+  WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "DisplayVersion" "${PRODUCT_VERSION}"
+  WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "URLInfoAbout" "${PRODUCT_WEB_SITE}"
+  WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "Publisher" "${PRODUCT_PUBLISHER}"
+SectionEnd
+
+Section "개발 파일" SEC02
+  SetOutPath "$INSTDIR\include"
+  ; 헤더 파일 설치
+
+  SetOutPath "$INSTDIR\lib"
+  ; 라이브러리 파일 설치
+SectionEnd
+
+Section "문서" SEC03
+  SetOutPath "$INSTDIR\docs"
+  ; 문서 파일 설치
+SectionEnd
+
+Section "예제" SEC04
+  SetOutPath "$INSTDIR\examples"
+  ; 예제 파일 설치
+SectionEnd
+
+; 컴포넌트 설명
+!insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
+  !insertmacro MUI_DESCRIPTION_TEXT ${SEC01} "LibEtude 런타임 라이브러리 (필수)"
+  !insertmacro MUI_DESCRIPTION_TEXT ${SEC02} "개발용 헤더 파일과 라이브러리"
+  !insertmacro MUI_DESCRIPTION_TEXT ${SEC03} "API 문서 및 사용 가이드"
+  !insertmacro MUI_DESCRIPTION_TEXT ${SEC04} "예제 애플리케이션"
+!insertmacro MUI_FUNCTION_DESCRIPTION_END
+
+; 제거 섹션
+Section Uninstall
+  @CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS@
+
+  Delete "$INSTDIR\uninst.exe"
+  RMDir /r "$INSTDIR"
+
+  DeleteRegKey ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}"
+  DeleteRegKey HKLM "${PRODUCT_DIR_REGKEY}"
+  SetAutoClose true
+SectionEnd
+
+; 설치 관리자 함수
+Function .onInit
+  ; 관리자 권한 확인
+  UserInfo::GetAccountType
+  pop $0
+  ${If} $0 != "admin"
+    MessageBox MB_ICONSTOP "관리자 권한이 필요합니다."
+    SetErrorLevel 740 ; ERROR_ELEVATION_REQUIRED
+    Quit
+  ${EndIf}
+FunctionEnd
+
+Function un.onUninstSuccess
+  HideWindow
+  MessageBox MB_ICONINFORMATION|MB_OK "$(^Name)이(가) 성공적으로 제거되었습니다."
+FunctionEnd
+
+Function un.onInit
+  MessageBox MB_ICONQUESTION|MB_YESNO|MB_DEFBUTTON2 "$(^Name)을(를) 완전히 제거하시겠습니까?" IDYES +2
+  Abort
+FunctionEnd

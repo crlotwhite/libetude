@@ -85,6 +85,9 @@ if(LIBETUDE_ENABLE_SIMD)
     endif()
 endif()
 
+# 의존성 관리 모듈 포함
+include(cmake/Dependencies.cmake)
+
 # 포함 디렉토리 설정
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
@@ -114,11 +117,75 @@ if(LIBETUDE_BUILD_BINDINGS)
 endif()
 
 # 설치 설정
-install(DIRECTORY include/ DESTINATION include)
-install(FILES README.md LICENSE DESTINATION .)
+install(FILES README.md LICENSE DESTINATION share/libetude COMPONENT Documentation)
+
+# 문서 설치
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/docs)
+    install(DIRECTORY docs/ DESTINATION share/libetude/docs COMPONENT Documentation)
+endif()
+
+# 예제 소스 코드 설치
+if(LIBETUDE_BUILD_EXAMPLES)
+    install(DIRECTORY examples/ DESTINATION share/libetude/examples
+        COMPONENT Examples
+        PATTERN "build" EXCLUDE
+        PATTERN "*.o" EXCLUDE
+        PATTERN "*.exe" EXCLUDE
+    )
+endif()
 
 # 패키지 설정
 set(CPACK_PACKAGE_NAME "LibEtude")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
+set(CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(CPACK_PACKAGE_VENDOR "LibEtude Project")
+set(CPACK_PACKAGE_CONTACT "info@libetude.org")
+
+# 플랫폼별 패키지 설정
+if(WIN32)
+    set(CPACK_GENERATOR "ZIP;NSIS")
+    set(CPACK_NSIS_DISPLAY_NAME "LibEtude ${PROJECT_VERSION}")
+    set(CPACK_NSIS_PACKAGE_NAME "LibEtude")
+    set(CPACK_NSIS_HELP_LINK "https://github.com/libetude/libetude")
+    set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/libetude/libetude")
+    set(CPACK_NSIS_CONTACT "info@libetude.org")
+elseif(APPLE)
+    set(CPACK_GENERATOR "DragNDrop;TGZ")
+    set(CPACK_DMG_VOLUME_NAME "LibEtude ${PROJECT_VERSION}")
+    set(CPACK_DMG_FORMAT "UDZO")
+elseif(UNIX)
+    set(CPACK_GENERATOR "DEB;RPM;TGZ")
+
+    # Debian 패키지 설정
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "LibEtude Project <info@libetude.org>")
+    set(CPACK_DEBIAN_PACKAGE_SECTION "libs")
+    set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6 (>= 2.17)")
+
+    # RPM 패키지 설정
+    set(CPACK_RPM_PACKAGE_GROUP "System/Libraries")
+    set(CPACK_RPM_PACKAGE_LICENSE "MIT")
+    set(CPACK_RPM_PACKAGE_REQUIRES "glibc >= 2.17")
+endif()
+
+# 컴포넌트 설정
+set(CPACK_COMPONENTS_ALL Runtime Development Documentation Examples)
+
+set(CPACK_COMPONENT_RUNTIME_DISPLAY_NAME "Runtime Libraries")
+set(CPACK_COMPONENT_RUNTIME_DESCRIPTION "LibEtude runtime libraries")
+set(CPACK_COMPONENT_RUNTIME_REQUIRED ON)
+
+set(CPACK_COMPONENT_DEVELOPMENT_DISPLAY_NAME "Development Files")
+set(CPACK_COMPONENT_DEVELOPMENT_DESCRIPTION "LibEtude development headers and libraries")
+set(CPACK_COMPONENT_DEVELOPMENT_DEPENDS Runtime)
+
+set(CPACK_COMPONENT_DOCUMENTATION_DISPLAY_NAME "Documentation")
+set(CPACK_COMPONENT_DOCUMENTATION_DESCRIPTION "LibEtude documentation")
+
+set(CPACK_COMPONENT_EXAMPLES_DISPLAY_NAME "Examples")
+set(CPACK_COMPONENT_EXAMPLES_DESCRIPTION "LibEtude example applications")
+set(CPACK_COMPONENT_EXAMPLES_DEPENDS Runtime)
+
 include(CPack)

@@ -185,17 +185,35 @@ if(LIBETUDE_ENABLE_SIMD AND OpenMP_FOUND)
     endif()
 endif()
 
-# 설치 설정
+# 설치 설정 (컴포넌트별)
 install(TARGETS libetude_static
-    ARCHIVE DESTINATION lib
-    LIBRARY DESTINATION lib
-    RUNTIME DESTINATION bin
+    ARCHIVE DESTINATION lib COMPONENT Development
+    LIBRARY DESTINATION lib COMPONENT Runtime
+    RUNTIME DESTINATION bin COMPONENT Runtime
 )
 
 if(NOT LIBETUDE_MINIMAL)
     install(TARGETS libetude_shared
-        ARCHIVE DESTINATION lib
-        LIBRARY DESTINATION lib
-        RUNTIME DESTINATION bin
+        ARCHIVE DESTINATION lib COMPONENT Development
+        LIBRARY DESTINATION lib COMPONENT Runtime
+        RUNTIME DESTINATION bin COMPONENT Runtime
     )
 endif()
+
+# 헤더 파일 설치
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../include/libetude
+    DESTINATION include
+    COMPONENT Development
+    FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp"
+)
+
+# pkg-config 파일 설치
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../cmake/libetude.pc.in
+    ${CMAKE_CURRENT_BINARY_DIR}/libetude.pc
+    @ONLY
+)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/libetude.pc
+    DESTINATION lib/pkgconfig
+    COMPONENT Development
+)

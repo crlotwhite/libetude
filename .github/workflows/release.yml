@@ -1,0 +1,328 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version'
+        required: true
+        default: '1.0.0'
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  # Linux 빌드
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential libasound2-dev libpulse-dev
+
+    - name: Setup ARM64 cross-compilation
+      if: matrix.arch == 'arm64'
+      run: |
+        sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+    - name: Configure CMake
+      run: |
+        if [ "${{ matrix.arch }}" = "arm64" ]; then
+          cmake -B build -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+                -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+                -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+                -DLIBETUDE_BUILD_TESTS=ON \
+                -DLIBETUDE_BUILD_EXAMPLES=ON \
+                -DLIBETUDE_BUILD_TOOLS=ON
+        else
+          cmake -B build -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+                -DLIBETUDE_BUILD_TESTS=ON \
+                -DLIBETUDE_BUILD_EXAMPLES=ON \
+                -DLIBETUDE_BUILD_TOOLS=ON
+        fi
+
+    - name: Build
+      run: cmake --build build --config $BUILD_TYPE --parallel $(nproc)
+
+    - name: Test
+      if: matrix.arch == 'x64'
+      run: |
+        cd build
+        ctest --output-on-failure --parallel $(nproc)
+
+    - name: Package
+      run: |
+        cd build
+        cpack
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: libetude-linux-${{ matrix.arch }}
+        path: build/*.tar.gz
+
+  # Windows 빌드
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup MSVC
+      uses: microsoft/setup-msbuild@v1.3
+
+    - name: Configure CMake
+      run: |
+        if ("${{ matrix.arch }}" -eq "arm64") {
+          cmake -B build -G "Visual Studio 17 2022" -A ARM64 `
+                -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE `
+                -DLIBETUDE_BUILD_TESTS=ON `
+                -DLIBETUDE_BUILD_EXAMPLES=ON `
+                -DLIBETUDE_BUILD_TOOLS=ON
+        } else {
+          cmake -B build -G "Visual Studio 17 2022" -A x64 `
+                -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE `
+                -DLIBETUDE_BUILD_TESTS=ON `
+                -DLIBETUDE_BUILD_EXAMPLES=ON `
+                -DLIBETUDE_BUILD_TOOLS=ON
+        }
+
+    - name: Build
+      run: cmake --build build --config $env:BUILD_TYPE --parallel
+
+    - name: Test
+      if: matrix.arch == 'x64'
+      run: |
+        cd build
+        ctest --output-on-failure --parallel $env:NUMBER_OF_PROCESSORS -C $env:BUILD_TYPE
+
+    - name: Package
+      run: |
+        cd build
+        cpack -C $env:BUILD_TYPE
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: libetude-windows-${{ matrix.arch }}
+        path: build/*.zip
+
+  # macOS 빌드
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure CMake
+      run: |
+        if [ "${{ matrix.arch }}" = "arm64" ]; then
+          cmake -B build -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+                -DCMAKE_OSX_ARCHITECTURES=arm64 \
+                -DLIBETUDE_BUILD_TESTS=ON \
+                -DLIBETUDE_BUILD_EXAMPLES=ON \
+                -DLIBETUDE_BUILD_TOOLS=ON
+        else
+          cmake -B build -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+                -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+                -DLIBETUDE_BUILD_TESTS=ON \
+                -DLIBETUDE_BUILD_EXAMPLES=ON \
+                -DLIBETUDE_BUILD_TOOLS=ON
+        fi
+
+    - name: Build
+      run: cmake --build build --config $BUILD_TYPE --parallel $(sysctl -n hw.ncpu)
+
+    - name: Test
+      run: |
+        cd build
+        ctest --output-on-failure --parallel $(sysctl -n hw.ncpu)
+
+    - name: Package
+      run: |
+        cd build
+        cpack
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: libetude-macos-${{ matrix.arch }}
+        path: build/*.dmg
+
+  # Android 빌드
+  build-android:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a, x86_64]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Android NDK
+      uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: r25c
+
+    - name: Configure CMake
+      run: |
+        cmake -B build-android-${{ matrix.abi }} \
+              -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
+              -DANDROID_ABI=${{ matrix.abi }} \
+              -DANDROID_PLATFORM=android-21 \
+              -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+              -DLIBETUDE_MINIMAL=ON \
+              -DLIBETUDE_BUILD_TESTS=OFF \
+              -DLIBETUDE_BUILD_EXAMPLES=ON
+
+    - name: Build
+      run: cmake --build build-android-${{ matrix.abi }} --config $BUILD_TYPE --parallel $(nproc)
+
+    - name: Package
+      run: |
+        mkdir -p android-package/${{ matrix.abi }}
+        cp build-android-${{ matrix.abi }}/src/liblibetude.so android-package/${{ matrix.abi }}/
+        cp -r include android-package/
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: libetude-android-${{ matrix.abi }}
+        path: android-package/
+
+  # iOS 빌드
+  build-ios:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        platform: [OS64, SIMULATOR64, SIMULATORARM64]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure CMake
+      run: |
+        cmake -B build-ios-${{ matrix.platform }} \
+              -DCMAKE_TOOLCHAIN_FILE=cmake/ios.toolchain.cmake \
+              -DPLATFORM=${{ matrix.platform }} \
+              -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+              -DLIBETUDE_MINIMAL=ON \
+              -DLIBETUDE_BUILD_TESTS=OFF \
+              -DLIBETUDE_BUILD_EXAMPLES=ON
+
+    - name: Build
+      run: cmake --build build-ios-${{ matrix.platform }} --config $BUILD_TYPE --parallel $(sysctl -n hw.ncpu)
+
+    - name: Package
+      run: |
+        mkdir -p ios-package/${{ matrix.platform }}
+        cp build-ios-${{ matrix.platform }}/src/liblibetude.a ios-package/${{ matrix.platform }}/
+        cp -r include ios-package/
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: libetude-ios-${{ matrix.platform }}
+        path: ios-package/
+
+  # 릴리스 생성
+  create-release:
+    needs: [build-linux, build-windows, build-macos, build-android, build-ios]
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts/
+
+    - name: Create release archives
+      run: |
+        mkdir -p release/
+
+        # Linux 패키지
+        for arch in x64 arm64; do
+          cp artifacts/libetude-linux-$arch/*.tar.gz release/
+        done
+
+        # Windows 패키지
+        for arch in x64 arm64; do
+          cp artifacts/libetude-windows-$arch/*.zip release/
+        done
+
+        # macOS 패키지
+        for arch in x64 arm64; do
+          cp artifacts/libetude-macos-$arch/*.dmg release/
+        done
+
+        # Android AAR 생성
+        cd artifacts
+        zip -r ../release/libetude-android.aar libetude-android-*/
+        cd ..
+
+        # iOS Framework 생성
+        cd artifacts
+        zip -r ../release/libetude-ios.framework.zip libetude-ios-*/
+        cd ..
+
+    - name: Generate checksums
+      run: |
+        cd release
+        sha256sum * > checksums.txt
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: release/*
+        body_path: RELEASE_NOTES.md
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 문서 배포
+  deploy-docs:
+    needs: create-release
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y doxygen graphviz
+
+    - name: Generate documentation
+      run: |
+        doxygen docs/Doxyfile
+
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs/html
