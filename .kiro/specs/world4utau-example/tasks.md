@@ -1,21 +1,21 @@
 # 구현 계획
 
-- [ ] 1. 프로젝트 구조 및 기본 인터페이스 설정
+- [x] 1. 프로젝트 구조 및 기본 인터페이스 설정
   - examples/world4utau 디렉토리 생성 및 CMake 설정
   - 기본 헤더 파일들과 인터페이스 정의
   - _요구사항: 1.1, 5.1, 5.2_
 
-- [ ] 1.1 world4utau 예제 디렉토리 구조 생성
+- [x] 1.1 world4utau 예제 디렉토리 구조 생성
   - examples/world4utau 디렉토리와 하위 구조 생성
   - CMakeLists.txt 파일 작성하여 libetude와 연결
   - _요구사항: 5.1, 5.2_
 
-- [ ] 1.2 UTAU 호환 인터페이스 헤더 파일 작성
+- [x] 1.2 UTAU 호환 인터페이스 헤더 파일 작성
   - utau_interface.h 파일 생성하여 UTAUParameters 구조체 정의
   - 명령줄 파라미터 파싱 함수 선언
   - _요구사항: 1.1, 5.1, 5.2_
 
-- [ ] 1.3 WORLD 알고리즘 인터페이스 헤더 파일 작성
+- [x] 1.3 WORLD 알고리즘 인터페이스 헤더 파일 작성
   - world_engine.h 파일 생성하여 WorldAnalysisEngine, WorldSynthesisEngine 구조체 정의
   - WORLD 파라미터 구조체 및 함수 선언
   - _요구사항: 1.2, 1.3, 1.4_
