@@ -204,6 +204,25 @@ create_unity_test(plugin_dependency_test "unit/test_plugin_dependency.c")
 # 오디오 효과 플러그인 테스트
 create_unity_test(audio_effects_test "unit/test_audio_effects.c")
 
+# UTAU 파라미터 파싱 테스트 (world4utau 예제용)
+# 이 테스트는 world4utau 예제 소스를 직접 포함합니다
+add_executable(utau_parameter_parsing_test
+    unit/test_utau_parameter_parsing.c
+    ../examples/world4utau/src/utau_interface.c
+)
+target_link_libraries(utau_parameter_parsing_test
+    libetude_static
+)
+target_include_directories(utau_parameter_parsing_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../examples/world4utau/include
+)
+# pthread 라이브러리 링크 (Unix 계열)
+if(NOT WIN32)
+    target_link_libraries(utau_parameter_parsing_test pthread m)
+endif()
+
 # 통합 테스트 (16번 작업)
 create_unity_test(integration_pipeline_test "integration/test_pipeline.c")
 create_unity_test(integration_streaming_test "integration/test_streaming.c")
@@ -262,6 +281,9 @@ add_test(NAME PluginDependencyTest COMMAND plugin_dependency_test)
 
 # 오디오 효과 플러그인 테스트
 add_test(NAME AudioEffectsTest COMMAND audio_effects_test)
+
+# UTAU 파라미터 파싱 테스트
+add_test(NAME UTAUParameterParsingTest COMMAND utau_parameter_parsing_test)
 
 # 통합 테스트 등록 (16번 작업)
 add_test(NAME IntegrationPipelineTest COMMAND integration_pipeline_test)
@@ -436,6 +458,13 @@ set_tests_properties(PluginDependencyTest PROPERTIES
 set_tests_properties(AudioEffectsTest PROPERTIES
     TIMEOUT 180
     LABELS "audio;effects;plugin;reverb;equalizer;pipeline;realtime;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# UTAU 파라미터 파싱 테스트 속성 설정
+set_tests_properties(UTAUParameterParsingTest PROPERTIES
+    TIMEOUT 120
+    LABELS "utau;parameter;parsing;world4utau;example;validation;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 

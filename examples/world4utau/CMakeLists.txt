@@ -8,14 +8,6 @@ add_executable(world4utau
     main.c
     src/utau_interface.c
     src/world_engine.c
-    src/world_f0_extractor.c
-    src/world_spectrum_analyzer.c
-    src/world_aperiodicity_analyzer.c
-    src/world_synthesis_engine.c
-    src/world_memory_manager.c
-    src/world_cache.c
-    src/world_audio_io.c
-    src/world_error_handling.c
 )
 
 # libetude와 연결

@@ -14,6 +14,9 @@
 #include <libetude/error.h>
 #include <stdbool.h>
 
+// 버전 정보
+#define WORLD4UTAU_VERSION "1.0.0"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -138,6 +141,37 @@ ETResult load_pitch_bend_file(const char* file_path, float** pitch_bend, int* le
  * @param params 출력할 파라미터 구조체
  */
 void debug_print_parameters(const UTAUParameters* params);
+
+/**
+ * @brief 파일 경로 유효성 검사
+ *
+ * 입력 및 출력 파일 경로의 유효성을 검사합니다.
+ *
+ * @param input_path 입력 파일 경로
+ * @param output_path 출력 파일 경로
+ * @return true 유효함, false 유효하지 않음
+ */
+bool validate_file_paths(const char* input_path, const char* output_path);
+
+/**
+ * @brief 음성 파라미터 범위 검사
+ *
+ * 피치, 볼륨, 벨로시티 등 음성 파라미터의 범위를 검사합니다.
+ *
+ * @param params 검사할 파라미터 구조체
+ * @return true 유효함, false 유효하지 않음
+ */
+bool validate_voice_parameters(const UTAUParameters* params);
+
+/**
+ * @brief 오디오 설정 유효성 검사
+ *
+ * 샘플링 레이트, 비트 깊이 등 오디오 설정을 검사합니다.
+ *
+ * @param params 검사할 파라미터 구조체
+ * @return true 유효함, false 유효하지 않음
+ */
+bool validate_audio_settings(const UTAUParameters* params);
 
 #ifdef __cplusplus
 }
