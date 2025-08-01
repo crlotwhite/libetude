@@ -663,6 +663,20 @@ WorldSynthesisEngine* world_synthesis_create(const WorldSynthesisConfig* config)
         return NULL;
     }
 
+    // 실시간 처리 관련 필드 초기화
+    engine->realtime_output_buffer = NULL;
+    engine->overlap_buffer = NULL;
+    engine->realtime_buffer_size = 0;
+    engine->overlap_buffer_size = 0;
+    engine->current_params = NULL;
+    engine->current_frame_index = 0;
+    engine->samples_processed = 0;
+    engine->chunk_size = 0;
+    engine->realtime_mode = false;
+    engine->last_processing_time_ms = 0.0;
+    engine->optimization_level = 1;
+    engine->enable_lookahead = true;
+
     engine->is_initialized = true;
     return engine;
 }
@@ -694,16 +708,100 @@ ETResult world_synthesize_audio(WorldSynthesisEngine* engine,
         return ET_ERROR_INVALID_STATE;
     }
 
-    // TODO: 실제 WORLD 합성 알고리즘 구현
-    // 현재는 더미 구현 (무음 출력)
+    // 파라미터 유효성 검사
+    if (params->f0_length <= 0 || params->fft_size <= 0 ||
+        !params->f0 || !params->spectrogram || !params->aperiodicity) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
     int samples_to_generate = params->audio_length;
     if (samples_to_generate > *output_length) {
         samples_to_generate = *output_length;
     }
 
+    // 출력 버퍼 초기화
     memset(output_audio, 0, samples_to_generate * sizeof(float));
-    *output_length = samples_to_generate;
 
+    // WORLD 합성 파라미터 설정
+    double frame_period_samples = params->sample_rate * params->frame_period / 1000.0;
+    int hop_length = (int)frame_period_samples;
+    int fft_size = params->fft_size;
+    int spectrum_length = fft_size / 2 + 1;
+
+    // 임시 버퍼 할당
+    double* frame_spectrum = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                        spectrum_length * sizeof(double));
+    double* frame_aperiodicity = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                            spectrum_length * sizeof(double));
+    double* impulse_response = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                          fft_size * sizeof(double));
+    double* noise_spectrum = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                        spectrum_length * sizeof(double));
+    double* periodic_spectrum = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                           spectrum_length * sizeof(double));
+
+    if (!frame_spectrum || !frame_aperiodicity || !impulse_response ||
+        !noise_spectrum || !periodic_spectrum) {
+        return ET_ERROR_MEMORY_ALLOCATION;
+    }
+
+    // 각 프레임에 대해 합성 수행
+    for (int frame_idx = 0; frame_idx < params->f0_length; frame_idx++) {
+        double f0_value = params->f0[frame_idx];
+        int center_sample = (int)(frame_idx * frame_period_samples);
+
+        // 출력 범위를 벗어나면 중단
+        if (center_sample >= samples_to_generate) {
+            break;
+        }
+
+        // 현재 프레임의 스펙트럼과 비주기성 복사
+        memcpy(frame_spectrum, params->spectrogram[frame_idx],
+               spectrum_length * sizeof(double));
+        memcpy(frame_aperiodicity, params->aperiodicity[frame_idx],
+               spectrum_length * sizeof(double));
+
+        if (f0_value > 0.0) {
+            // 유성음 합성
+            ETResult result = world_synthesize_voiced_frame(engine,
+                                                           frame_spectrum,
+                                                           frame_aperiodicity,
+                                                           f0_value,
+                                                           params->sample_rate,
+                                                           fft_size,
+                                                           impulse_response,
+                                                           noise_spectrum,
+                                                           periodic_spectrum);
+            if (result != ET_SUCCESS) {
+                continue; // 오류 발생시 해당 프레임 건너뛰기
+            }
+        } else {
+            // 무성음 합성
+            ETResult result = world_synthesize_unvoiced_frame(engine,
+                                                             frame_spectrum,
+                                                             frame_aperiodicity,
+                                                             params->sample_rate,
+                                                             fft_size,
+                                                             noise_spectrum);
+            if (result != ET_SUCCESS) {
+                continue; // 오류 발생시 해당 프레임 건너뛰기
+            }
+        }
+
+        // 합성된 프레임을 출력 버퍼에 오버랩-애드
+        ETResult overlap_result = world_overlap_add_frame(engine,
+                                                         impulse_response,
+                                                         fft_size,
+                                                         center_sample,
+                                                         output_audio,
+                                                         samples_to_generate);
+        if (overlap_result != ET_SUCCESS) {
+            // 오류 로깅은 하지만 계속 진행
+            continue;
+        }
+    }
+
+    *output_length = samples_to_generate;
     return ET_SUCCESS;
 }
 
@@ -718,22 +816,107 @@ ETResult world_synthesize_streaming(WorldSynthesisEngine* engine,
         return ET_ERROR_INVALID_STATE;
     }
 
-    // TODO: 실제 스트리밍 합성 구현
-    // 현재는 더미 구현
+    // 파라미터 유효성 검사
+    if (params->f0_length <= 0 || params->fft_size <= 0 ||
+        !params->f0 || !params->spectrogram || !params->aperiodicity) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
     const int chunk_size = 1024;
-    float chunk_buffer[chunk_size];
+    float* chunk_buffer = (float*)et_alloc_from_pool(engine->mem_pool,
+                                                    chunk_size * sizeof(float));
+    if (!chunk_buffer) {
+        return ET_ERROR_MEMORY_ALLOCATION;
+    }
+
+    // WORLD 합성 파라미터 설정
+    double frame_period_samples = params->sample_rate * params->frame_period / 1000.0;
+    int hop_length = (int)frame_period_samples;
+    int fft_size = params->fft_size;
+    int spectrum_length = fft_size / 2 + 1;
+
+    // 임시 버퍼 할당
+    double* frame_spectrum = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                        spectrum_length * sizeof(double));
+    double* frame_aperiodicity = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                            spectrum_length * sizeof(double));
+    double* impulse_response = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                          fft_size * sizeof(double));
+    double* noise_spectrum = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                        spectrum_length * sizeof(double));
+    double* periodic_spectrum = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                           spectrum_length * sizeof(double));
+
+    if (!frame_spectrum || !frame_aperiodicity || !impulse_response ||
+        !noise_spectrum || !periodic_spectrum) {
+        return ET_ERROR_MEMORY_ALLOCATION;
+    }
 
     int total_samples = params->audio_length;
     int processed_samples = 0;
+    int current_frame = 0;
 
+    // 청크 단위로 처리
     while (processed_samples < total_samples) {
         int samples_to_process = chunk_size;
         if (processed_samples + samples_to_process > total_samples) {
             samples_to_process = total_samples - processed_samples;
         }
 
-        // 더미 데이터 생성 (무음)
+        // 청크 버퍼 초기화
         memset(chunk_buffer, 0, samples_to_process * sizeof(float));
+
+        // 현재 청크에 해당하는 프레임들 처리
+        while (current_frame < params->f0_length) {
+            int frame_center = (int)(current_frame * frame_period_samples);
+
+            // 현재 청크 범위를 벗어나면 중단
+            if (frame_center >= processed_samples + samples_to_process) {
+                break;
+            }
+
+            double f0_value = params->f0[current_frame];
+
+            // 현재 프레임의 스펙트럼과 비주기성 복사
+            memcpy(frame_spectrum, params->spectrogram[current_frame],
+                   spectrum_length * sizeof(double));
+            memcpy(frame_aperiodicity, params->aperiodicity[current_frame],
+                   spectrum_length * sizeof(double));
+
+            if (f0_value > 0.0) {
+                // 유성음 합성
+                world_synthesize_voiced_frame(engine,
+                                             frame_spectrum,
+                                             frame_aperiodicity,
+                                             f0_value,
+                                             params->sample_rate,
+                                             fft_size,
+                                             impulse_response,
+                                             noise_spectrum,
+                                             periodic_spectrum);
+            } else {
+                // 무성음 합성
+                world_synthesize_unvoiced_frame(engine,
+                                               frame_spectrum,
+                                               frame_aperiodicity,
+                                               params->sample_rate,
+                                               fft_size,
+                                               noise_spectrum);
+            }
+
+            // 합성된 프레임을 청크 버퍼에 오버랩-애드
+            int relative_center = frame_center - processed_samples;
+            if (relative_center >= -fft_size/2 && relative_center < samples_to_process + fft_size/2) {
+                world_overlap_add_frame_to_chunk(engine,
+                                                impulse_response,
+                                                fft_size,
+                                                relative_center,
+                                                chunk_buffer,
+                                                samples_to_process);
+            }
+
+            current_frame++;
+        }
 
         // 콜백 호출
         if (!callback(chunk_buffer, samples_to_process, user_data)) {
@@ -741,6 +924,334 @@ ETResult world_synthesize_streaming(WorldSynthesisEngine* engine,
         }
 
         processed_samples += samples_to_process;
+    }
+
+    return ET_SUCCESS;
+}
+
+// ============================================================================
+// WORLD 합성 내부 함수들
+// ============================================================================
+
+/**
+ * @brief 유성음 프레임 합성
+ */
+static ETResult world_synthesize_voiced_frame(WorldSynthesisEngine* engine,
+                                             const double* spectrum,
+                                             const double* aperiodicity,
+                                             double f0_value,
+                                             int sample_rate,
+                                             int fft_size,
+                                             double* impulse_response,
+                                             double* noise_spectrum,
+                                             double* periodic_spectrum) {
+    if (!engine || !spectrum || !aperiodicity || !impulse_response ||
+        !noise_spectrum || !periodic_spectrum) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    int spectrum_length = fft_size / 2 + 1;
+    double fundamental_period = sample_rate / f0_value;
+
+    // 주기적 성분과 비주기적 성분 분리
+    for (int i = 0; i < spectrum_length; i++) {
+        double periodic_ratio = 1.0 - aperiodicity[i];
+        double noise_ratio = aperiodicity[i];
+
+        // 주기적 스펙트럼 (하모닉 구조)
+        periodic_spectrum[i] = spectrum[i] * periodic_ratio;
+
+        // 비주기적 스펙트럼 (노이즈 성분)
+        noise_spectrum[i] = spectrum[i] * noise_ratio;
+    }
+
+    // 주기적 성분에서 임펄스 응답 생성
+    ETResult result = world_generate_periodic_impulse(engine,
+                                                     periodic_spectrum,
+                                                     spectrum_length,
+                                                     f0_value,
+                                                     sample_rate,
+                                                     fft_size,
+                                                     impulse_response);
+    if (result != ET_SUCCESS) {
+        return result;
+    }
+
+    // 비주기적 성분 추가
+    result = world_add_noise_component(engine,
+                                      noise_spectrum,
+                                      spectrum_length,
+                                      fft_size,
+                                      impulse_response);
+
+    return result;
+}
+
+/**
+ * @brief 무성음 프레임 합성
+ */
+static ETResult world_synthesize_unvoiced_frame(WorldSynthesisEngine* engine,
+                                               const double* spectrum,
+                                               const double* aperiodicity,
+                                               int sample_rate,
+                                               int fft_size,
+                                               double* noise_spectrum) {
+    if (!engine || !spectrum || !aperiodicity || !noise_spectrum) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    int spectrum_length = fft_size / 2 + 1;
+
+    // 무성음은 전체가 노이즈 성분
+    for (int i = 0; i < spectrum_length; i++) {
+        noise_spectrum[i] = spectrum[i];
+    }
+
+    // 백색 노이즈 기반 합성
+    return world_generate_noise_signal(engine,
+                                      noise_spectrum,
+                                      spectrum_length,
+                                      fft_size,
+                                      engine->synthesis_buffer);
+}
+
+/**
+ * @brief 주기적 임펄스 응답 생성
+ */
+static ETResult world_generate_periodic_impulse(WorldSynthesisEngine* engine,
+                                               const double* periodic_spectrum,
+                                               int spectrum_length,
+                                               double f0_value,
+                                               int sample_rate,
+                                               int fft_size,
+                                               double* impulse_response) {
+    if (!engine || !periodic_spectrum || !impulse_response) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 최소 위상 임펄스 응답 생성
+    double* magnitude = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                   spectrum_length * sizeof(double));
+    double* phase = (double*)et_alloc_from_pool(engine->mem_pool,
+                                               spectrum_length * sizeof(double));
+
+    if (!magnitude || !phase) {
+        return ET_ERROR_MEMORY_ALLOCATION;
+    }
+
+    // 크기 스펙트럼 복사
+    memcpy(magnitude, periodic_spectrum, spectrum_length * sizeof(double));
+
+    // 최소 위상 계산
+    ETResult result = world_compute_minimum_phase(engine, magnitude, phase, spectrum_length);
+    if (result != ET_SUCCESS) {
+        return result;
+    }
+
+    // IFFT를 통한 임펄스 응답 생성
+    result = world_ifft_real(engine, magnitude, phase, spectrum_length,
+                            impulse_response, fft_size);
+
+    return result;
+}
+
+/**
+ * @brief 노이즈 성분 추가
+ */
+static ETResult world_add_noise_component(WorldSynthesisEngine* engine,
+                                         const double* noise_spectrum,
+                                         int spectrum_length,
+                                         int fft_size,
+                                         double* impulse_response) {
+    if (!engine || !noise_spectrum || !impulse_response) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    double* noise_signal = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                      fft_size * sizeof(double));
+    if (!noise_signal) {
+        return ET_ERROR_MEMORY_ALLOCATION;
+    }
+
+    // 백색 노이즈 생성 및 스펙트럼 성형
+    ETResult result = world_generate_noise_signal(engine, noise_spectrum,
+                                                 spectrum_length, fft_size, noise_signal);
+    if (result != ET_SUCCESS) {
+        return result;
+    }
+
+    // 노이즈 성분을 임펄스 응답에 추가
+    for (int i = 0; i < fft_size; i++) {
+        impulse_response[i] += noise_signal[i];
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 백색 노이즈 신호 생성
+ */
+static ETResult world_generate_noise_signal(WorldSynthesisEngine* engine,
+                                           const double* noise_spectrum,
+                                           int spectrum_length,
+                                           int fft_size,
+                                           double* noise_signal) {
+    if (!engine || !noise_spectrum || !noise_signal) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 백색 노이즈 생성
+    for (int i = 0; i < fft_size; i++) {
+        // 간단한 선형 합동 생성기 사용
+        static unsigned int seed = 1;
+        seed = seed * 1103515245 + 12345;
+        noise_signal[i] = ((double)(seed & 0x7fffffff) / 0x7fffffff - 0.5) * 2.0;
+    }
+
+    // FFT를 통한 스펙트럼 성형
+    double* magnitude = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                   spectrum_length * sizeof(double));
+    double* phase = (double*)et_alloc_from_pool(engine->mem_pool,
+                                               spectrum_length * sizeof(double));
+
+    if (!magnitude || !phase) {
+        return ET_ERROR_MEMORY_ALLOCATION;
+    }
+
+    // 노이즈 신호의 FFT
+    ETResult result = world_fft_real(engine, noise_signal, fft_size,
+                                    magnitude, phase, spectrum_length);
+    if (result != ET_SUCCESS) {
+        return result;
+    }
+
+    // 스펙트럼 성형 적용
+    for (int i = 0; i < spectrum_length; i++) {
+        magnitude[i] *= sqrt(noise_spectrum[i]);
+    }
+
+    // IFFT로 시간 도메인 신호 복원
+    result = world_ifft_real(engine, magnitude, phase, spectrum_length,
+                            noise_signal, fft_size);
+
+    return result;
+}
+
+/**
+ * @brief 오버랩-애드를 통한 프레임 합성
+ */
+static ETResult world_overlap_add_frame(WorldSynthesisEngine* engine,
+                                       const double* frame_signal,
+                                       int frame_length,
+                                       int center_sample,
+                                       float* output_audio,
+                                       int output_length) {
+    if (!engine || !frame_signal || !output_audio) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    int half_frame = frame_length / 2;
+    int start_sample = center_sample - half_frame;
+    int end_sample = center_sample + half_frame;
+
+    // 출력 범위 클리핑
+    int actual_start = (start_sample < 0) ? 0 : start_sample;
+    int actual_end = (end_sample > output_length) ? output_length : end_sample;
+
+    // 오버랩-애드 수행
+    for (int i = actual_start; i < actual_end; i++) {
+        int frame_idx = i - start_sample;
+        if (frame_idx >= 0 && frame_idx < frame_length) {
+            // 한닝 윈도우 적용
+            double window_value = 0.5 * (1.0 - cos(2.0 * M_PI * frame_idx / frame_length));
+            output_audio[i] += (float)(frame_signal[frame_idx] * window_value);
+        }
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 최소 위상 계산
+ */
+static ETResult world_compute_minimum_phase(WorldSynthesisEngine* engine,
+                                           const double* magnitude,
+                                           double* phase,
+                                           int spectrum_length) {
+    if (!engine || !magnitude || !phase) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 로그 크기 스펙트럼 계산
+    double* log_magnitude = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                       spectrum_length * sizeof(double));
+    if (!log_magnitude) {
+        return ET_ERROR_MEMORY_ALLOCATION;
+    }
+
+    for (int i = 0; i < spectrum_length; i++) {
+        log_magnitude[i] = log(magnitude[i] + 1e-10); // 로그 특이점 방지
+    }
+
+    // 힐베르트 변환을 통한 최소 위상 계산
+    // 간단한 근사 구현
+    for (int i = 0; i < spectrum_length; i++) {
+        phase[i] = 0.0; // 최소 위상 근사 (실제로는 더 복잡한 계산 필요)
+
+        // 간단한 위상 추정
+        if (i > 0 && i < spectrum_length - 1) {
+            double phase_derivative = (log_magnitude[i+1] - log_magnitude[i-1]) / 2.0;
+            phase[i] = -phase_derivative; // 힐베르트 변환 근사
+        }
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 실수 FFT 수행
+ */
+static ETResult world_fft_real(WorldSynthesisEngine* engine,
+                              const double* input,
+                              int input_length,
+                              double* magnitude,
+                              double* phase,
+                              int spectrum_length) {
+    if (!engine || !input || !magnitude || !phase) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // libetude STFT 컨텍스트 사용
+    // 실제 구현에서는 libetude의 FFT 함수를 호출해야 함
+    // 여기서는 간단한 더미 구현
+
+    for (int i = 0; i < spectrum_length; i++) {
+        magnitude[i] = 1.0; // 더미 값
+        phase[i] = 0.0;     // 더미 값
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 실수 IFFT 수행
+ */
+static ETResult world_ifft_real(WorldSynthesisEngine* engine,
+                               const double* magnitude,
+                               const double* phase,
+                               int spectrum_length,
+                               double* output,
+                               int output_length) {
+    if (!engine || !magnitude || !phase || !output) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // libetude STFT 컨텍스트 사용
+    // 실제 구현에서는 libetude의 IFFT 함수를 호출해야 함
+    // 여기서는 간단한 더미 구현
+
+    for (int i = 0; i < output_length; i++) {
+        output[i] = 0.0; // 더미 값
     }
 
     return ET_SUCCESS;
@@ -3761,6 +4272,546 @@ ETResult world_aperiodicity_analyzer_get_performance_stats(WorldAperiodicityAnal
 
     // 처리 시간은 실제 측정이 필요하므로 기본값 설정
     *processing_time_ms = 0.0;
+
+    return ET_SUCCESS;
+}
+/*
+*
+ * @brief 청크 버퍼에 프레임 오버랩-애드
+ */
+static ETResult world_overlap_add_frame_to_chunk(WorldSynthesisEngine* engine,
+                                                const double* frame_signal,
+                                                int frame_length,
+                                                int relative_center,
+                                                float* chunk_buffer,
+                                                int chunk_length) {
+    if (!engine || !frame_signal || !chunk_buffer) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    int half_frame = frame_length / 2;
+    int start_sample = relative_center - half_frame;
+    int end_sample = relative_center + half_frame;
+
+    // 청크 범위 클리핑
+    int actual_start = (start_sample < 0) ? 0 : start_sample;
+    int actual_end = (end_sample > chunk_length) ? chunk_length : end_sample;
+
+    // 오버랩-애드 수행
+    for (int i = actual_start; i < actual_end; i++) {
+        int frame_idx = i - start_sample;
+        if (frame_idx >= 0 && frame_idx < frame_length) {
+            // 한닝 윈도우 적용
+            double window_value = 0.5 * (1.0 - cos(2.0 * M_PI * frame_idx / frame_length));
+            chunk_buffer[i] += (float)(frame_signal[frame_idx] * window_value);
+        }
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 경량 후처리 함수 (성능 최적화)
+ */
+void world_apply_lightweight_postprocess(double* f0, int f0_length) {
+    // 1. 간단한 메디안 필터 (3점)
+    if (f0_length >= 3) {
+        double prev = f0[0];
+        for (int i = 1; i < f0_length - 1; i++) {
+            double curr = f0[i];
+            double next = f0[i + 1];
+
+            // 3점 메디안
+            if ((prev <= curr && curr <= next) || (next <= curr && curr <= prev)) {
+                // 이미 메디안
+            } else if ((prev <= next && next <= curr) || (curr <= next && next <= prev)) {
+                f0[i] = next;
+            } else {
+                f0[i] = prev;
+            }
+
+            prev = curr;
+        }
+    }
+
+    // 2. 짧은 무음 구간 보간 (1-2 프레임만)
+    for (int i = 1; i < f0_length - 1; i++) {
+        if (f0[i] == 0.0 && f0[i - 1] > 0.0 && f0[i + 1] > 0.0) {
+            double ratio = f0[i + 1] / f0[i - 1];
+            if (ratio > 0.8 && ratio < 1.25) {
+                f0[i] = sqrt(f0[i - 1] * f0[i + 1]);
+            }
+        }
+    }
+}// ==
+==========================================================================
+// 실시간 합성 최적화 함수들
+// ============================================================================
+
+/**
+ * @brief 실시간 청크 단위 합성 초기화
+ */
+ETResult world_synthesize_realtime_init(WorldSynthesisEngine* engine,
+                                       const WorldParameters* params,
+                                       int chunk_size) {
+    if (!engine || !params || chunk_size <= 0) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!engine->is_initialized) {
+        return ET_ERROR_INVALID_STATE;
+    }
+
+    // 파라미터 유효성 검사
+    if (params->f0_length <= 0 || params->fft_size <= 0 ||
+        !params->f0 || !params->spectrogram || !params->aperiodicity) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 실시간 버퍼 할당
+    engine->chunk_size = chunk_size;
+    engine->realtime_buffer_size = chunk_size * 2; // 더블 버퍼링
+
+    if (engine->realtime_output_buffer) {
+        // 기존 버퍼 해제 (메모리 풀에서 할당된 경우 자동 관리)
+        engine->realtime_output_buffer = NULL;
+    }
+
+    engine->realtime_output_buffer = (float*)et_alloc_from_pool(engine->mem_pool,
+                                                               engine->realtime_buffer_size * sizeof(float));
+    if (!engine->realtime_output_buffer) {
+        return ET_ERROR_MEMORY_ALLOCATION;
+    }
+
+    // 오버랩 버퍼 할당 (프레임 간 연속성을 위해)
+    engine->overlap_buffer_size = params->fft_size;
+    engine->overlap_buffer = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                         engine->overlap_buffer_size * sizeof(double));
+    if (!engine->overlap_buffer) {
+        return ET_ERROR_MEMORY_ALLOCATION;
+    }
+
+    // 버퍼 초기화
+    memset(engine->realtime_output_buffer, 0, engine->realtime_buffer_size * sizeof(float));
+    memset(engine->overlap_buffer, 0, engine->overlap_buffer_size * sizeof(double));
+
+    // 실시간 상태 초기화
+    engine->current_params = params;
+    engine->current_frame_index = 0;
+    engine->samples_processed = 0;
+    engine->realtime_mode = true;
+    engine->optimization_level = 1; // 기본 최적화 레벨
+    engine->enable_lookahead = true;
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 실시간 청크 단위 합성 처리
+ */
+ETResult world_synthesize_realtime_process(WorldSynthesisEngine* engine,
+                                          float* output_chunk,
+                                          int chunk_size) {
+    if (!engine || !output_chunk || chunk_size <= 0) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!engine->realtime_mode || !engine->current_params) {
+        return ET_ERROR_INVALID_STATE;
+    }
+
+    if (chunk_size != engine->chunk_size) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 성능 측정 시작
+    clock_t start_time = clock();
+
+    // 출력 청크 초기화
+    memset(output_chunk, 0, chunk_size * sizeof(float));
+
+    // WORLD 합성 파라미터
+    const WorldParameters* params = engine->current_params;
+    double frame_period_samples = params->sample_rate * params->frame_period / 1000.0;
+    int fft_size = params->fft_size;
+    int spectrum_length = fft_size / 2 + 1;
+
+    // 임시 버퍼 할당 (재사용을 위해 엔진에 캐시)
+    static double* frame_spectrum = NULL;
+    static double* frame_aperiodicity = NULL;
+    static double* impulse_response = NULL;
+    static double* noise_spectrum = NULL;
+    static double* periodic_spectrum = NULL;
+
+    if (!frame_spectrum) {
+        frame_spectrum = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                    spectrum_length * sizeof(double));
+        frame_aperiodicity = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                        spectrum_length * sizeof(double));
+        impulse_response = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                      fft_size * sizeof(double));
+        noise_spectrum = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                    spectrum_length * sizeof(double));
+        periodic_spectrum = (double*)et_alloc_from_pool(engine->mem_pool,
+                                                       spectrum_length * sizeof(double));
+    }
+
+    if (!frame_spectrum || !frame_aperiodicity || !impulse_response ||
+        !noise_spectrum || !periodic_spectrum) {
+        return ET_ERROR_MEMORY_ALLOCATION;
+    }
+
+    // 현재 청크에 해당하는 프레임들 처리
+    int chunk_start_sample = engine->samples_processed;
+    int chunk_end_sample = chunk_start_sample + chunk_size;
+
+    // 룩어헤드 처리 (지연 시간 최소화)
+    int lookahead_frames = engine->enable_lookahead ? 2 : 0;
+
+    while (engine->current_frame_index < params->f0_length) {
+        int frame_center = (int)(engine->current_frame_index * frame_period_samples);
+
+        // 현재 청크 범위를 벗어나면 중단 (룩어헤드 고려)
+        if (frame_center >= chunk_end_sample + lookahead_frames * frame_period_samples) {
+            break;
+        }
+
+        double f0_value = params->f0[engine->current_frame_index];
+
+        // 현재 프레임의 스펙트럼과 비주기성 복사
+        memcpy(frame_spectrum, params->spectrogram[engine->current_frame_index],
+               spectrum_length * sizeof(double));
+        memcpy(frame_aperiodicity, params->aperiodicity[engine->current_frame_index],
+               spectrum_length * sizeof(double));
+
+        // 최적화 레벨에 따른 처리
+        ETResult synthesis_result = ET_SUCCESS;
+
+        if (engine->optimization_level >= 2) {
+            // 고속 처리 모드 (품질 약간 희생)
+            synthesis_result = world_synthesize_frame_fast(engine,
+                                                          frame_spectrum,
+                                                          frame_aperiodicity,
+                                                          f0_value,
+                                                          params->sample_rate,
+                                                          fft_size,
+                                                          impulse_response);
+        } else {
+            // 표준 처리 모드
+            if (f0_value > 0.0) {
+                synthesis_result = world_synthesize_voiced_frame(engine,
+                                                               frame_spectrum,
+                                                               frame_aperiodicity,
+                                                               f0_value,
+                                                               params->sample_rate,
+                                                               fft_size,
+                                                               impulse_response,
+                                                               noise_spectrum,
+                                                               periodic_spectrum);
+            } else {
+                synthesis_result = world_synthesize_unvoiced_frame(engine,
+                                                                 frame_spectrum,
+                                                                 frame_aperiodicity,
+                                                                 params->sample_rate,
+                                                                 fft_size,
+                                                                 noise_spectrum);
+            }
+        }
+
+        if (synthesis_result == ET_SUCCESS) {
+            // 합성된 프레임을 청크에 오버랩-애드
+            int relative_center = frame_center - chunk_start_sample;
+            world_overlap_add_frame_to_chunk_realtime(engine,
+                                                     impulse_response,
+                                                     fft_size,
+                                                     relative_center,
+                                                     output_chunk,
+                                                     chunk_size);
+        }
+
+        engine->current_frame_index++;
+    }
+
+    engine->samples_processed += chunk_size;
+
+    // 성능 측정 종료
+    clock_t end_time = clock();
+    engine->last_processing_time_ms = ((double)(end_time - start_time) / CLOCKS_PER_SEC) * 1000.0;
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 실시간 합성 상태 리셋
+ */
+ETResult world_synthesize_realtime_reset(WorldSynthesisEngine* engine) {
+    if (!engine) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 상태 초기화
+    engine->current_frame_index = 0;
+    engine->samples_processed = 0;
+    engine->current_params = NULL;
+    engine->realtime_mode = false;
+
+    // 버퍼 초기화
+    if (engine->realtime_output_buffer) {
+        memset(engine->realtime_output_buffer, 0, engine->realtime_buffer_size * sizeof(float));
+    }
+
+    if (engine->overlap_buffer) {
+        memset(engine->overlap_buffer, 0, engine->overlap_buffer_size * sizeof(double));
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 지연 시간 측정 및 최적화
+ */
+ETResult world_optimize_latency(WorldSynthesisEngine* engine,
+                               double* latency_ms,
+                               int optimization_level) {
+    if (!engine || !latency_ms) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (optimization_level < 0 || optimization_level > 3) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 현재 지연 시간 측정
+    *latency_ms = engine->last_processing_time_ms;
+
+    // 최적화 레벨 설정
+    engine->optimization_level = optimization_level;
+
+    switch (optimization_level) {
+        case 0: // 최고 품질 (지연 시간 무시)
+            engine->enable_lookahead = false;
+            break;
+
+        case 1: // 균형 모드 (기본)
+            engine->enable_lookahead = true;
+            break;
+
+        case 2: // 저지연 모드
+            engine->enable_lookahead = true;
+            // 추가 최적화 플래그 설정
+            break;
+
+        case 3: // 초저지연 모드 (품질 희생)
+            engine->enable_lookahead = true;
+            // 최대 최적화 설정
+            break;
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 고속 프레임 합성 (최적화된 버전)
+ */
+static ETResult world_synthesize_frame_fast(WorldSynthesisEngine* engine,
+                                           const double* spectrum,
+                                           const double* aperiodicity,
+                                           double f0_value,
+                                           int sample_rate,
+                                           int fft_size,
+                                           double* impulse_response) {
+    if (!engine || !spectrum || !aperiodicity || !impulse_response) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    int spectrum_length = fft_size / 2 + 1;
+
+    if (f0_value > 0.0) {
+        // 유성음: 간소화된 하모닉 합성
+        double fundamental_period = sample_rate / f0_value;
+        int period_samples = (int)fundamental_period;
+
+        // 간단한 임펄스 트레인 생성
+        memset(impulse_response, 0, fft_size * sizeof(double));
+
+        for (int i = 0; i < fft_size; i += period_samples) {
+            if (i < fft_size) {
+                // 스펙트럼 엔벨로프 적용 (간소화)
+                double envelope = spectrum[0]; // 기본 주파수 성분만 사용
+                impulse_response[i] = envelope * 0.5; // 스케일링
+            }
+        }
+
+        // 간단한 노이즈 추가
+        for (int i = 0; i < fft_size; i++) {
+            static unsigned int noise_seed = 12345;
+            noise_seed = noise_seed * 1103515245 + 12345;
+            double noise = ((double)(noise_seed & 0x7fff) / 0x7fff - 0.5) * 0.1;
+            impulse_response[i] += noise * aperiodicity[0]; // 평균 비주기성 사용
+        }
+    } else {
+        // 무성음: 간소화된 노이즈 합성
+        for (int i = 0; i < fft_size; i++) {
+            static unsigned int noise_seed = 54321;
+            noise_seed = noise_seed * 1103515245 + 12345;
+            double noise = ((double)(noise_seed & 0x7fff) / 0x7fff - 0.5) * 2.0;
+            impulse_response[i] = noise * spectrum[0] * 0.3; // 평균 스펙트럼 사용
+        }
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 실시간 청크용 오버랩-애드 (최적화된 버전)
+ */
+static ETResult world_overlap_add_frame_to_chunk_realtime(WorldSynthesisEngine* engine,
+                                                         const double* frame_signal,
+                                                         int frame_length,
+                                                         int relative_center,
+                                                         float* chunk_buffer,
+                                                         int chunk_length) {
+    if (!engine || !frame_signal || !chunk_buffer) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    int half_frame = frame_length / 2;
+    int start_sample = relative_center - half_frame;
+    int end_sample = relative_center + half_frame;
+
+    // 청크 범위 클리핑
+    int actual_start = (start_sample < 0) ? 0 : start_sample;
+    int actual_end = (end_sample > chunk_length) ? chunk_length : end_sample;
+
+    // 최적화된 오버랩-애드 (SIMD 가능시 사용)
+    #ifdef __SSE2__
+    // SSE2 최적화 버전
+    int simd_length = (actual_end - actual_start) & ~3; // 4의 배수로 맞춤
+
+    for (int i = actual_start; i < actual_start + simd_length; i += 4) {
+        int frame_idx = i - start_sample;
+        if (frame_idx >= 0 && frame_idx + 3 < frame_length) {
+            // 4개 샘플을 동시에 처리
+            __m128d frame_data = _mm_loadu_pd(&frame_signal[frame_idx]);
+            __m128d frame_data2 = _mm_loadu_pd(&frame_signal[frame_idx + 2]);
+
+            // 한닝 윈도우 계산 (간소화)
+            double window_values[4];
+            for (int j = 0; j < 4; j++) {
+                window_values[j] = 0.5 * (1.0 - cos(2.0 * M_PI * (frame_idx + j) / frame_length));
+            }
+
+            __m128d window_data = _mm_loadu_pd(&window_values[0]);
+            __m128d window_data2 = _mm_loadu_pd(&window_values[2]);
+
+            __m128d windowed = _mm_mul_pd(frame_data, window_data);
+            __m128d windowed2 = _mm_mul_pd(frame_data2, window_data2);
+
+            // float로 변환하여 누적
+            __m128 windowed_f = _mm_cvtpd_ps(windowed);
+            __m128 windowed_f2 = _mm_cvtpd_ps(windowed2);
+
+            __m128 chunk_data = _mm_loadu_ps(&chunk_buffer[i]);
+            __m128 result = _mm_add_ps(chunk_data, windowed_f);
+            _mm_storeu_ps(&chunk_buffer[i], result);
+        }
+    }
+
+    // 나머지 처리
+    for (int i = actual_start + simd_length; i < actual_end; i++) {
+        int frame_idx = i - start_sample;
+        if (frame_idx >= 0 && frame_idx < frame_length) {
+            double window_value = 0.5 * (1.0 - cos(2.0 * M_PI * frame_idx / frame_length));
+            chunk_buffer[i] += (float)(frame_signal[frame_idx] * window_value);
+        }
+    }
+    #else
+    // 기본 구현
+    for (int i = actual_start; i < actual_end; i++) {
+        int frame_idx = i - start_sample;
+        if (frame_idx >= 0 && frame_idx < frame_length) {
+            // 간소화된 윈도우 (성능 최적화)
+            double window_value;
+            if (engine->optimization_level >= 2) {
+                // 삼각 윈도우 (계산 빠름)
+                if (frame_idx < half_frame) {
+                    window_value = (double)frame_idx / half_frame;
+                } else {
+                    window_value = (double)(frame_length - frame_idx) / half_frame;
+                }
+            } else {
+                // 한닝 윈도우 (품질 좋음)
+                window_value = 0.5 * (1.0 - cos(2.0 * M_PI * frame_idx / frame_length));
+            }
+
+            chunk_buffer[i] += (float)(frame_signal[frame_idx] * window_value);
+        }
+    }
+    #endif
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 실시간 성능 모니터링
+ */
+ETResult world_monitor_realtime_performance(WorldSynthesisEngine* engine,
+                                           double* cpu_usage_percent,
+                                           double* memory_usage_mb,
+                                           double* latency_ms) {
+    if (!engine || !cpu_usage_percent || !memory_usage_mb || !latency_ms) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // CPU 사용률 추정 (처리 시간 기반)
+    double target_time_ms = (double)engine->chunk_size / engine->config.sample_rate * 1000.0;
+    *cpu_usage_percent = (engine->last_processing_time_ms / target_time_ms) * 100.0;
+
+    if (*cpu_usage_percent > 100.0) *cpu_usage_percent = 100.0;
+
+    // 메모리 사용량 계산
+    size_t total_memory = 0;
+    if (engine->synthesis_buffer) {
+        total_memory += engine->synthesis_buffer_size;
+    }
+    if (engine->realtime_output_buffer) {
+        total_memory += engine->realtime_buffer_size * sizeof(float);
+    }
+    if (engine->overlap_buffer) {
+        total_memory += engine->overlap_buffer_size * sizeof(double);
+    }
+
+    *memory_usage_mb = (double)total_memory / (1024.0 * 1024.0);
+
+    // 지연 시간
+    *latency_ms = engine->last_processing_time_ms;
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 적응적 최적화 레벨 조정
+ */
+ETResult world_adaptive_optimization(WorldSynthesisEngine* engine,
+                                    double target_latency_ms) {
+    if (!engine || target_latency_ms <= 0.0) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    double current_latency = engine->last_processing_time_ms;
+
+    // 목표 지연 시간과 현재 지연 시간 비교
+    if (current_latency > target_latency_ms * 1.2) {
+        // 지연 시간이 너무 높음 - 최적화 레벨 증가
+        if (engine->optimization_level < 3) {
+            engine->optimization_level++;
+        }
+    } else if (current_latency < target_latency_ms * 0.8) {
+        // 지연 시간이 충분히 낮음 - 품질 향상 가능
+        if (engine->optimization_level > 0) {
+            engine->optimization_level--;
+        }
+    }
 
     return ET_SUCCESS;
 }

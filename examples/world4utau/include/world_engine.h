@@ -265,6 +265,24 @@ typedef struct WorldSynthesisEngine {
     double* synthesis_buffer;       /**< 합성용 버퍼 */
     size_t synthesis_buffer_size;   /**< 합성용 버퍼 크기 */
 
+    // 실시간 처리용 버퍼
+    float* realtime_output_buffer;  /**< 실시간 출력 버퍼 */
+    double* overlap_buffer;         /**< 오버랩 버퍼 */
+    int realtime_buffer_size;       /**< 실시간 버퍼 크기 */
+    int overlap_buffer_size;        /**< 오버랩 버퍼 크기 */
+
+    // 실시간 상태 정보
+    const WorldParameters* current_params; /**< 현재 처리 중인 파라미터 */
+    int current_frame_index;        /**< 현재 프레임 인덱스 */
+    int samples_processed;          /**< 처리된 샘플 수 */
+    int chunk_size;                 /**< 청크 크기 */
+    bool realtime_mode;             /**< 실시간 모드 플래그 */
+
+    // 성능 최적화 정보
+    double last_processing_time_ms; /**< 마지막 처리 시간 */
+    int optimization_level;         /**< 최적화 레벨 (0-3) */
+    bool enable_lookahead;          /**< 룩어헤드 처리 활성화 */
+
     // 상태 정보
     bool is_initialized;            /**< 초기화 상태 */
 } WorldSynthesisEngine;
@@ -830,6 +848,50 @@ ETResult world_synthesize_streaming(WorldSynthesisEngine* engine,
                                    const WorldParameters* params,
                                    WorldAudioStreamCallback callback, void* user_data);
 
+/**
+ * @brief 실시간 청크 단위 합성 초기화
+ *
+ * @param engine 합성 엔진
+ * @param params WORLD 파라미터
+ * @param chunk_size 청크 크기 (샘플)
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_synthesize_realtime_init(WorldSynthesisEngine* engine,
+                                       const WorldParameters* params,
+                                       int chunk_size);
+
+/**
+ * @brief 실시간 청크 단위 합성 처리
+ *
+ * @param engine 합성 엔진
+ * @param output_chunk 출력 청크 버퍼
+ * @param chunk_size 청크 크기 (샘플)
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_synthesize_realtime_process(WorldSynthesisEngine* engine,
+                                          float* output_chunk,
+                                          int chunk_size);
+
+/**
+ * @brief 실시간 합성 상태 리셋
+ *
+ * @param engine 합성 엔진
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_synthesize_realtime_reset(WorldSynthesisEngine* engine);
+
+/**
+ * @brief 지연 시간 측정 및 최적화
+ *
+ * @param engine 합성 엔진
+ * @param latency_ms 측정된 지연 시간 (밀리초)
+ * @param optimization_level 최적화 레벨 (0-3)
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_optimize_latency(WorldSynthesisEngine* engine,
+                               double* latency_ms,
+                               int optimization_level);
+
 // ============================================================================
 // 유틸리티 함수들
 // ============================================================================
@@ -936,7 +998,148 @@ void world_harvest_postprocess(double* f0, int f0_length, double f0_floor, doubl
  * @param f0_length F0 배열 길이
  * @return ET_SUCCESS 성공, 그 외 오류 코드
  */
-ETResult world_dio_f0_estimation_optimized(WorldF0Extractor* extractor, const float* audio,
+ETResult world_dio_f0_estimation_optimized(WorldF0Extractor* extractor,
+                                          const float* audio, int audio_length, int sample_rate,
+                                          double* f0, int f0_length);
+
+// ============================================================================
+// WORLD 합성 내부 함수들 (정적 함수 선언)
+// ============================================================================
+
+/**
+ * @brief 유성음 프레임 합성
+ */
+static ETResult world_synthesize_voiced_frame(WorldSynthesisEngine* engine,
+                                             const double* spectrum,
+                                             const double* aperiodicity,
+                                             double f0_value,
+                                             int sample_rate,
+                                             int fft_size,
+                                             double* impulse_response,
+                                             double* noise_spectrum,
+                                             double* periodic_spectrum);
+
+/**
+ * @brief 무성음 프레임 합성
+ */
+static ETResult world_synthesize_unvoiced_frame(WorldSynthesisEngine* engine,
+                                               const double* spectrum,
+                                               const double* aperiodicity,
+                                               int sample_rate,
+                                               int fft_size,
+                                               double* noise_spectrum);
+
+/**
+ * @brief 주기적 임펄스 응답 생성
+ */
+static ETResult world_generate_periodic_impulse(WorldSynthesisEngine* engine,
+                                               const double* periodic_spectrum,
+                                               int spectrum_length,
+                                               double f0_value,
+                                               int sample_rate,
+                                               int fft_size,
+                                               double* impulse_response);
+
+/**
+ * @brief 노이즈 성분 추가
+ */
+static ETResult world_add_noise_component(WorldSynthesisEngine* engine,
+                                         const double* noise_spectrum,
+                                         int spectrum_length,
+                                         int fft_size,
+                                         double* impulse_response);
+
+/**
+ * @brief 백색 노이즈 신호 생성
+ */
+static ETResult world_generate_noise_signal(WorldSynthesisEngine* engine,
+                                           const double* noise_spectrum,
+                                           int spectrum_length,
+                                           int fft_size,
+                                           double* noise_signal);
+
+/**
+ * @brief 오버랩-애드를 통한 프레임 합성
+ */
+static ETResult world_overlap_add_frame(WorldSynthesisEngine* engine,
+                                       const double* frame_signal,
+                                       int frame_length,
+                                       int center_sample,
+                                       float* output_audio,
+                                       int output_length);
+
+/**
+ * @brief 최소 위상 계산
+ */
+static ETResult world_compute_minimum_phase(WorldSynthesisEngine* engine,
+                                           const double* magnitude,
+                                           double* phase,
+                                           int spectrum_length);
+
+/**
+ * @brief 실수 FFT 수행
+ */
+static ETResult world_fft_real(WorldSynthesisEngine* engine,
+                              const double* input,
+                              int input_length,
+                              double* magnitude,
+                              double* phase,
+                              int spectrum_length);
+
+/**
+ * @brief 실수 IFFT 수행
+ */
+static ETResult world_ifft_real(WorldSynthesisEngine* engine,
+                               const double* magnitude,
+                               const double* phase,
+                               int spectrum_length,
+                               double* output,
+                               int output_length);
+
+/**
+ * @brief 청크 버퍼에 프레임 오버랩-애드
+ */
+static ETResult world_overlap_add_frame_to_chunk(WorldSynthesisEngine* engine,
+                                                const double* frame_signal,
+                                                int frame_length,
+                                                int relative_center,
+                                                float* chunk_buffer,
+                                                int chunk_length);
+
+/**
+ * @brief 고속 프레임 합성 (최적화된 버전)
+ */
+static ETResult world_synthesize_frame_fast(WorldSynthesisEngine* engine,
+                                           const double* spectrum,
+                                           const double* aperiodicity,
+                                           double f0_value,
+                                           int sample_rate,
+                                           int fft_size,
+                                           double* impulse_response);
+
+/**
+ * @brief 실시간 청크용 오버랩-애드 (최적화된 버전)
+ */
+static ETResult world_overlap_add_frame_to_chunk_realtime(WorldSynthesisEngine* engine,
+                                                         const double* frame_signal,
+                                                         int frame_length,
+                                                         int relative_center,
+                                                         float* chunk_buffer,
+                                                         int chunk_length);
+
+/**
+ * @brief 실시간 성능 모니터링
+ */
+ETResult world_monitor_realtime_performance(WorldSynthesisEngine* engine,
+                                           double* cpu_usage_percent,
+                                           double* memory_usage_mb,
+                                           double* latency_ms);
+
+/**
+ * @brief 적응적 최적화 레벨 조정
+ */
+ETResult world_adaptive_optimization(WorldSynthesisEngine* engine,
+                                    double target_latency_ms)* extractor, const float* audio,
                                           int audio_length, int sample_rate, double* f0, int f0_length);
 
 /**
