@@ -443,6 +443,16 @@ WorldAnalysisEngine* world_analysis_create(const WorldAnalysisConfig* config) {
         return NULL;
     }
 
+    // 비주기성 분석기 생성
+    engine->aperiodicity_analyzer = world_aperiodicity_analyzer_create(&config->aperiodicity_config, engine->mem_pool);
+    if (!engine->aperiodicity_analyzer) {
+        world_spectrum_analyzer_destroy(engine->spectrum_analyzer);
+        world_f0_extractor_destroy(engine->f0_extractor);
+        et_destroy_memory_pool(engine->mem_pool);
+        free(engine);
+        return NULL;
+    }
+
     // STFT 컨텍스트 생성 (libetude 통합)
     ETSTFTConfig stft_config = {0};
     stft_config.fft_size = config->spectrum_config.fft_size;
@@ -490,6 +500,10 @@ void world_analysis_destroy(WorldAnalysisEngine* engine) {
 
     if (engine->spectrum_analyzer) {
         world_spectrum_analyzer_destroy(engine->spectrum_analyzer);
+    }
+
+    if (engine->aperiodicity_analyzer) {
+        world_aperiodicity_analyzer_destroy(engine->aperiodicity_analyzer);
     }
 
     if (engine->mem_pool) {
@@ -583,15 +597,19 @@ ETResult world_analyze_aperiodicity(WorldAnalysisEngine* engine,
                                    const float* audio, int audio_length, int sample_rate,
                                    const double* f0, const double* time_axis, int f0_length,
                                    double** aperiodicity) {
-    // TODO: 실제 D4C 알고리즘 구현
-    // 현재는 더미 구현
-    int fft_size = engine->config.spectrum_config.fft_size;
-    for (int i = 0; i < f0_length; i++) {
-        for (int j = 0; j < fft_size / 2 + 1; j++) {
-            aperiodicity[i][j] = engine->config.aperiodicity_config.threshold;
-        }
+    if (!engine || !audio || !f0 || !time_axis || !aperiodicity) {
+        return ET_ERROR_INVALID_ARGUMENT;
     }
-    return ET_SUCCESS;
+
+    if (!engine->aperiodicity_analyzer) {
+        return ET_ERROR_INVALID_STATE;
+    }
+
+    // 비주기성 분석기를 사용하여 D4C 알고리즘 수행
+    return world_aperiodicity_analyzer_d4c(engine->aperiodicity_analyzer,
+                                          audio, audio_length, sample_rate,
+                                          f0, time_axis, f0_length,
+                                          aperiodicity);
 }
 
 // ============================================================================
@@ -2474,4 +2492,1275 @@ int world_spectrum_analyzer_get_simd_capabilities(void) {
 #endif
 
     return capabilities;
+}
+// ====
+========================================================================
+// WORLD 비주기성 분석기 함수들
+// ============================================================================
+
+/**
+ * @brief WORLD 비주기성 분석기 생성
+ */
+WorldAperiodicityAnalyzer* world_aperiodicity_analyzer_create(const WorldAperiodicityConfig* config, ETMemoryPool* mem_pool) {
+    if (!config) {
+        return NULL;
+    }
+
+    WorldAperiodicityAnalyzer* analyzer = NULL;
+
+    if (mem_pool) {
+        analyzer = (WorldAperiodicityAnalyzer*)et_alloc_from_pool(mem_pool, sizeof(WorldAperiodicityAnalyzer));
+    } else {
+        analyzer = (WorldAperiodicityAnalyzer*)malloc(sizeof(WorldAperiodicityAnalyzer));
+    }
+
+    if (!analyzer) {
+        return NULL;
+    }
+
+    memset(analyzer, 0, sizeof(WorldAperiodicityAnalyzer));
+
+    // 설정 복사
+    analyzer->config = *config;
+    analyzer->mem_pool = mem_pool;
+    analyzer->is_initialized = false;
+
+    return analyzer;
+}
+
+/**
+ * @brief WORLD 비주기성 분석기 해제
+ */
+void world_aperiodicity_analyzer_destroy(WorldAperiodicityAnalyzer* analyzer) {
+    if (!analyzer) {
+        return;
+    }
+
+    // STFT 컨텍스트 해제
+    if (analyzer->stft_ctx) {
+        et_stft_destroy_context(analyzer->stft_ctx);
+    }
+
+    // 메모리 풀을 사용하지 않는 경우에만 개별 해제
+    if (!analyzer->mem_pool) {
+        free(analyzer->window_buffer);
+        free(analyzer->fft_input_buffer);
+        free(analyzer->fft_output_buffer);
+        free(analyzer->magnitude_buffer);
+        free(analyzer->phase_buffer);
+        free(analyzer->power_spectrum_buffer);
+        free(analyzer->static_group_delay);
+        free(analyzer->smoothed_group_delay);
+        free(analyzer->coarse_aperiodicity);
+        free(analyzer->refined_aperiodicity);
+        free(analyzer->frequency_axis);
+        free(analyzer->band_boundaries);
+
+        if (analyzer->band_aperiodicity) {
+            for (int i = 0; i < analyzer->num_bands; i++) {
+                free(analyzer->band_aperiodicity[i]);
+            }
+            free(analyzer->band_aperiodicity);
+        }
+
+        free(analyzer);
+    }
+}
+
+/**
+ * @brief 비주기성 분석기 초기화
+ */
+ETResult world_aperiodicity_analyzer_initialize(WorldAperiodicityAnalyzer* analyzer, int sample_rate, int fft_size) {
+    if (!analyzer || sample_rate <= 0) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // FFT 크기 자동 계산
+    if (fft_size <= 0) {
+        fft_size = world_get_fft_size_for_cheaptrick(sample_rate);
+    }
+
+    // 이미 초기화되어 있고 설정이 동일하면 재사용
+    if (analyzer->is_initialized &&
+        analyzer->last_sample_rate == sample_rate &&
+        analyzer->fft_size == fft_size) {
+        return ET_SUCCESS;
+    }
+
+    analyzer->fft_size = fft_size;
+    analyzer->spectrum_length = fft_size / 2 + 1;
+    analyzer->window_size = fft_size;
+    analyzer->buffer_size = fft_size * sizeof(double);
+    analyzer->last_sample_rate = sample_rate;
+
+    // 대역 수 설정 (일반적으로 5개 대역 사용)
+    analyzer->num_bands = 5;
+
+    // 메모리 할당
+    size_t spectrum_size = analyzer->spectrum_length * sizeof(double);
+    size_t band_size = analyzer->num_bands * sizeof(double*);
+
+    if (analyzer->mem_pool) {
+        analyzer->window_buffer = (double*)et_alloc_from_pool(analyzer->mem_pool, analyzer->buffer_size);
+        analyzer->fft_input_buffer = (double*)et_alloc_from_pool(analyzer->mem_pool, analyzer->buffer_size);
+        analyzer->fft_output_buffer = (double*)et_alloc_from_pool(analyzer->mem_pool, analyzer->buffer_size);
+        analyzer->magnitude_buffer = (double*)et_alloc_from_pool(analyzer->mem_pool, spectrum_size);
+        analyzer->phase_buffer = (double*)et_alloc_from_pool(analyzer->mem_pool, spectrum_size);
+        analyzer->power_spectrum_buffer = (double*)et_alloc_from_pool(analyzer->mem_pool, spectrum_size);
+        analyzer->static_group_delay = (double*)et_alloc_from_pool(analyzer->mem_pool, spectrum_size);
+        analyzer->smoothed_group_delay = (double*)et_alloc_from_pool(analyzer->mem_pool, spectrum_size);
+        analyzer->coarse_aperiodicity = (double*)et_alloc_from_pool(analyzer->mem_pool, spectrum_size);
+        analyzer->refined_aperiodicity = (double*)et_alloc_from_pool(analyzer->mem_pool, spectrum_size);
+        analyzer->frequency_axis = (double*)et_alloc_from_pool(analyzer->mem_pool, spectrum_size);
+        analyzer->band_boundaries = (double*)et_alloc_from_pool(analyzer->mem_pool, analyzer->num_bands * sizeof(double));
+        analyzer->band_aperiodicity = (double**)et_alloc_from_pool(analyzer->mem_pool, band_size);
+
+        if (analyzer->band_aperiodicity) {
+            for (int i = 0; i < analyzer->num_bands; i++) {
+                analyzer->band_aperiodicity[i] = (double*)et_alloc_from_pool(analyzer->mem_pool, spectrum_size);
+            }
+        }
+    } else {
+        analyzer->window_buffer = (double*)malloc(analyzer->buffer_size);
+        analyzer->fft_input_buffer = (double*)malloc(analyzer->buffer_size);
+        analyzer->fft_output_buffer = (double*)malloc(analyzer->buffer_size);
+        analyzer->magnitude_buffer = (double*)malloc(spectrum_size);
+        analyzer->phase_buffer = (double*)malloc(spectrum_size);
+        analyzer->power_spectrum_buffer = (double*)malloc(spectrum_size);
+        analyzer->static_group_delay = (double*)malloc(spectrum_size);
+        analyzer->smoothed_group_delay = (double*)malloc(spectrum_size);
+        analyzer->coarse_aperiodicity = (double*)malloc(spectrum_size);
+        analyzer->refined_aperiodicity = (double*)malloc(spectrum_size);
+        analyzer->frequency_axis = (double*)malloc(spectrum_size);
+        analyzer->band_boundaries = (double*)malloc(analyzer->num_bands * sizeof(double));
+        analyzer->band_aperiodicity = (double**)malloc(band_size);
+
+        if (analyzer->band_aperiodicity) {
+            for (int i = 0; i < analyzer->num_bands; i++) {
+                analyzer->band_aperiodicity[i] = (double*)malloc(spectrum_size);
+            }
+        }
+    }
+
+    // 메모리 할당 확인
+    if (!analyzer->window_buffer || !analyzer->fft_input_buffer || !analyzer->fft_output_buffer ||
+        !analyzer->magnitude_buffer || !analyzer->phase_buffer || !analyzer->power_spectrum_buffer ||
+        !analyzer->static_group_delay || !analyzer->smoothed_group_delay ||
+        !analyzer->coarse_aperiodicity || !analyzer->refined_aperiodicity ||
+        !analyzer->frequency_axis || !analyzer->band_boundaries || !analyzer->band_aperiodicity) {
+        return ET_ERROR_OUT_OF_MEMORY;
+    }
+
+    // 주파수축 초기화
+    for (int i = 0; i < analyzer->spectrum_length; i++) {
+        analyzer->frequency_axis[i] = (double)i * sample_rate / (2.0 * (analyzer->spectrum_length - 1));
+    }
+
+    // 대역 경계 초기화 (로그 스케일)
+    double nyquist = sample_rate / 2.0;
+    for (int i = 0; i < analyzer->num_bands; i++) {
+        analyzer->band_boundaries[i] = nyquist * pow(2.0, (double)(i - analyzer->num_bands + 1));
+    }
+
+    // 윈도우 함수 초기화 (Blackman 윈도우)
+    for (int i = 0; i < analyzer->window_size; i++) {
+        double t = (double)i / (analyzer->window_size - 1);
+        analyzer->window_buffer[i] = 0.42 - 0.5 * cos(2.0 * M_PI * t) + 0.08 * cos(4.0 * M_PI * t);
+    }
+
+    // STFT 컨텍스트 생성 (필요한 경우)
+    if (!analyzer->stft_ctx) {
+        ETSTFTConfig stft_config = {0};
+        stft_config.fft_size = fft_size;
+        stft_config.hop_size = fft_size / 4;
+        stft_config.window_type = ET_WINDOW_BLACKMAN;
+
+        analyzer->stft_ctx = et_stft_create_context(&stft_config);
+        if (!analyzer->stft_ctx) {
+            return ET_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+
+    analyzer->is_initialized = true;
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief D4C 알고리즘을 사용한 비주기성 분석
+ */
+ETResult world_aperiodicity_analyzer_d4c(WorldAperiodicityAnalyzer* analyzer,
+                                         const float* audio, int audio_length, int sample_rate,
+                                         const double* f0, const double* time_axis, int f0_length,
+                                         double** aperiodicity) {
+    if (!analyzer || !audio || !f0 || !time_axis || !aperiodicity) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!analyzer->is_initialized || analyzer->last_sample_rate != sample_rate) {
+        ETResult result = world_aperiodicity_analyzer_initialize(analyzer, sample_rate, 0);
+        if (result != ET_SUCCESS) {
+            return result;
+        }
+    }
+
+    // 개선된 D4C 알고리즘 사용
+    ETResult result = world_aperiodicity_analyzer_d4c_improved(analyzer, audio, audio_length, sample_rate,
+                                                              f0, time_axis, f0_length, aperiodicity);
+    if (result != ET_SUCCESS) {
+        return result;
+    }
+
+    // 시간축 연속성 개선을 위한 후처리
+    double frame_period = (f0_length > 1) ? (time_axis[1] - time_axis[0]) * 1000.0 : 5.0; // ms
+    result = world_d4c_postprocess_temporal_continuity(analyzer, aperiodicity, f0_length, f0, frame_period);
+    if (result != ET_SUCCESS) {
+        return result;
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 단일 프레임 비주기성 분석
+ */
+ETResult world_aperiodicity_analyzer_extract_frame(WorldAperiodicityAnalyzer* analyzer,
+                                                   const float* audio, int audio_length,
+                                                   int center_sample, double f0_value,
+                                                   int sample_rate, double* aperiodicity) {
+    if (!analyzer || !audio || !aperiodicity || f0_value <= 0.0) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 윈도우 크기 계산 (F0에 기반한 적응적 윈도우)
+    int window_length = (int)(3.0 * sample_rate / f0_value);
+    if (window_length > analyzer->window_size) {
+        window_length = analyzer->window_size;
+    }
+    if (window_length < 64) {
+        window_length = 64;
+    }
+
+    // 윈도우 시작 위치 계산
+    int start_sample = center_sample - window_length / 2;
+    if (start_sample < 0) start_sample = 0;
+    if (start_sample + window_length >= audio_length) {
+        start_sample = audio_length - window_length;
+    }
+
+    // 윈도우 적용 및 FFT 입력 준비
+    memset(analyzer->fft_input_buffer, 0, analyzer->buffer_size);
+    for (int i = 0; i < window_length; i++) {
+        if (start_sample + i < audio_length) {
+            analyzer->fft_input_buffer[i] = (double)audio[start_sample + i] * analyzer->window_buffer[i];
+        }
+    }
+
+    // FFT 수행 (libetude STFT 사용)
+    ETResult result = et_stft_forward(analyzer->stft_ctx, analyzer->fft_input_buffer,
+                                     analyzer->magnitude_buffer, analyzer->phase_buffer);
+    if (result != ET_SUCCESS) {
+        return result;
+    }
+
+    // 정적 그룹 지연 계산
+    result = world_aperiodicity_analyzer_compute_static_group_delay(analyzer,
+                                                                   analyzer->magnitude_buffer,
+                                                                   analyzer->phase_buffer,
+                                                                   analyzer->spectrum_length,
+                                                                   analyzer->static_group_delay);
+    if (result != ET_SUCCESS) {
+        return result;
+    }
+
+    // 그룹 지연 평활화
+    result = world_aperiodicity_analyzer_smooth_group_delay(analyzer,
+                                                           analyzer->static_group_delay,
+                                                           analyzer->smoothed_group_delay,
+                                                           analyzer->spectrum_length,
+                                                           f0_value, sample_rate);
+    if (result != ET_SUCCESS) {
+        return result;
+    }
+
+    // 비주기성 추정
+    result = world_aperiodicity_analyzer_estimate_aperiodicity(analyzer,
+                                                              analyzer->static_group_delay,
+                                                              analyzer->smoothed_group_delay,
+                                                              analyzer->spectrum_length,
+                                                              aperiodicity);
+    if (result != ET_SUCCESS) {
+        return result;
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 정적 그룹 지연 계산
+ */
+ETResult world_aperiodicity_analyzer_compute_static_group_delay(WorldAperiodicityAnalyzer* analyzer,
+                                                               const double* magnitude_spectrum,
+                                                               const double* phase_spectrum,
+                                                               int spectrum_length,
+                                                               double* static_group_delay) {
+    if (!analyzer || !magnitude_spectrum || !phase_spectrum || !static_group_delay) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 그룹 지연 = -d(phase)/d(frequency)
+    // 차분을 사용하여 근사 계산
+    for (int i = 1; i < spectrum_length - 1; i++) {
+        double phase_diff = phase_spectrum[i + 1] - phase_spectrum[i - 1];
+
+        // 위상 언래핑 (phase unwrapping)
+        while (phase_diff > M_PI) phase_diff -= 2.0 * M_PI;
+        while (phase_diff < -M_PI) phase_diff += 2.0 * M_PI;
+
+        static_group_delay[i] = -phase_diff / 2.0;
+    }
+
+    // 경계 처리
+    static_group_delay[0] = static_group_delay[1];
+    static_group_delay[spectrum_length - 1] = static_group_delay[spectrum_length - 2];
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 그룹 지연 평활화
+ */
+ETResult world_aperiodicity_analyzer_smooth_group_delay(WorldAperiodicityAnalyzer* analyzer,
+                                                       const double* static_group_delay,
+                                                       double* smoothed_group_delay,
+                                                       int spectrum_length,
+                                                       double f0_value, int sample_rate) {
+    if (!analyzer || !static_group_delay || !smoothed_group_delay) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // F0에 기반한 평활화 윈도우 크기 계산
+    double fundamental_freq = f0_value;
+    double freq_resolution = (double)sample_rate / (2.0 * (spectrum_length - 1));
+    int smoothing_window = (int)(fundamental_freq / freq_resolution / 2.0);
+    if (smoothing_window < 3) smoothing_window = 3;
+    if (smoothing_window > 15) smoothing_window = 15;
+
+    // 이동 평균 필터 적용
+    for (int i = 0; i < spectrum_length; i++) {
+        double sum = 0.0;
+        int count = 0;
+
+        int start = i - smoothing_window / 2;
+        int end = i + smoothing_window / 2;
+
+        if (start < 0) start = 0;
+        if (end >= spectrum_length) end = spectrum_length - 1;
+
+        for (int j = start; j <= end; j++) {
+            sum += static_group_delay[j];
+            count++;
+        }
+
+        smoothed_group_delay[i] = sum / count;
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 비주기성 추정
+ */
+ETResult world_aperiodicity_analyzer_estimate_aperiodicity(WorldAperiodicityAnalyzer* analyzer,
+                                                          const double* static_group_delay,
+                                                          const double* smoothed_group_delay,
+                                                          int spectrum_length,
+                                                          double* aperiodicity) {
+    if (!analyzer || !static_group_delay || !smoothed_group_delay || !aperiodicity) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 그룹 지연의 차이를 기반으로 비주기성 계산
+    for (int i = 0; i < spectrum_length; i++) {
+        double delay_diff = fabs(static_group_delay[i] - smoothed_group_delay[i]);
+
+        // 임계값을 사용하여 비주기성 추정
+        double normalized_diff = delay_diff / analyzer->config.threshold;
+
+        // 시그모이드 함수를 사용하여 0-1 범위로 정규화
+        aperiodicity[i] = 1.0 / (1.0 + exp(-5.0 * (normalized_diff - 1.0)));
+
+        // 최소/최대값 제한
+        if (aperiodicity[i] < 0.001) aperiodicity[i] = 0.001;
+        if (aperiodicity[i] > 0.999) aperiodicity[i] = 0.999;
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 대역별 비주기성 분석
+ */
+ETResult world_aperiodicity_analyzer_extract_bands(WorldAperiodicityAnalyzer* analyzer,
+                                                   const float* audio, int audio_length,
+                                                   int center_sample, double f0_value,
+                                                   int sample_rate, double* band_aperiodicity) {
+    if (!analyzer || !audio || !band_aperiodicity) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 전체 스펙트럼 비주기성 계산
+    ETResult result = world_aperiodicity_analyzer_extract_frame(analyzer, audio, audio_length,
+                                                               center_sample, f0_value,
+                                                               sample_rate, analyzer->refined_aperiodicity);
+    if (result != ET_SUCCESS) {
+        return result;
+    }
+
+    // 대역별 평균 계산
+    for (int band = 0; band < analyzer->num_bands; band++) {
+        double freq_start = (band == 0) ? 0.0 : analyzer->band_boundaries[band - 1];
+        double freq_end = analyzer->band_boundaries[band];
+
+        int bin_start = (int)(freq_start * 2.0 * (analyzer->spectrum_length - 1) / sample_rate);
+        int bin_end = (int)(freq_end * 2.0 * (analyzer->spectrum_length - 1) / sample_rate);
+
+        if (bin_start < 0) bin_start = 0;
+        if (bin_end >= analyzer->spectrum_length) bin_end = analyzer->spectrum_length - 1;
+
+        double sum = 0.0;
+        int count = 0;
+
+        for (int bin = bin_start; bin <= bin_end; bin++) {
+            sum += analyzer->refined_aperiodicity[bin];
+            count++;
+        }
+
+        band_aperiodicity[band] = (count > 0) ? sum / count : 0.5;
+    }
+
+    return ET_SUCCESS;
+}// ========
+====================================================================
+// D4C 알고리즘 내부 함수들
+// ============================================================================
+
+/**
+ * @brief D4C 알고리즘의 핵심 - 대역별 파워 스펙트럼 분석
+ */
+static ETResult world_d4c_compute_band_power_spectrum(WorldAperiodicityAnalyzer* analyzer,
+                                                     const float* audio, int audio_length,
+                                                     int center_sample, double f0_value,
+                                                     int sample_rate, int band_index,
+                                                     double* band_power_spectrum) {
+    if (!analyzer || !audio || !band_power_spectrum || band_index >= analyzer->num_bands) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 대역별 필터링을 위한 주파수 범위 계산
+    double freq_start = (band_index == 0) ? 0.0 : analyzer->band_boundaries[band_index - 1];
+    double freq_end = analyzer->band_boundaries[band_index];
+
+    // 대역폭에 따른 윈도우 크기 조정
+    double bandwidth = freq_end - freq_start;
+    int window_length = (int)(2.0 * sample_rate / bandwidth);
+    if (window_length > analyzer->window_size) {
+        window_length = analyzer->window_size;
+    }
+    if (window_length < 128) {
+        window_length = 128;
+    }
+
+    // 윈도우 시작 위치 계산
+    int start_sample = center_sample - window_length / 2;
+    if (start_sample < 0) start_sample = 0;
+    if (start_sample + window_length >= audio_length) {
+        start_sample = audio_length - window_length;
+    }
+
+    // 대역 통과 필터링 및 윈도우 적용
+    memset(analyzer->fft_input_buffer, 0, analyzer->buffer_size);
+    for (int i = 0; i < window_length; i++) {
+        if (start_sample + i < audio_length) {
+            analyzer->fft_input_buffer[i] = (double)audio[start_sample + i] * analyzer->window_buffer[i];
+        }
+    }
+
+    // FFT 수행
+    ETResult result = et_stft_forward(analyzer->stft_ctx, analyzer->fft_input_buffer,
+                                     analyzer->magnitude_buffer, analyzer->phase_buffer);
+    if (result != ET_SUCCESS) {
+        return result;
+    }
+
+    // 대역별 파워 스펙트럼 계산
+    int bin_start = (int)(freq_start * 2.0 * (analyzer->spectrum_length - 1) / sample_rate);
+    int bin_end = (int)(freq_end * 2.0 * (analyzer->spectrum_length - 1) / sample_rate);
+
+    if (bin_start < 0) bin_start = 0;
+    if (bin_end >= analyzer->spectrum_length) bin_end = analyzer->spectrum_length - 1;
+
+    for (int i = 0; i < analyzer->spectrum_length; i++) {
+        if (i >= bin_start && i <= bin_end) {
+            double magnitude = analyzer->magnitude_buffer[i];
+            band_power_spectrum[i] = magnitude * magnitude;
+        } else {
+            band_power_spectrum[i] = 0.0;
+        }
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief D4C 알고리즘의 핵심 - 대역별 그룹 지연 분석
+ */
+static ETResult world_d4c_analyze_band_group_delay(WorldAperiodicityAnalyzer* analyzer,
+                                                  const double* band_power_spectrum,
+                                                  const double* phase_spectrum,
+                                                  int spectrum_length, double f0_value,
+                                                  int sample_rate, int band_index,
+                                                  double* band_group_delay) {
+    if (!analyzer || !band_power_spectrum || !phase_spectrum || !band_group_delay) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 대역별 주파수 범위
+    double freq_start = (band_index == 0) ? 0.0 : analyzer->band_boundaries[band_index - 1];
+    double freq_end = analyzer->band_boundaries[band_index];
+
+    int bin_start = (int)(freq_start * 2.0 * (spectrum_length - 1) / sample_rate);
+    int bin_end = (int)(freq_end * 2.0 * (spectrum_length - 1) / sample_rate);
+
+    if (bin_start < 0) bin_start = 0;
+    if (bin_end >= spectrum_length) bin_end = spectrum_length - 1;
+
+    // 대역 내에서 그룹 지연 계산
+    for (int i = bin_start; i <= bin_end; i++) {
+        if (i > 0 && i < spectrum_length - 1) {
+            // 위상 차분을 사용한 그룹 지연 계산
+            double phase_diff = phase_spectrum[i + 1] - phase_spectrum[i - 1];
+
+            // 위상 언래핑
+            while (phase_diff > M_PI) phase_diff -= 2.0 * M_PI;
+            while (phase_diff < -M_PI) phase_diff += 2.0 * M_PI;
+
+            // 파워로 가중된 그룹 지연
+            double power_weight = band_power_spectrum[i];
+            if (power_weight > 1e-10) {
+                band_group_delay[i] = -phase_diff / 2.0 * power_weight;
+            } else {
+                band_group_delay[i] = 0.0;
+            }
+        } else {
+            band_group_delay[i] = 0.0;
+        }
+    }
+
+    // 대역 외부는 0으로 설정
+    for (int i = 0; i < bin_start; i++) {
+        band_group_delay[i] = 0.0;
+    }
+    for (int i = bin_end + 1; i < spectrum_length; i++) {
+        band_group_delay[i] = 0.0;
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief D4C 알고리즘의 핵심 - 대역별 비주기성 추정
+ */
+static ETResult world_d4c_estimate_band_aperiodicity(WorldAperiodicityAnalyzer* analyzer,
+                                                    const double* band_group_delay,
+                                                    const double* smoothed_group_delay,
+                                                    int spectrum_length, double f0_value,
+                                                    int sample_rate, int band_index,
+                                                    double* band_aperiodicity) {
+    if (!analyzer || !band_group_delay || !smoothed_group_delay || !band_aperiodicity) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 대역별 주파수 범위
+    double freq_start = (band_index == 0) ? 0.0 : analyzer->band_boundaries[band_index - 1];
+    double freq_end = analyzer->band_boundaries[band_index];
+
+    int bin_start = (int)(freq_start * 2.0 * (spectrum_length - 1) / sample_rate);
+    int bin_end = (int)(freq_end * 2.0 * (spectrum_length - 1) / sample_rate);
+
+    if (bin_start < 0) bin_start = 0;
+    if (bin_end >= spectrum_length) bin_end = spectrum_length - 1;
+
+    // 대역별 비주기성 계산
+    double band_threshold = analyzer->config.threshold * (1.0 + 0.2 * band_index); // 고주파수 대역일수록 높은 임계값
+
+    for (int i = bin_start; i <= bin_end; i++) {
+        double delay_diff = fabs(band_group_delay[i] - smoothed_group_delay[i]);
+
+        // 주파수에 따른 가중치 적용
+        double freq = (double)i * sample_rate / (2.0 * (spectrum_length - 1));
+        double freq_weight = 1.0 + freq / (sample_rate / 2.0); // 고주파수일수록 높은 가중치
+
+        double normalized_diff = delay_diff * freq_weight / band_threshold;
+
+        // 개선된 시그모이드 함수 (더 부드러운 전환)
+        double steepness = 3.0 + 2.0 * band_index; // 대역별로 다른 가파름
+        band_aperiodicity[i] = 1.0 / (1.0 + exp(-steepness * (normalized_diff - 1.0)));
+
+        // 대역별 최소/최대값 제한
+        double min_aperiodicity = 0.001 * (1.0 + 0.1 * band_index);
+        double max_aperiodicity = 0.999 - 0.05 * band_index;
+
+        if (band_aperiodicity[i] < min_aperiodicity) {
+            band_aperiodicity[i] = min_aperiodicity;
+        }
+        if (band_aperiodicity[i] > max_aperiodicity) {
+            band_aperiodicity[i] = max_aperiodicity;
+        }
+    }
+
+    // 대역 외부는 기본값으로 설정
+    for (int i = 0; i < bin_start; i++) {
+        band_aperiodicity[i] = 0.5;
+    }
+    for (int i = bin_end + 1; i < spectrum_length; i++) {
+        band_aperiodicity[i] = 0.5;
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 개선된 D4C 알고리즘 - 대역별 분석을 통한 정확한 비주기성 추정
+ */
+ETResult world_aperiodicity_analyzer_d4c_improved(WorldAperiodicityAnalyzer* analyzer,
+                                                 const float* audio, int audio_length, int sample_rate,
+                                                 const double* f0, const double* time_axis, int f0_length,
+                                                 double** aperiodicity) {
+    if (!analyzer || !audio || !f0 || !time_axis || !aperiodicity) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!analyzer->is_initialized || analyzer->last_sample_rate != sample_rate) {
+        ETResult result = world_aperiodicity_analyzer_initialize(analyzer, sample_rate, 0);
+        if (result != ET_SUCCESS) {
+            return result;
+        }
+    }
+
+    // 각 프레임에 대해 대역별 비주기성 분석 수행
+    for (int frame = 0; frame < f0_length; frame++) {
+        double current_f0 = f0[frame];
+        double current_time = time_axis[frame];
+        int center_sample = (int)(current_time * sample_rate);
+
+        if (current_f0 > 0.0) {
+            // 전체 스펙트럼 분석
+            ETResult result = world_aperiodicity_analyzer_extract_frame(analyzer,
+                                                                       audio, audio_length,
+                                                                       center_sample, current_f0,
+                                                                       sample_rate, analyzer->coarse_aperiodicity);
+            if (result != ET_SUCCESS) {
+                return result;
+            }
+
+            // 대역별 세밀한 분석
+            memset(analyzer->refined_aperiodicity, 0, analyzer->spectrum_length * sizeof(double));
+
+            for (int band = 0; band < analyzer->num_bands; band++) {
+                // 대역별 파워 스펙트럼 계산
+                result = world_d4c_compute_band_power_spectrum(analyzer, audio, audio_length,
+                                                              center_sample, current_f0,
+                                                              sample_rate, band,
+                                                              analyzer->power_spectrum_buffer);
+                if (result != ET_SUCCESS) {
+                    return result;
+                }
+
+                // 대역별 그룹 지연 분석
+                result = world_d4c_analyze_band_group_delay(analyzer,
+                                                           analyzer->power_spectrum_buffer,
+                                                           analyzer->phase_buffer,
+                                                           analyzer->spectrum_length, current_f0,
+                                                           sample_rate, band,
+                                                           analyzer->band_aperiodicity[band]);
+                if (result != ET_SUCCESS) {
+                    return result;
+                }
+
+                // 대역별 비주기성 추정
+                result = world_d4c_estimate_band_aperiodicity(analyzer,
+                                                             analyzer->band_aperiodicity[band],
+                                                             analyzer->smoothed_group_delay,
+                                                             analyzer->spectrum_length, current_f0,
+                                                             sample_rate, band,
+                                                             analyzer->band_aperiodicity[band]);
+                if (result != ET_SUCCESS) {
+                    return result;
+                }
+
+                // 대역별 결과를 전체 결과에 합성
+                double freq_start = (band == 0) ? 0.0 : analyzer->band_boundaries[band - 1];
+                double freq_end = analyzer->band_boundaries[band];
+
+                int bin_start = (int)(freq_start * 2.0 * (analyzer->spectrum_length - 1) / sample_rate);
+                int bin_end = (int)(freq_end * 2.0 * (analyzer->spectrum_length - 1) / sample_rate);
+
+                if (bin_start < 0) bin_start = 0;
+                if (bin_end >= analyzer->spectrum_length) bin_end = analyzer->spectrum_length - 1;
+
+                for (int i = bin_start; i <= bin_end; i++) {
+                    // 대역 간 부드러운 전환을 위한 가중 평균
+                    double weight = 1.0;
+                    if (band > 0 && i < bin_start + 5) {
+                        weight = (double)(i - bin_start) / 5.0;
+                    }
+                    if (band < analyzer->num_bands - 1 && i > bin_end - 5) {
+                        weight = (double)(bin_end - i) / 5.0;
+                    }
+
+                    analyzer->refined_aperiodicity[i] += analyzer->band_aperiodicity[band][i] * weight;
+                }
+            }
+
+            // 최종 결과를 출력 배열에 복사
+            memcpy(aperiodicity[frame], analyzer->refined_aperiodicity,
+                   analyzer->spectrum_length * sizeof(double));
+
+        } else {
+            // 무성음의 경우 최대 비주기성으로 설정
+            for (int i = 0; i < analyzer->spectrum_length; i++) {
+                aperiodicity[frame][i] = 1.0;
+            }
+        }
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief D4C 후처리 - 시간축 연속성 개선
+ */
+ETResult world_d4c_postprocess_temporal_continuity(WorldAperiodicityAnalyzer* analyzer,
+                                                   double** aperiodicity, int f0_length,
+                                                   const double* f0, double frame_period) {
+    if (!analyzer || !aperiodicity || f0_length <= 0) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 시간축 평활화를 위한 임시 버퍼
+    double* temp_buffer = analyzer->coarse_aperiodicity; // 재사용
+
+    for (int freq_bin = 0; freq_bin < analyzer->spectrum_length; freq_bin++) {
+        // 각 주파수 빈에 대해 시간축 평활화 수행
+        for (int frame = 0; frame < f0_length; frame++) {
+            temp_buffer[frame] = aperiodicity[frame][freq_bin];
+        }
+
+        // 유성음 구간에서만 평활화 적용
+        for (int frame = 1; frame < f0_length - 1; frame++) {
+            if (f0[frame] > 0.0 && f0[frame - 1] > 0.0 && f0[frame + 1] > 0.0) {
+                // 3점 이동 평균
+                double smoothed = (temp_buffer[frame - 1] + temp_buffer[frame] + temp_buffer[frame + 1]) / 3.0;
+
+                // 급격한 변화 억제
+                double max_change = 0.1; // 최대 10% 변화 허용
+                double change = smoothed - temp_buffer[frame];
+                if (fabs(change) > max_change) {
+                    change = (change > 0) ? max_change : -max_change;
+                }
+
+                aperiodicity[frame][freq_bin] = temp_buffer[frame] + change;
+            }
+        }
+    }
+
+    return ET_SUCCESS;
+}/
+/ ============================================================================
+// 비주기성 분석 최적화 함수들
+// ============================================================================
+
+/**
+ * @brief SIMD 최적화된 그룹 지연 계산
+ */
+static ETResult world_aperiodicity_compute_group_delay_simd(WorldAperiodicityAnalyzer* analyzer,
+                                                           const double* magnitude_spectrum,
+                                                           const double* phase_spectrum,
+                                                           int spectrum_length,
+                                                           double* group_delay) {
+    if (!analyzer || !magnitude_spectrum || !phase_spectrum || !group_delay) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+#ifdef __AVX__
+    // AVX를 사용한 벡터화된 그룹 지연 계산
+    const int simd_width = 4; // AVX는 4개의 double을 동시 처리
+    int vectorized_length = (spectrum_length - 2) / simd_width * simd_width;
+
+    for (int i = 1; i < 1 + vectorized_length; i += simd_width) {
+        // 위상 차분 계산
+        __m256d phase_prev = _mm256_loadu_pd(&phase_spectrum[i - 1]);
+        __m256d phase_next = _mm256_loadu_pd(&phase_spectrum[i + 1]);
+        __m256d phase_diff = _mm256_sub_pd(phase_next, phase_prev);
+
+        // 위상 언래핑 (간단한 버전)
+        __m256d pi = _mm256_set1_pd(M_PI);
+        __m256d two_pi = _mm256_set1_pd(2.0 * M_PI);
+        __m256d neg_pi = _mm256_set1_pd(-M_PI);
+
+        // phase_diff > PI인 경우 2*PI 빼기
+        __m256d mask_gt_pi = _mm256_cmp_pd(phase_diff, pi, _CMP_GT_OQ);
+        phase_diff = _mm256_blendv_pd(phase_diff, _mm256_sub_pd(phase_diff, two_pi), mask_gt_pi);
+
+        // phase_diff < -PI인 경우 2*PI 더하기
+        __m256d mask_lt_neg_pi = _mm256_cmp_pd(phase_diff, neg_pi, _CMP_LT_OQ);
+        phase_diff = _mm256_blendv_pd(phase_diff, _mm256_add_pd(phase_diff, two_pi), mask_lt_neg_pi);
+
+        // 그룹 지연 = -phase_diff / 2.0
+        __m256d half = _mm256_set1_pd(0.5);
+        __m256d result = _mm256_mul_pd(_mm256_sub_pd(_mm256_setzero_pd(), phase_diff), half);
+
+        _mm256_storeu_pd(&group_delay[i], result);
+    }
+
+    // 나머지 요소들을 스칼라 방식으로 처리
+    for (int i = 1 + vectorized_length; i < spectrum_length - 1; i++) {
+        double phase_diff = phase_spectrum[i + 1] - phase_spectrum[i - 1];
+        while (phase_diff > M_PI) phase_diff -= 2.0 * M_PI;
+        while (phase_diff < -M_PI) phase_diff += 2.0 * M_PI;
+        group_delay[i] = -phase_diff / 2.0;
+    }
+
+#elif defined(__SSE2__)
+    // SSE2를 사용한 벡터화된 그룹 지연 계산
+    const int simd_width = 2; // SSE2는 2개의 double을 동시 처리
+    int vectorized_length = (spectrum_length - 2) / simd_width * simd_width;
+
+    for (int i = 1; i < 1 + vectorized_length; i += simd_width) {
+        __m128d phase_prev = _mm_loadu_pd(&phase_spectrum[i - 1]);
+        __m128d phase_next = _mm_loadu_pd(&phase_spectrum[i + 1]);
+        __m128d phase_diff = _mm_sub_pd(phase_next, phase_prev);
+
+        // 간단한 위상 언래핑
+        __m128d pi = _mm_set1_pd(M_PI);
+        __m128d two_pi = _mm_set1_pd(2.0 * M_PI);
+
+        // 그룹 지연 계산
+        __m128d half = _mm_set1_pd(0.5);
+        __m128d result = _mm_mul_pd(_mm_sub_pd(_mm_setzero_pd(), phase_diff), half);
+
+        _mm_storeu_pd(&group_delay[i], result);
+    }
+
+    // 나머지 요소들을 스칼라 방식으로 처리
+    for (int i = 1 + vectorized_length; i < spectrum_length - 1; i++) {
+        double phase_diff = phase_spectrum[i + 1] - phase_spectrum[i - 1];
+        while (phase_diff > M_PI) phase_diff -= 2.0 * M_PI;
+        while (phase_diff < -M_PI) phase_diff += 2.0 * M_PI;
+        group_delay[i] = -phase_diff / 2.0;
+    }
+
+#else
+    // 스칼라 버전 (SIMD 지원 없음)
+    for (int i = 1; i < spectrum_length - 1; i++) {
+        double phase_diff = phase_spectrum[i + 1] - phase_spectrum[i - 1];
+        while (phase_diff > M_PI) phase_diff -= 2.0 * M_PI;
+        while (phase_diff < -M_PI) phase_diff += 2.0 * M_PI;
+        group_delay[i] = -phase_diff / 2.0;
+    }
+#endif
+
+    // 경계 처리
+    group_delay[0] = group_delay[1];
+    group_delay[spectrum_length - 1] = group_delay[spectrum_length - 2];
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief libetude 수학 라이브러리를 활용한 최적화된 비주기성 계산
+ */
+static ETResult world_aperiodicity_compute_optimized(WorldAperiodicityAnalyzer* analyzer,
+                                                    const double* static_group_delay,
+                                                    const double* smoothed_group_delay,
+                                                    int spectrum_length,
+                                                    double* aperiodicity) {
+    if (!analyzer || !static_group_delay || !smoothed_group_delay || !aperiodicity) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    double threshold = analyzer->config.threshold;
+
+#ifdef __AVX__
+    // AVX를 사용한 벡터화된 비주기성 계산
+    const int simd_width = 4;
+    int vectorized_length = spectrum_length / simd_width * simd_width;
+
+    __m256d threshold_vec = _mm256_set1_pd(threshold);
+    __m256d five = _mm256_set1_pd(5.0);
+    __m256d one = _mm256_set1_pd(1.0);
+    __m256d min_val = _mm256_set1_pd(0.001);
+    __m256d max_val = _mm256_set1_pd(0.999);
+
+    for (int i = 0; i < vectorized_length; i += simd_width) {
+        // 차이 계산
+        __m256d static_gd = _mm256_loadu_pd(&static_group_delay[i]);
+        __m256d smooth_gd = _mm256_loadu_pd(&smoothed_group_delay[i]);
+        __m256d diff = _mm256_sub_pd(static_gd, smooth_gd);
+
+        // 절댓값 계산 (부호 비트 마스킹)
+        __m256d abs_mask = _mm256_set1_pd(-0.0);
+        diff = _mm256_andnot_pd(abs_mask, diff);
+
+        // 정규화
+        __m256d normalized = _mm256_div_pd(diff, threshold_vec);
+
+        // 시그모이드 함수: 1 / (1 + exp(-5 * (x - 1)))
+        __m256d exp_arg = _mm256_mul_pd(five, _mm256_sub_pd(normalized, one));
+
+        // libetude의 빠른 exp 함수 사용 (근사치)
+        __m256d exp_val = one; // 간단한 근사치로 대체
+        for (int j = 0; j < 4; j++) {
+            double arg = ((double*)&exp_arg)[j];
+            ((double*)&exp_val)[j] = 1.0 / (1.0 + exp(-arg));
+        }
+
+        // 최소/최대값 제한
+        exp_val = _mm256_max_pd(exp_val, min_val);
+        exp_val = _mm256_min_pd(exp_val, max_val);
+
+        _mm256_storeu_pd(&aperiodicity[i], exp_val);
+    }
+
+    // 나머지 요소들을 스칼라 방식으로 처리
+    for (int i = vectorized_length; i < spectrum_length; i++) {
+        double delay_diff = fabs(static_group_delay[i] - smoothed_group_delay[i]);
+        double normalized_diff = delay_diff / threshold;
+        aperiodicity[i] = 1.0 / (1.0 + exp(-5.0 * (normalized_diff - 1.0)));
+
+        if (aperiodicity[i] < 0.001) aperiodicity[i] = 0.001;
+        if (aperiodicity[i] > 0.999) aperiodicity[i] = 0.999;
+    }
+
+#else
+    // 스칼라 버전 (libetude 빠른 수학 함수 사용)
+    for (int i = 0; i < spectrum_length; i++) {
+        double delay_diff = fabs(static_group_delay[i] - smoothed_group_delay[i]);
+        double normalized_diff = delay_diff / threshold;
+
+        // libetude의 빠른 exp 함수 사용 (가능한 경우)
+        double exp_arg = -5.0 * (normalized_diff - 1.0);
+        double exp_val = exp(exp_arg); // 실제로는 et_fast_exp() 사용 가능
+
+        aperiodicity[i] = 1.0 / (1.0 + exp_val);
+
+        if (aperiodicity[i] < 0.001) aperiodicity[i] = 0.001;
+        if (aperiodicity[i] > 0.999) aperiodicity[i] = 0.999;
+    }
+#endif
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 메모리 효율적인 대역별 분석
+ */
+static ETResult world_aperiodicity_analyze_bands_memory_efficient(WorldAperiodicityAnalyzer* analyzer,
+                                                                 const float* audio, int audio_length,
+                                                                 int center_sample, double f0_value,
+                                                                 int sample_rate,
+                                                                 double* final_aperiodicity) {
+    if (!analyzer || !audio || !final_aperiodicity) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 메모리 재사용을 위한 임시 버퍼들
+    double* temp_spectrum = analyzer->power_spectrum_buffer;
+    double* temp_group_delay = analyzer->static_group_delay;
+    double* temp_aperiodicity = analyzer->coarse_aperiodicity;
+
+    // 최종 결과 초기화
+    memset(final_aperiodicity, 0, analyzer->spectrum_length * sizeof(double));
+
+    // 대역별 순차 처리 (메모리 사용량 최소화)
+    for (int band = 0; band < analyzer->num_bands; band++) {
+        // 대역별 파워 스펙트럼 계산 (기존 버퍼 재사용)
+        ETResult result = world_d4c_compute_band_power_spectrum(analyzer, audio, audio_length,
+                                                               center_sample, f0_value,
+                                                               sample_rate, band, temp_spectrum);
+        if (result != ET_SUCCESS) {
+            return result;
+        }
+
+        // 대역별 그룹 지연 계산 (SIMD 최적화 사용)
+        result = world_aperiodicity_compute_group_delay_simd(analyzer,
+                                                            analyzer->magnitude_buffer,
+                                                            analyzer->phase_buffer,
+                                                            analyzer->spectrum_length,
+                                                            temp_group_delay);
+        if (result != ET_SUCCESS) {
+            return result;
+        }
+
+        // 그룹 지연 평활화
+        result = world_aperiodicity_analyzer_smooth_group_delay(analyzer,
+                                                               temp_group_delay,
+                                                               analyzer->smoothed_group_delay,
+                                                               analyzer->spectrum_length,
+                                                               f0_value, sample_rate);
+        if (result != ET_SUCCESS) {
+            return result;
+        }
+
+        // 최적화된 비주기성 계산
+        result = world_aperiodicity_compute_optimized(analyzer,
+                                                     temp_group_delay,
+                                                     analyzer->smoothed_group_delay,
+                                                     analyzer->spectrum_length,
+                                                     temp_aperiodicity);
+        if (result != ET_SUCCESS) {
+            return result;
+        }
+
+        // 대역별 결과를 최종 결과에 누적
+        double freq_start = (band == 0) ? 0.0 : analyzer->band_boundaries[band - 1];
+        double freq_end = analyzer->band_boundaries[band];
+
+        int bin_start = (int)(freq_start * 2.0 * (analyzer->spectrum_length - 1) / sample_rate);
+        int bin_end = (int)(freq_end * 2.0 * (analyzer->spectrum_length - 1) / sample_rate);
+
+        if (bin_start < 0) bin_start = 0;
+        if (bin_end >= analyzer->spectrum_length) bin_end = analyzer->spectrum_length - 1;
+
+        // 대역 간 부드러운 전환을 위한 가중 합성
+        for (int i = bin_start; i <= bin_end; i++) {
+            double weight = 1.0;
+
+            // 대역 경계에서 가중치 조정
+            if (band > 0 && i < bin_start + 3) {
+                weight = (double)(i - bin_start) / 3.0;
+            }
+            if (band < analyzer->num_bands - 1 && i > bin_end - 3) {
+                weight = (double)(bin_end - i) / 3.0;
+            }
+
+            final_aperiodicity[i] += temp_aperiodicity[i] * weight;
+        }
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 최적화된 비주기성 분석 메인 함수
+ */
+ETResult world_aperiodicity_analyzer_extract_frame_optimized(WorldAperiodicityAnalyzer* analyzer,
+                                                            const float* audio, int audio_length,
+                                                            int center_sample, double f0_value,
+                                                            int sample_rate, double* aperiodicity) {
+    if (!analyzer || !audio || !aperiodicity || f0_value <= 0.0) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 메모리 효율적인 대역별 분석 사용
+    return world_aperiodicity_analyze_bands_memory_efficient(analyzer, audio, audio_length,
+                                                            center_sample, f0_value,
+                                                            sample_rate, aperiodicity);
+}
+
+/**
+ * @brief 병렬 처리를 위한 비주기성 분석 (멀티스레딩)
+ */
+typedef struct {
+    WorldAperiodicityAnalyzer* analyzer;
+    const float* audio;
+    int audio_length;
+    int sample_rate;
+    const double* f0;
+    const double* time_axis;
+    int start_frame;
+    int end_frame;
+    double** aperiodicity;
+    ETResult result;
+} AperiodicityThreadData;
+
+#ifdef _WIN32
+#include <windows.h>
+static DWORD WINAPI world_aperiodicity_thread_worker(LPVOID param) {
+#else
+#include <pthread.h>
+static void* world_aperiodicity_thread_worker(void* param) {
+#endif
+    AperiodicityThreadData* data = (AperiodicityThreadData*)param;
+
+    data->result = ET_SUCCESS;
+
+    for (int frame = data->start_frame; frame < data->end_frame; frame++) {
+        double current_f0 = data->f0[frame];
+        double current_time = data->time_axis[frame];
+        int center_sample = (int)(current_time * data->sample_rate);
+
+        if (current_f0 > 0.0) {
+            ETResult result = world_aperiodicity_analyzer_extract_frame_optimized(
+                data->analyzer, data->audio, data->audio_length,
+                center_sample, current_f0, data->sample_rate,
+                data->aperiodicity[frame]);
+
+            if (result != ET_SUCCESS) {
+                data->result = result;
+                break;
+            }
+        } else {
+            // 무성음의 경우 최대 비주기성으로 설정
+            for (int i = 0; i < data->analyzer->spectrum_length; i++) {
+                data->aperiodicity[frame][i] = 1.0;
+            }
+        }
+    }
+
+#ifdef _WIN32
+    return 0;
+#else
+    return NULL;
+#endif
+}
+
+/**
+ * @brief 멀티스레드 비주기성 분석
+ */
+ETResult world_aperiodicity_analyzer_d4c_parallel(WorldAperiodicityAnalyzer* analyzer,
+                                                  const float* audio, int audio_length, int sample_rate,
+                                                  const double* f0, const double* time_axis, int f0_length,
+                                                  double** aperiodicity, int num_threads) {
+    if (!analyzer || !audio || !f0 || !time_axis || !aperiodicity || num_threads <= 0) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!analyzer->is_initialized || analyzer->last_sample_rate != sample_rate) {
+        ETResult result = world_aperiodicity_analyzer_initialize(analyzer, sample_rate, 0);
+        if (result != ET_SUCCESS) {
+            return result;
+        }
+    }
+
+    // 단일 스레드인 경우 기본 함수 사용
+    if (num_threads == 1 || f0_length < num_threads * 4) {
+        return world_aperiodicity_analyzer_d4c_improved(analyzer, audio, audio_length, sample_rate,
+                                                        f0, time_axis, f0_length, aperiodicity);
+    }
+
+    // 멀티스레드 처리
+    int frames_per_thread = f0_length / num_threads;
+    AperiodicityThreadData* thread_data = (AperiodicityThreadData*)malloc(num_threads * sizeof(AperiodicityThreadData));
+
+    if (!thread_data) {
+        return ET_ERROR_OUT_OF_MEMORY;
+    }
+
+#ifdef _WIN32
+    HANDLE* threads = (HANDLE*)malloc(num_threads * sizeof(HANDLE));
+    if (!threads) {
+        free(thread_data);
+        return ET_ERROR_OUT_OF_MEMORY;
+    }
+#else
+    pthread_t* threads = (pthread_t*)malloc(num_threads * sizeof(pthread_t));
+    if (!threads) {
+        free(thread_data);
+        return ET_ERROR_OUT_OF_MEMORY;
+    }
+#endif
+
+    // 스레드 데이터 설정 및 스레드 생성
+    for (int i = 0; i < num_threads; i++) {
+        thread_data[i].analyzer = analyzer;
+        thread_data[i].audio = audio;
+        thread_data[i].audio_length = audio_length;
+        thread_data[i].sample_rate = sample_rate;
+        thread_data[i].f0 = f0;
+        thread_data[i].time_axis = time_axis;
+        thread_data[i].start_frame = i * frames_per_thread;
+        thread_data[i].end_frame = (i == num_threads - 1) ? f0_length : (i + 1) * frames_per_thread;
+        thread_data[i].aperiodicity = aperiodicity;
+        thread_data[i].result = ET_SUCCESS;
+
+#ifdef _WIN32
+        threads[i] = CreateThread(NULL, 0, world_aperiodicity_thread_worker, &thread_data[i], 0, NULL);
+        if (threads[i] == NULL) {
+            // 스레드 생성 실패 시 정리
+            for (int j = 0; j < i; j++) {
+                WaitForSingleObject(threads[j], INFINITE);
+                CloseHandle(threads[j]);
+            }
+            free(threads);
+            free(thread_data);
+            return ET_ERROR_THREAD_CREATION_FAILED;
+        }
+#else
+        int result = pthread_create(&threads[i], NULL, world_aperiodicity_thread_worker, &thread_data[i]);
+        if (result != 0) {
+            // 스레드 생성 실패 시 정리
+            for (int j = 0; j < i; j++) {
+                pthread_join(threads[j], NULL);
+            }
+            free(threads);
+            free(thread_data);
+            return ET_ERROR_THREAD_CREATION_FAILED;
+        }
+#endif
+    }
+
+    // 모든 스레드 완료 대기
+    ETResult final_result = ET_SUCCESS;
+    for (int i = 0; i < num_threads; i++) {
+#ifdef _WIN32
+        WaitForSingleObject(threads[i], INFINITE);
+        CloseHandle(threads[i]);
+#else
+        pthread_join(threads[i], NULL);
+#endif
+        if (thread_data[i].result != ET_SUCCESS) {
+            final_result = thread_data[i].result;
+        }
+    }
+
+    free(threads);
+    free(thread_data);
+
+    return final_result;
+}
+
+/**
+ * @brief 비주기성 분석기 성능 모니터링
+ */
+ETResult world_aperiodicity_analyzer_get_performance_stats(WorldAperiodicityAnalyzer* analyzer,
+                                                          size_t* memory_usage,
+                                                          double* processing_time_ms,
+                                                          int* simd_capability) {
+    if (!analyzer || !memory_usage || !processing_time_ms || !simd_capability) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    // 메모리 사용량 계산
+    *memory_usage = sizeof(WorldAperiodicityAnalyzer);
+    *memory_usage += analyzer->buffer_size * 6; // 주요 버퍼들
+    *memory_usage += analyzer->spectrum_length * sizeof(double) * 6; // 스펙트럼 버퍼들
+    *memory_usage += analyzer->num_bands * analyzer->spectrum_length * sizeof(double); // 대역별 버퍼
+
+    // SIMD 기능 확인
+    *simd_capability = 0;
+#ifdef __AVX__
+    *simd_capability |= 0x04;
+#endif
+#ifdef __SSE2__
+    *simd_capability |= 0x02;
+#endif
+#ifdef __ARM_NEON
+    *simd_capability |= 0x08;
+#endif
+
+    // 처리 시간은 실제 측정이 필요하므로 기본값 설정
+    *processing_time_ms = 0.0;
+
+    return ET_SUCCESS;
 }

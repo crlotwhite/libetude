@@ -28,6 +28,7 @@ typedef struct WorldSynthesisEngine WorldSynthesisEngine;
 typedef struct WorldParameters WorldParameters;
 typedef struct WorldF0Extractor WorldF0Extractor;
 typedef struct WorldSpectrumAnalyzer WorldSpectrumAnalyzer;
+typedef struct WorldAperiodicityAnalyzer WorldAperiodicityAnalyzer;
 
 /**
  * @brief WORLD 파라미터 구조체
@@ -136,6 +137,49 @@ typedef struct WorldSpectrumAnalyzer {
 } WorldSpectrumAnalyzer;
 
 /**
+ * @brief WORLD 비주기성 분석기 구조체
+ */
+typedef struct WorldAperiodicityAnalyzer {
+    // 설정
+    WorldAperiodicityConfig config;  /**< 비주기성 분석 설정 */
+
+    // libetude 통합
+    ETSTFTContext* stft_ctx;         /**< STFT 컨텍스트 */
+    ETMemoryPool* mem_pool;          /**< 메모리 풀 */
+
+    // 내부 버퍼
+    double* window_buffer;           /**< 윈도우 함수 버퍼 */
+    double* fft_input_buffer;        /**< FFT 입력 버퍼 */
+    double* fft_output_buffer;       /**< FFT 출력 버퍼 */
+    double* magnitude_buffer;        /**< 크기 스펙트럼 버퍼 */
+    double* phase_buffer;            /**< 위상 스펙트럼 버퍼 */
+    double* power_spectrum_buffer;   /**< 파워 스펙트럼 버퍼 */
+
+    // D4C 전용 버퍼
+    double* static_group_delay;      /**< 정적 그룹 지연 버퍼 */
+    double* smoothed_group_delay;    /**< 평활화된 그룹 지연 버퍼 */
+    double* coarse_aperiodicity;     /**< 거친 비주기성 버퍼 */
+    double* refined_aperiodicity;    /**< 정제된 비주기성 버퍼 */
+    double* frequency_axis;          /**< 주파수축 버퍼 */
+
+    // 대역별 분석 버퍼
+    double** band_aperiodicity;      /**< 대역별 비주기성 [num_bands][spectrum_length] */
+    double* band_boundaries;         /**< 대역 경계 주파수 */
+    int num_bands;                   /**< 분석 대역 수 */
+
+    // 버퍼 크기
+    int fft_size;                    /**< FFT 크기 */
+    int window_size;                 /**< 윈도우 크기 */
+    int spectrum_length;             /**< 스펙트럼 길이 (fft_size/2+1) */
+    size_t buffer_size;              /**< 버퍼 크기 */
+
+    // 상태 정보
+    bool is_initialized;             /**< 초기화 상태 */
+    int last_sample_rate;            /**< 마지막 처리한 샘플링 레이트 */
+    double last_threshold;           /**< 마지막 사용한 임계값 */
+} WorldAperiodicityAnalyzer;
+
+/**
  * @brief WORLD F0 추출기 구조체
  */
 typedef struct WorldF0Extractor {
@@ -175,8 +219,9 @@ typedef struct WorldAnalysisEngine {
     WorldAnalysisConfig config;
 
     // 분석기들
-    WorldF0Extractor* f0_extractor;           /**< F0 추출기 */
-    WorldSpectrumAnalyzer* spectrum_analyzer; /**< 스펙트럼 분석기 */
+    WorldF0Extractor* f0_extractor;                 /**< F0 추출기 */
+    WorldSpectrumAnalyzer* spectrum_analyzer;       /**< 스펙트럼 분석기 */
+    WorldAperiodicityAnalyzer* aperiodicity_analyzer; /**< 비주기성 분석기 */
 
     // libetude 통합
     ETSTFTContext* stft_ctx;     /**< STFT 컨텍스트 */
@@ -471,6 +516,187 @@ ETResult world_spectrum_analyzer_cepstral_smoothing_simd(WorldSpectrumAnalyzer* 
                                                         double* smoothed_spectrum,
                                                         int spectrum_length,
                                                         double f0_value, int sample_rate);
+
+// ============================================================================
+// WORLD 비주기성 분석기 함수들
+// ============================================================================
+
+/**
+ * @brief WORLD 비주기성 분석기 생성
+ *
+ * @param config 비주기성 분석 설정
+ * @param mem_pool 메모리 풀 (NULL이면 내부에서 생성)
+ * @return 생성된 비주기성 분석기 포인터, 실패시 NULL
+ */
+WorldAperiodicityAnalyzer* world_aperiodicity_analyzer_create(const WorldAperiodicityConfig* config, ETMemoryPool* mem_pool);
+
+/**
+ * @brief WORLD 비주기성 분석기 해제
+ *
+ * @param analyzer 해제할 비주기성 분석기
+ */
+void world_aperiodicity_analyzer_destroy(WorldAperiodicityAnalyzer* analyzer);
+
+/**
+ * @brief 비주기성 분석기 초기화
+ *
+ * @param analyzer 비주기성 분석기
+ * @param sample_rate 샘플링 레이트
+ * @param fft_size FFT 크기
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_aperiodicity_analyzer_initialize(WorldAperiodicityAnalyzer* analyzer, int sample_rate, int fft_size);
+
+/**
+ * @brief D4C 알고리즘을 사용한 비주기성 분석
+ *
+ * @param analyzer 비주기성 분석기
+ * @param audio 입력 오디오 데이터
+ * @param audio_length 오디오 길이 (샘플)
+ * @param sample_rate 샘플링 레이트
+ * @param f0 F0 배열
+ * @param time_axis 시간축 배열
+ * @param f0_length F0 배열 길이
+ * @param aperiodicity 비주기성 결과
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_aperiodicity_analyzer_d4c(WorldAperiodicityAnalyzer* analyzer,
+                                         const float* audio, int audio_length, int sample_rate,
+                                         const double* f0, const double* time_axis, int f0_length,
+                                         double** aperiodicity);
+
+/**
+ * @brief 단일 프레임 비주기성 분석
+ *
+ * @param analyzer 비주기성 분석기
+ * @param audio 입력 오디오 데이터
+ * @param audio_length 오디오 길이 (샘플)
+ * @param center_sample 중심 샘플 위치
+ * @param f0_value F0 값 (Hz)
+ * @param sample_rate 샘플링 레이트
+ * @param aperiodicity 출력 비주기성 배열
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_aperiodicity_analyzer_extract_frame(WorldAperiodicityAnalyzer* analyzer,
+                                                   const float* audio, int audio_length,
+                                                   int center_sample, double f0_value,
+                                                   int sample_rate, double* aperiodicity);
+
+/**
+ * @brief 대역별 비주기성 분석
+ *
+ * @param analyzer 비주기성 분석기
+ * @param audio 입력 오디오 데이터
+ * @param audio_length 오디오 길이 (샘플)
+ * @param center_sample 중심 샘플 위치
+ * @param f0_value F0 값 (Hz)
+ * @param sample_rate 샘플링 레이트
+ * @param band_aperiodicity 대역별 비주기성 결과
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_aperiodicity_analyzer_extract_bands(WorldAperiodicityAnalyzer* analyzer,
+                                                   const float* audio, int audio_length,
+                                                   int center_sample, double f0_value,
+                                                   int sample_rate, double* band_aperiodicity);
+
+/**
+ * @brief 정적 그룹 지연 계산
+ *
+ * @param analyzer 비주기성 분석기
+ * @param magnitude_spectrum 크기 스펙트럼
+ * @param phase_spectrum 위상 스펙트럼
+ * @param spectrum_length 스펙트럼 길이
+ * @param static_group_delay 출력 정적 그룹 지연
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_aperiodicity_analyzer_compute_static_group_delay(WorldAperiodicityAnalyzer* analyzer,
+                                                               const double* magnitude_spectrum,
+                                                               const double* phase_spectrum,
+                                                               int spectrum_length,
+                                                               double* static_group_delay);
+
+/**
+ * @brief 그룹 지연 평활화
+ *
+ * @param analyzer 비주기성 분석기
+ * @param static_group_delay 정적 그룹 지연
+ * @param smoothed_group_delay 평활화된 그룹 지연
+ * @param spectrum_length 스펙트럼 길이
+ * @param f0_value F0 값 (Hz)
+ * @param sample_rate 샘플링 레이트
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_aperiodicity_analyzer_smooth_group_delay(WorldAperiodicityAnalyzer* analyzer,
+                                                       const double* static_group_delay,
+                                                       double* smoothed_group_delay,
+                                                       int spectrum_length,
+                                                       double f0_value, int sample_rate);
+
+/**
+ * @brief 비주기성 추정
+ *
+ * @param analyzer 비주기성 분석기
+ * @param static_group_delay 정적 그룹 지연
+ * @param smoothed_group_delay 평활화된 그룹 지연
+ * @param spectrum_length 스펙트럼 길이
+ * @param aperiodicity 출력 비주기성
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_aperiodicity_analyzer_estimate_aperiodicity(WorldAperiodicityAnalyzer* analyzer,
+                                                          const double* static_group_delay,
+                                                          const double* smoothed_group_delay,
+                                                          int spectrum_length,
+                                                          double* aperiodicity);
+
+/**
+ * @brief 최적화된 비주기성 분석 (SIMD 및 메모리 최적화)
+ *
+ * @param analyzer 비주기성 분석기
+ * @param audio 입력 오디오 데이터
+ * @param audio_length 오디오 길이 (샘플)
+ * @param center_sample 중심 샘플 위치
+ * @param f0_value F0 값 (Hz)
+ * @param sample_rate 샘플링 레이트
+ * @param aperiodicity 출력 비주기성 배열
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_aperiodicity_analyzer_extract_frame_optimized(WorldAperiodicityAnalyzer* analyzer,
+                                                            const float* audio, int audio_length,
+                                                            int center_sample, double f0_value,
+                                                            int sample_rate, double* aperiodicity);
+
+/**
+ * @brief 멀티스레드 비주기성 분석
+ *
+ * @param analyzer 비주기성 분석기
+ * @param audio 입력 오디오 데이터
+ * @param audio_length 오디오 길이 (샘플)
+ * @param sample_rate 샘플링 레이트
+ * @param f0 F0 배열
+ * @param time_axis 시간축 배열
+ * @param f0_length F0 배열 길이
+ * @param aperiodicity 비주기성 결과
+ * @param num_threads 사용할 스레드 수
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_aperiodicity_analyzer_d4c_parallel(WorldAperiodicityAnalyzer* analyzer,
+                                                  const float* audio, int audio_length, int sample_rate,
+                                                  const double* f0, const double* time_axis, int f0_length,
+                                                  double** aperiodicity, int num_threads);
+
+/**
+ * @brief 비주기성 분석기 성능 통계 조회
+ *
+ * @param analyzer 비주기성 분석기
+ * @param memory_usage 메모리 사용량 (바이트)
+ * @param processing_time_ms 처리 시간 (밀리초)
+ * @param simd_capability SIMD 기능 비트마스크
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_aperiodicity_analyzer_get_performance_stats(WorldAperiodicityAnalyzer* analyzer,
+                                                          size_t* memory_usage,
+                                                          double* processing_time_ms,
+                                                          int* simd_capability);
 
 // ============================================================================
 // WORLD 분석 엔진 함수들
