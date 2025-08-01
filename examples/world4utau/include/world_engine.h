@@ -893,6 +893,100 @@ ETResult world_optimize_latency(WorldSynthesisEngine* engine,
                                int optimization_level);
 
 // ============================================================================
+// 음성 파라미터 제어 함수들
+// ============================================================================
+
+/**
+ * @brief 피치 벤드 적용
+ *
+ * UTAU 피치 벤드 데이터를 WORLD F0 파라미터에 적용합니다.
+ * 피치 벤드는 시간에 따른 피치 변화를 나타내며, 기본 F0에 곱셈으로 적용됩니다.
+ *
+ * @param params WORLD 파라미터 (F0가 수정됨)
+ * @param pitch_bend 피치 벤드 데이터 배열 (센트 단위, -1200 ~ +1200)
+ * @param pitch_bend_length 피치 벤드 데이터 길이
+ * @param target_pitch 목표 피치 (Hz, 기준 피치)
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult apply_pitch_bend(WorldParameters* params,
+                         const float* pitch_bend, int pitch_bend_length,
+                         float target_pitch);
+
+/**
+ * @brief 볼륨 제어 적용
+ *
+ * 스펙트럼 크기 조절을 통해 볼륨을 제어합니다.
+ * 모든 주파수 성분에 균등하게 적용됩니다.
+ *
+ * @param params WORLD 파라미터 (스펙트로그램이 수정됨)
+ * @param volume 볼륨 레벨 (0.0 ~ 1.0, 1.0이 원본)
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult apply_volume_control(WorldParameters* params, float volume);
+
+/**
+ * @brief 모듈레이션 효과 적용
+ *
+ * 비브라토 효과를 위한 F0 모듈레이션을 적용합니다.
+ * 사인파 기반의 주기적인 피치 변화를 생성합니다.
+ *
+ * @param params WORLD 파라미터 (F0가 수정됨)
+ * @param modulation_depth 모듈레이션 깊이 (0.0 ~ 1.0)
+ * @param modulation_rate 모듈레이션 속도 (Hz, 일반적으로 4-8Hz)
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult apply_modulation(WorldParameters* params,
+                         float modulation_depth, float modulation_rate);
+
+/**
+ * @brief 타이밍 제어 적용
+ *
+ * 시간 스케일링을 통해 재생 속도를 조절합니다.
+ * F0와 스펙트럼의 시간축을 조정합니다.
+ *
+ * @param params WORLD 파라미터 (시간축이 수정됨)
+ * @param time_scale 시간 스케일 팩터 (1.0이 원본, >1.0이 빠름, <1.0이 느림)
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult apply_timing_control(WorldParameters* params, float time_scale);
+
+/**
+ * @brief 피치 벤드 보간
+ *
+ * 피치 벤드 데이터를 F0 프레임 수에 맞게 보간합니다.
+ * 선형 보간을 사용하여 부드러운 피치 변화를 생성합니다.
+ *
+ * @param pitch_bend 원본 피치 벤드 데이터
+ * @param pitch_bend_length 원본 데이터 길이
+ * @param interpolated_bend 보간된 피치 벤드 출력 배열
+ * @param target_length 목표 길이 (F0 프레임 수)
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult interpolate_pitch_bend(const float* pitch_bend, int pitch_bend_length,
+                               float* interpolated_bend, int target_length);
+
+/**
+ * @brief 센트를 주파수 비율로 변환
+ *
+ * 센트 단위의 피치 변화를 주파수 비율로 변환합니다.
+ * 1200 센트 = 1 옥타브 = 2배 주파수
+ *
+ * @param cents 센트 값 (-1200 ~ +1200)
+ * @return 주파수 비율 (1.0이 변화 없음)
+ */
+double cents_to_frequency_ratio(float cents);
+
+/**
+ * @brief 주파수 비율을 센트로 변환
+ *
+ * 주파수 비율을 센트 단위로 변환합니다.
+ *
+ * @param ratio 주파수 비율 (1.0이 변화 없음)
+ * @return 센트 값
+ */
+float frequency_ratio_to_cents(double ratio);
+
+// ============================================================================
 // 유틸리티 함수들
 // ============================================================================
 
@@ -1139,8 +1233,7 @@ ETResult world_monitor_realtime_performance(WorldSynthesisEngine* engine,
  * @brief 적응적 최적화 레벨 조정
  */
 ETResult world_adaptive_optimization(WorldSynthesisEngine* engine,
-                                    double target_latency_ms)* extractor, const float* audio,
-                                          int audio_length, int sample_rate, double* f0, int f0_length);
+                                    double target_latency_ms);
 
 /**
  * @brief 경량 후처리 (성능 최적화)

@@ -331,6 +331,27 @@ add_test(NAME F0ExtractionTest COMMAND f0_extraction_test)
 # 스펙트럼 분석 테스트
 add_test(NAME SpectrumAnalysisTest COMMAND spectrum_analysis_test)
 
+# 음성 파라미터 제어 테스트 (world4utau 예제용)
+# 이 테스트는 우리가 구현한 함수들만 테스트합니다
+add_executable(voice_parameter_control_test
+    unit/test_voice_parameter_control.c
+)
+target_link_libraries(voice_parameter_control_test
+    libetude_static
+)
+target_include_directories(voice_parameter_control_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../examples/world4utau/include
+)
+# pthread 라이브러리 링크 (Unix 계열)
+if(NOT WIN32)
+    target_link_libraries(voice_parameter_control_test pthread m)
+endif()
+
+# 음성 파라미터 제어 테스트 등록
+add_test(NAME VoiceParameterControlTest COMMAND voice_parameter_control_test)
+
 # 통합 테스트 등록 (16번 작업)
 add_test(NAME IntegrationPipelineTest COMMAND integration_pipeline_test)
 add_test(NAME IntegrationStreamingTest COMMAND integration_streaming_test)
@@ -525,6 +546,13 @@ set_tests_properties(F0ExtractionTest PROPERTIES
 set_tests_properties(SpectrumAnalysisTest PROPERTIES
     TIMEOUT 300
     LABELS "spectrum;analysis;world;cheaptrick;world4utau;example;accuracy;performance;simd;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# 음성 파라미터 제어 테스트 속성 설정
+set_tests_properties(VoiceParameterControlTest PROPERTIES
+    TIMEOUT 300
+    LABELS "voice;parameter;control;pitch;volume;modulation;timing;world4utau;example;utau;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
