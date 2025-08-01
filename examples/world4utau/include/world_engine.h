@@ -15,6 +15,7 @@
 #include <libetude/stft.h>
 #include <libetude/vocoder.h>
 #include <libetude/memory.h>
+#include <libetude/audio_io.h>
 #include <stdbool.h>
 
 #ifdef __cplusplus
@@ -25,6 +26,7 @@ extern "C" {
 typedef struct WorldAnalysisEngine WorldAnalysisEngine;
 typedef struct WorldSynthesisEngine WorldSynthesisEngine;
 typedef struct WorldParameters WorldParameters;
+typedef struct WorldF0Extractor WorldF0Extractor;
 
 /**
  * @brief WORLD 파라미터 구조체
@@ -98,11 +100,46 @@ typedef struct {
 } WorldAnalysisConfig;
 
 /**
+ * @brief WORLD F0 추출기 구조체
+ */
+typedef struct WorldF0Extractor {
+    // 설정
+    WorldF0Config config;        /**< F0 추출 설정 */
+
+    // libetude 통합
+    ETSTFTContext* stft_ctx;     /**< STFT 컨텍스트 */
+    ETMemoryPool* mem_pool;      /**< 메모리 풀 */
+
+    // 내부 버퍼
+    double* work_buffer;         /**< 작업용 버퍼 */
+    double* filtered_signal;     /**< 필터링된 신호 버퍼 */
+    double* decimated_signal;    /**< 다운샘플링된 신호 버퍼 */
+    size_t buffer_size;          /**< 버퍼 크기 */
+
+    // DIO 알고리즘 전용 버퍼
+    double* dio_f0_candidates;   /**< DIO F0 후보 버퍼 */
+    double* dio_f0_scores;       /**< DIO F0 점수 버퍼 */
+    int dio_candidates_count;    /**< DIO 후보 개수 */
+
+    // Harvest 알고리즘 전용 버퍼
+    double* harvest_f0_map;      /**< Harvest F0 맵 버퍼 */
+    double* harvest_reliability; /**< Harvest 신뢰도 버퍼 */
+
+    // 상태 정보
+    bool is_initialized;         /**< 초기화 상태 */
+    int last_sample_rate;        /**< 마지막 처리한 샘플링 레이트 */
+    int last_audio_length;       /**< 마지막 처리한 오디오 길이 */
+} WorldF0Extractor;
+
+/**
  * @brief WORLD 분석 엔진 구조체
  */
 typedef struct WorldAnalysisEngine {
     // 설정
     WorldAnalysisConfig config;
+
+    // F0 추출기
+    WorldF0Extractor* f0_extractor; /**< F0 추출기 */
 
     // libetude 통합
     ETSTFTContext* stft_ctx;     /**< STFT 컨텍스트 */
@@ -140,7 +177,6 @@ typedef struct WorldSynthesisEngine {
 
     // libetude 통합
     ETVocoderContext* vocoder_ctx;  /**< 보코더 컨텍스트 */
-    ETAudioBuffer* output_buffer;   /**< 출력 버퍼 */
     ETMemoryPool* mem_pool;         /**< 메모리 풀 */
 
     // 내부 버퍼
@@ -152,14 +188,14 @@ typedef struct WorldSynthesisEngine {
 } WorldSynthesisEngine;
 
 /**
- * @brief 스트리밍 오디오 콜백 함수 타입
+ * @brief WORLD 스트리밍 오디오 콜백 함수 타입
  *
  * @param audio_data 오디오 데이터 포인터
  * @param sample_count 샘플 수
  * @param user_data 사용자 데이터
  * @return true 계속 처리, false 중단
  */
-typedef bool (*AudioStreamCallback)(const float* audio_data, int sample_count, void* user_data);
+typedef bool (*WorldAudioStreamCallback)(const float* audio_data, int sample_count, void* user_data);
 
 // ============================================================================
 // WorldParameters 관리 함수들
@@ -202,6 +238,84 @@ ETResult world_parameters_copy(const WorldParameters* src, WorldParameters* dst)
  */
 ETResult world_parameters_init(WorldParameters* params, int sample_rate,
                               int audio_length, double frame_period);
+
+// ============================================================================
+// WORLD F0 추출기 함수들
+// ============================================================================
+
+/**
+ * @brief WORLD F0 추출기 생성
+ *
+ * @param config F0 추출 설정
+ * @param mem_pool 메모리 풀 (NULL이면 내부에서 생성)
+ * @return 생성된 F0 추출기 포인터, 실패시 NULL
+ */
+WorldF0Extractor* world_f0_extractor_create(const WorldF0Config* config, ETMemoryPool* mem_pool);
+
+/**
+ * @brief WORLD F0 추출기 해제
+ *
+ * @param extractor 해제할 F0 추출기
+ */
+void world_f0_extractor_destroy(WorldF0Extractor* extractor);
+
+/**
+ * @brief F0 추출기 초기화
+ *
+ * @param extractor F0 추출기
+ * @param sample_rate 샘플링 레이트
+ * @param audio_length 오디오 길이
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_f0_extractor_initialize(WorldF0Extractor* extractor, int sample_rate, int audio_length);
+
+/**
+ * @brief DIO 알고리즘을 사용한 F0 추출
+ *
+ * @param extractor F0 추출기
+ * @param audio 입력 오디오 데이터
+ * @param audio_length 오디오 길이 (샘플)
+ * @param sample_rate 샘플링 레이트
+ * @param f0 F0 결과 배열
+ * @param time_axis 시간축 배열
+ * @param f0_length F0 배열 길이
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_f0_extractor_dio(WorldF0Extractor* extractor,
+                               const float* audio, int audio_length, int sample_rate,
+                               double* f0, double* time_axis, int f0_length);
+
+/**
+ * @brief Harvest 알고리즘을 사용한 F0 추출
+ *
+ * @param extractor F0 추출기
+ * @param audio 입력 오디오 데이터
+ * @param audio_length 오디오 길이 (샘플)
+ * @param sample_rate 샘플링 레이트
+ * @param f0 F0 결과 배열
+ * @param time_axis 시간축 배열
+ * @param f0_length F0 배열 길이
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_f0_extractor_harvest(WorldF0Extractor* extractor,
+                                   const float* audio, int audio_length, int sample_rate,
+                                   double* f0, double* time_axis, int f0_length);
+
+/**
+ * @brief F0 추출 (설정된 알고리즘 사용)
+ *
+ * @param extractor F0 추출기
+ * @param audio 입력 오디오 데이터
+ * @param audio_length 오디오 길이 (샘플)
+ * @param sample_rate 샘플링 레이트
+ * @param f0 F0 결과 배열
+ * @param time_axis 시간축 배열
+ * @param f0_length F0 배열 길이
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_f0_extractor_extract(WorldF0Extractor* extractor,
+                                   const float* audio, int audio_length, int sample_rate,
+                                   double* f0, double* time_axis, int f0_length);
 
 // ============================================================================
 // WORLD 분석 엔진 함수들
@@ -333,7 +447,7 @@ ETResult world_synthesize_audio(WorldSynthesisEngine* engine,
  */
 ETResult world_synthesize_streaming(WorldSynthesisEngine* engine,
                                    const WorldParameters* params,
-                                   AudioStreamCallback callback, void* user_data);
+                                   WorldAudioStreamCallback callback, void* user_data);
 
 // ============================================================================
 // 유틸리티 함수들
@@ -370,6 +484,96 @@ int world_get_fft_size_for_cheaptrick(int sample_rate);
  * @return F0 배열 길이
  */
 int world_get_samples_for_dio(int audio_length, int sample_rate, double frame_period);
+
+// ============================================================================
+// DIO 알고리즘 내부 함수들
+// ============================================================================
+
+/**
+ * @brief DIO F0 추정 메인 함수
+ *
+ * @param extractor F0 추출기
+ * @param audio 입력 오디오 데이터
+ * @param audio_length 오디오 길이 (샘플)
+ * @param sample_rate 샘플링 레이트
+ * @param f0 F0 결과 배열
+ * @param f0_length F0 배열 길이
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_dio_f0_estimation(WorldF0Extractor* extractor, const float* audio,
+                                int audio_length, int sample_rate, double* f0, int f0_length);
+
+/**
+ * @brief 메디안 필터 적용
+ *
+ * @param signal 입력 신호
+ * @param length 신호 길이
+ * @param window_size 윈도우 크기 (홀수)
+ */
+void world_apply_median_filter(double* signal, int length, int window_size);
+
+// ============================================================================
+// Harvest 알고리즘 내부 함수들
+// ============================================================================
+
+/**
+ * @brief Harvest F0 추정 메인 함수
+ *
+ * @param extractor F0 추출기
+ * @param audio 입력 오디오 데이터
+ * @param audio_length 오디오 길이 (샘플)
+ * @param sample_rate 샘플링 레이트
+ * @param f0 F0 결과 배열
+ * @param f0_length F0 배열 길이
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_harvest_f0_estimation(WorldF0Extractor* extractor, const float* audio,
+                                    int audio_length, int sample_rate, double* f0, int f0_length);
+
+/**
+ * @brief Harvest 후처리 (연속성 개선)
+ *
+ * @param f0 F0 배열
+ * @param f0_length F0 배열 길이
+ * @param f0_floor 최소 F0
+ * @param f0_ceil 최대 F0
+ */
+void world_harvest_postprocess(double* f0, int f0_length, double f0_floor, double f0_ceil);
+
+// ============================================================================
+// 성능 최적화 함수들
+// ============================================================================
+
+/**
+ * @brief 최적화된 DIO F0 추정
+ *
+ * @param extractor F0 추출기
+ * @param audio 입력 오디오 데이터
+ * @param audio_length 오디오 길이 (샘플)
+ * @param sample_rate 샘플링 레이트
+ * @param f0 F0 결과 배열
+ * @param f0_length F0 배열 길이
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_dio_f0_estimation_optimized(WorldF0Extractor* extractor, const float* audio,
+                                          int audio_length, int sample_rate, double* f0, int f0_length);
+
+/**
+ * @brief 경량 후처리 (성능 최적화)
+ *
+ * @param f0 F0 배열
+ * @param f0_length F0 배열 길이
+ */
+void world_apply_lightweight_postprocess(double* f0, int f0_length);
+
+/**
+ * @brief 메모리 사용량 모니터링
+ *
+ * @param extractor F0 추출기
+ * @param current_usage 현재 메모리 사용량 (바이트)
+ * @param peak_usage 피크 메모리 사용량 (바이트)
+ */
+void world_monitor_memory_usage(WorldF0Extractor* extractor, size_t* current_usage, size_t* peak_usage);
 
 #ifdef __cplusplus
 }

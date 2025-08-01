@@ -223,6 +223,26 @@ if(NOT WIN32)
     target_link_libraries(utau_parameter_parsing_test pthread m)
 endif()
 
+# F0 추출 테스트 (world4utau 예제용)
+# 이 테스트는 world4utau 예제 소스를 직접 포함합니다
+add_executable(f0_extraction_test
+    unit/test_f0_extraction.c
+    ../examples/world4utau/src/world_engine.c
+    ../examples/world4utau/src/utau_interface.c
+)
+target_link_libraries(f0_extraction_test
+    libetude_static
+)
+target_include_directories(f0_extraction_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../examples/world4utau/include
+)
+# pthread 라이브러리 링크 (Unix 계열)
+if(NOT WIN32)
+    target_link_libraries(f0_extraction_test pthread m)
+endif()
+
 # 통합 테스트 (16번 작업)
 create_unity_test(integration_pipeline_test "integration/test_pipeline.c")
 create_unity_test(integration_streaming_test "integration/test_streaming.c")
@@ -284,6 +304,9 @@ add_test(NAME AudioEffectsTest COMMAND audio_effects_test)
 
 # UTAU 파라미터 파싱 테스트
 add_test(NAME UTAUParameterParsingTest COMMAND utau_parameter_parsing_test)
+
+# F0 추출 테스트
+add_test(NAME F0ExtractionTest COMMAND f0_extraction_test)
 
 # 통합 테스트 등록 (16번 작업)
 add_test(NAME IntegrationPipelineTest COMMAND integration_pipeline_test)
@@ -465,6 +488,13 @@ set_tests_properties(AudioEffectsTest PROPERTIES
 set_tests_properties(UTAUParameterParsingTest PROPERTIES
     TIMEOUT 120
     LABELS "utau;parameter;parsing;world4utau;example;validation;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# F0 추출 테스트 속성 설정
+set_tests_properties(F0ExtractionTest PROPERTIES
+    TIMEOUT 300
+    LABELS "f0;extraction;world;dio;harvest;world4utau;example;accuracy;performance;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 

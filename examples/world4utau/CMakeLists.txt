@@ -11,7 +11,7 @@ add_executable(world4utau
 )
 
 # libetude와 연결
-target_link_libraries(world4utau libetude_static)
+target_link_libraries(world4utau ${CMAKE_CURRENT_SOURCE_DIR}/../../build/src/liblibetude_static.a)
 
 # 헤더 파일 경로 설정
 target_include_directories(world4utau PRIVATE

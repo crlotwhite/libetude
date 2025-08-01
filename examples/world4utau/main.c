@@ -22,29 +22,20 @@
  * @return 0 성공, 그 외 오류 코드
  */
 int main(int argc, char* argv[]) {
-    // libetude 초기화
-    ETResult result = et_initialize();
-    if (result != ET_SUCCESS) {
-        fprintf(stderr, "Error: libetude 초기화 실패: %s\n", et_get_error_string(result));
-        return -1;
-    }
-
     printf("world4utau (libetude integration) - UTAU 호환 음성 합성 엔진\n");
-    printf("Built with libetude %s\n\n", et_get_version_string());
+    printf("Built with libetude %s\n\n", libetude_get_version());
 
     // 명령줄 인수 확인
     if (argc < 4) {
         print_usage(argv[0]);
-        et_finalize();
         return -1;
     }
 
     // UTAU 파라미터 파싱
     UTAUParameters utau_params;
-    result = parse_utau_parameters(argc, argv, &utau_params);
+    ETResult result = parse_utau_parameters(argc, argv, &utau_params);
     if (result != ET_SUCCESS) {
-        fprintf(stderr, "Error: 파라미터 파싱 실패: %s\n", et_get_error_string(result));
-        et_finalize();
+        fprintf(stderr, "Error: 파라미터 파싱 실패 (코드: %d)\n", result);
         return -1;
     }
 
@@ -52,7 +43,6 @@ int main(int argc, char* argv[]) {
     if (!validate_utau_parameters(&utau_params)) {
         fprintf(stderr, "Error: 유효하지 않은 파라미터입니다.\n");
         utau_parameters_cleanup(&utau_params);
-        et_finalize();
         return -1;
     }
 
@@ -76,7 +66,6 @@ int main(int argc, char* argv[]) {
     if (!analysis_engine) {
         fprintf(stderr, "Error: WORLD 분석 엔진 생성 실패\n");
         utau_parameters_cleanup(&utau_params);
-        et_finalize();
         return -1;
     }
 
@@ -96,7 +85,6 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "Error: WORLD 합성 엔진 생성 실패\n");
         world_analysis_destroy(analysis_engine);
         utau_parameters_cleanup(&utau_params);
-        et_finalize();
         return -1;
     }
 
@@ -121,9 +109,6 @@ int main(int argc, char* argv[]) {
     world_synthesis_destroy(synthesis_engine);
     world_analysis_destroy(analysis_engine);
     utau_parameters_cleanup(&utau_params);
-
-    // libetude 종료
-    et_finalize();
 
     return 0;
 }
