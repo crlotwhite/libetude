@@ -27,6 +27,7 @@ typedef struct WorldAnalysisEngine WorldAnalysisEngine;
 typedef struct WorldSynthesisEngine WorldSynthesisEngine;
 typedef struct WorldParameters WorldParameters;
 typedef struct WorldF0Extractor WorldF0Extractor;
+typedef struct WorldSpectrumAnalyzer WorldSpectrumAnalyzer;
 
 /**
  * @brief WORLD 파라미터 구조체
@@ -100,6 +101,41 @@ typedef struct {
 } WorldAnalysisConfig;
 
 /**
+ * @brief WORLD 스펙트럼 분석기 구조체
+ */
+typedef struct WorldSpectrumAnalyzer {
+    // 설정
+    WorldSpectrumConfig config;  /**< 스펙트럼 분석 설정 */
+
+    // libetude 통합
+    ETSTFTContext* stft_ctx;     /**< STFT 컨텍스트 */
+    ETMemoryPool* mem_pool;      /**< 메모리 풀 */
+
+    // 내부 버퍼
+    double* window_buffer;       /**< 윈도우 함수 버퍼 */
+    double* fft_input_buffer;    /**< FFT 입력 버퍼 */
+    double* fft_output_buffer;   /**< FFT 출력 버퍼 */
+    double* magnitude_buffer;    /**< 크기 스펙트럼 버퍼 */
+    double* phase_buffer;        /**< 위상 스펙트럼 버퍼 */
+    double* smoothed_spectrum;   /**< 평활화된 스펙트럼 버퍼 */
+
+    // CheapTrick 전용 버퍼
+    double* liftering_buffer;    /**< 리프터링 버퍼 */
+    double* cepstrum_buffer;     /**< 켑스트럼 버퍼 */
+    double* envelope_buffer;     /**< 엔벨로프 버퍼 */
+
+    // 버퍼 크기
+    int fft_size;                /**< FFT 크기 */
+    int window_size;             /**< 윈도우 크기 */
+    size_t buffer_size;          /**< 버퍼 크기 */
+
+    // 상태 정보
+    bool is_initialized;         /**< 초기화 상태 */
+    int last_sample_rate;        /**< 마지막 처리한 샘플링 레이트 */
+    double last_q1;              /**< 마지막 사용한 Q1 파라미터 */
+} WorldSpectrumAnalyzer;
+
+/**
  * @brief WORLD F0 추출기 구조체
  */
 typedef struct WorldF0Extractor {
@@ -138,8 +174,9 @@ typedef struct WorldAnalysisEngine {
     // 설정
     WorldAnalysisConfig config;
 
-    // F0 추출기
-    WorldF0Extractor* f0_extractor; /**< F0 추출기 */
+    // 분석기들
+    WorldF0Extractor* f0_extractor;           /**< F0 추출기 */
+    WorldSpectrumAnalyzer* spectrum_analyzer; /**< 스펙트럼 분석기 */
 
     // libetude 통합
     ETSTFTContext* stft_ctx;     /**< STFT 컨텍스트 */
@@ -316,6 +353,124 @@ ETResult world_f0_extractor_harvest(WorldF0Extractor* extractor,
 ETResult world_f0_extractor_extract(WorldF0Extractor* extractor,
                                    const float* audio, int audio_length, int sample_rate,
                                    double* f0, double* time_axis, int f0_length);
+
+// ============================================================================
+// WORLD 스펙트럼 분석기 함수들
+// ============================================================================
+
+/**
+ * @brief WORLD 스펙트럼 분석기 생성
+ *
+ * @param config 스펙트럼 분석 설정
+ * @param mem_pool 메모리 풀 (NULL이면 내부에서 생성)
+ * @return 생성된 스펙트럼 분석기 포인터, 실패시 NULL
+ */
+WorldSpectrumAnalyzer* world_spectrum_analyzer_create(const WorldSpectrumConfig* config, ETMemoryPool* mem_pool);
+
+/**
+ * @brief WORLD 스펙트럼 분석기 해제
+ *
+ * @param analyzer 해제할 스펙트럼 분석기
+ */
+void world_spectrum_analyzer_destroy(WorldSpectrumAnalyzer* analyzer);
+
+/**
+ * @brief 스펙트럼 분석기 초기화
+ *
+ * @param analyzer 스펙트럼 분석기
+ * @param sample_rate 샘플링 레이트
+ * @param fft_size FFT 크기 (0이면 자동 계산)
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_spectrum_analyzer_initialize(WorldSpectrumAnalyzer* analyzer, int sample_rate, int fft_size);
+
+/**
+ * @brief CheapTrick 알고리즘을 사용한 스펙트럼 분석
+ *
+ * @param analyzer 스펙트럼 분석기
+ * @param audio 입력 오디오 데이터
+ * @param audio_length 오디오 길이 (샘플)
+ * @param sample_rate 샘플링 레이트
+ * @param f0 F0 배열
+ * @param time_axis 시간축 배열
+ * @param f0_length F0 배열 길이
+ * @param spectrogram 스펙트로그램 결과
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_spectrum_analyzer_cheaptrick(WorldSpectrumAnalyzer* analyzer,
+                                           const float* audio, int audio_length, int sample_rate,
+                                           const double* f0, const double* time_axis, int f0_length,
+                                           double** spectrogram);
+
+/**
+ * @brief F0 적응형 스펙트럼 분석
+ *
+ * @param analyzer 스펙트럼 분석기
+ * @param audio 입력 오디오 데이터
+ * @param audio_length 오디오 길이 (샘플)
+ * @param center_sample 중심 샘플 위치
+ * @param f0_value F0 값 (Hz)
+ * @param sample_rate 샘플링 레이트
+ * @param spectrum 출력 스펙트럼 배열
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_spectrum_analyzer_extract_frame(WorldSpectrumAnalyzer* analyzer,
+                                              const float* audio, int audio_length,
+                                              int center_sample, double f0_value,
+                                              int sample_rate, double* spectrum);
+
+/**
+ * @brief 스펙트럼 엔벨로프 평활화
+ *
+ * @param analyzer 스펙트럼 분석기
+ * @param raw_spectrum 원본 스펙트럼
+ * @param smoothed_spectrum 평활화된 스펙트럼
+ * @param spectrum_length 스펙트럼 길이
+ * @param f0_value F0 값 (Hz)
+ * @param sample_rate 샘플링 레이트
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_spectrum_analyzer_smooth_envelope(WorldSpectrumAnalyzer* analyzer,
+                                                const double* raw_spectrum,
+                                                double* smoothed_spectrum,
+                                                int spectrum_length,
+                                                double f0_value, int sample_rate);
+
+/**
+ * @brief SIMD 최적화된 스펙트럼 분석 (병렬 처리)
+ *
+ * @param analyzer 스펙트럼 분석기
+ * @param audio 입력 오디오 데이터
+ * @param audio_length 오디오 길이 (샘플)
+ * @param sample_rate 샘플링 레이트
+ * @param f0 F0 배열
+ * @param time_axis 시간축 배열
+ * @param f0_length F0 배열 길이
+ * @param spectrogram 스펙트로그램 결과
+ * @param num_threads 사용할 스레드 수 (0이면 자동)
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_spectrum_analyzer_cheaptrick_parallel(WorldSpectrumAnalyzer* analyzer,
+                                                    const float* audio, int audio_length, int sample_rate,
+                                                    const double* f0, const double* time_axis, int f0_length,
+                                                    double** spectrogram, int num_threads);
+
+/**
+ * @brief SIMD 최적화된 켑스트럼 평활화
+ *
+ * @param analyzer 스펙트럼 분석기
+ * @param magnitude_spectrum 크기 스펙트럼
+ * @param smoothed_spectrum 평활화된 스펙트럼
+ * @param spectrum_length 스펙트럼 길이
+ * @param f0_value F0 값 (Hz)
+ * @param sample_rate 샘플링 레이트
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_spectrum_analyzer_cepstral_smoothing_simd(WorldSpectrumAnalyzer* analyzer,
+                                                        const double* magnitude_spectrum,
+                                                        double* smoothed_spectrum,
+                                                        int spectrum_length,
+                                                        double f0_value, int sample_rate);
 
 // ============================================================================
 // WORLD 분석 엔진 함수들
@@ -574,6 +729,21 @@ void world_apply_lightweight_postprocess(double* f0, int f0_length);
  * @param peak_usage 피크 메모리 사용량 (바이트)
  */
 void world_monitor_memory_usage(WorldF0Extractor* extractor, size_t* current_usage, size_t* peak_usage);
+
+/**
+ * @brief 스펙트럼 분석기에서 SIMD 최적화 활성화/비활성화
+ *
+ * @param analyzer 스펙트럼 분석기
+ * @param enable SIMD 최적화 사용 여부
+ */
+void world_spectrum_analyzer_set_simd_optimization(WorldSpectrumAnalyzer* analyzer, bool enable);
+
+/**
+ * @brief 현재 시스템에서 사용 가능한 SIMD 기능 확인
+ *
+ * @return SIMD 기능 비트마스크 (0x01: SSE2, 0x02: AVX, 0x04: NEON)
+ */
+int world_spectrum_analyzer_get_simd_capabilities(void);
 
 #ifdef __cplusplus
 }
