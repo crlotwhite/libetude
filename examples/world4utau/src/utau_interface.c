@@ -4,6 +4,7 @@
  */
 
 #include "utau_interface.h"
+#include <libetude/api.h>
 #include <libetude/memory.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -250,14 +251,22 @@ void utau_parameters_cleanup(UTAUParameters* params) {
 }
 
 void print_usage(const char* program_name) {
-    printf("Usage: %s <input.wav> <output.wav> <target_pitch> <velocity> [options]\n\n", program_name);
-    printf("Arguments:\n");
+    printf("world4utau (libetude integration) - UTAU 호환 음성 합성 엔진\n");
+    printf("WORLD 보코더 알고리즘을 libetude 최적화로 구현\n\n");
+
+    printf("사용법:\n");
+    printf("  %s <input.wav> <output.wav> [target_pitch] [velocity] [options]\n\n", program_name);
+
+    printf("필수 인수:\n");
     printf("  input.wav      입력 WAV 파일 경로\n");
-    printf("  output.wav     출력 WAV 파일 경로\n");
-    printf("  target_pitch   목표 피치 (Hz)\n");
-    printf("  velocity       벨로시티 (0-100)\n\n");
-    printf("Options:\n");
-    printf("  -p, --pitch-bend FILE    피치 벤드 파일 경로\n");
+    printf("  output.wav     출력 WAV 파일 경로\n\n");
+
+    printf("선택적 인수:\n");
+    printf("  target_pitch   목표 피치 (Hz, 기본값: 440.0)\n");
+    printf("  velocity       벨로시티 (0-100, 기본값: 100)\n\n");
+
+    printf("옵션:\n");
+    printf("  -p, --pitch-bend FILE    피치 벤드 파일 경로 (텍스트 파일, 각 라인에 cents 값)\n");
     printf("  -v, --volume FLOAT       볼륨 (0.0-2.0, 기본값: 1.0)\n");
     printf("  -m, --modulation FLOAT   모듈레이션 강도 (0.0-1.0, 기본값: 0.0)\n");
     printf("  -c, --consonant INT      자음 벨로시티 (0-100, 기본값: 100)\n");
@@ -266,27 +275,96 @@ void print_usage(const char* program_name) {
     printf("  -s, --start-point FLOAT  시작점 (ms, 기본값: 0.0)\n");
     printf("  -r, --sample-rate INT    샘플링 레이트 (Hz, 기본값: 44100)\n");
     printf("  -b, --bit-depth INT      비트 깊이 (16/24/32, 기본값: 16)\n");
-    printf("  -n, --no-cache           캐시 비활성화\n");
-    printf("  -x, --no-optimization    최적화 비활성화\n");
-    printf("  -V, --verbose            상세 출력 모드\n");
+    printf("  -n, --no-cache           분석 결과 캐시 비활성화\n");
+    printf("  -x, --no-optimization    SIMD/GPU 최적화 비활성화\n");
+    printf("  -V, --verbose            상세 출력 모드 (처리 과정 표시)\n");
     printf("  -h, --help               이 도움말 출력\n");
     printf("  -w, --version            버전 정보 출력\n\n");
-    printf("Examples:\n");
-    printf("  %s voice.wav output.wav 440.0 100\n", program_name);
-    printf("  %s voice.wav output.wav 440.0 100 -p pitch.txt -v 0.8\n", program_name);
+
+    printf("사용 예시:\n");
+    printf("  기본 사용법:\n");
+    printf("    %s voice.wav output.wav\n", program_name);
+    printf("    %s voice.wav output.wav 440.0 100\n", program_name);
+    printf("\n");
+    printf("  피치 벤드 적용:\n");
+    printf("    %s voice.wav output.wav 440.0 100 -p pitch_bend.txt\n", program_name);
+    printf("\n");
+    printf("  볼륨 및 모듈레이션 조정:\n");
+    printf("    %s voice.wav output.wav 440.0 100 -v 0.8 -m 0.3\n", program_name);
+    printf("\n");
+    printf("  고품질 설정:\n");
+    printf("    %s voice.wav output.wav 440.0 100 -r 48000 -b 24 -V\n", program_name);
+    printf("\n");
+    printf("  최적화 비활성화 (디버깅용):\n");
+    printf("    %s voice.wav output.wav 440.0 100 -x -V\n", program_name);
+    printf("\n");
+
+    printf("피치 벤드 파일 형식:\n");
+    printf("  각 라인에 cents 단위의 피치 변화량을 기록 (±2400 cents 범위)\n");
+    printf("  예시:\n");
+    printf("    0.0\n");
+    printf("    +100.5\n");
+    printf("    -50.2\n");
+    printf("    +200.0\n\n");
+
+    printf("지원 오디오 형식:\n");
+    printf("  입력: WAV (PCM, 16/24/32비트)\n");
+    printf("  출력: WAV (PCM, 지정된 비트 깊이)\n");
+    printf("  샘플링 레이트: 8kHz - 192kHz\n\n");
+
+    printf("성능 최적화:\n");
+    printf("  - SIMD 최적화 (SSE/AVX/NEON)\n");
+    printf("  - GPU 가속 (CUDA/OpenCL/Metal)\n");
+    printf("  - 메모리 풀 최적화\n");
+    printf("  - 분석 결과 캐싱\n\n");
+
+    printf("호환성:\n");
+    printf("  - OpenUTAU 호환\n");
+    printf("  - 기존 world4utau 명령줄 호환\n");
+    printf("  - 크로스 플랫폼 지원 (Windows/macOS/Linux)\n");
 }
 
 void print_version_info(void) {
     printf("world4utau (libetude integration) version %s\n", WORLD4UTAU_VERSION);
-    printf("Built with libetude (integrated)\n");
+    printf("Built with libetude %s\n", libetude_get_version());
     printf("WORLD vocoder algorithm with libetude optimization\n");
     printf("Copyright (c) 2024 LibEtude Project\n");
     printf("\n");
-    printf("Features:\n");
-    printf("  - SIMD optimized DSP processing\n");
-    printf("  - Cross-platform audio I/O\n");
-    printf("  - Memory pool optimization\n");
-    printf("  - Real-time synthesis capability\n");
+
+    printf("컴포넌트 버전:\n");
+    printf("  - world4utau: %s\n", WORLD4UTAU_VERSION);
+    printf("  - libetude: %s\n", libetude_get_version());
+    printf("  - WORLD 알고리즘: DIO/Harvest + CheapTrick + D4C\n");
+    printf("\n");
+
+    printf("지원 기능:\n");
+    printf("  - SIMD 최적화 DSP 처리 (SSE/AVX/NEON)\n");
+    printf("  - GPU 가속 지원 (CUDA/OpenCL/Metal)\n");
+    printf("  - 크로스 플랫폼 오디오 I/O\n");
+    printf("  - 메모리 풀 최적화\n");
+    printf("  - 실시간 합성 기능\n");
+    printf("  - 분석 결과 캐싱\n");
+    printf("  - UTAU 완전 호환\n");
+    printf("\n");
+
+    printf("플랫폼 지원:\n");
+    printf("  - Windows (x86/x64/ARM64)\n");
+    printf("  - macOS (Intel/Apple Silicon)\n");
+    printf("  - Linux (x86/x64/ARM/ARM64)\n");
+    printf("  - Android (ARM/ARM64)\n");
+    printf("  - iOS (ARM64)\n");
+    printf("\n");
+
+    printf("성능 특징:\n");
+    printf("  - 실시간 처리 가능 (100ms 이내 목표)\n");
+    printf("  - 메모리 효율적 설계\n");
+    printf("  - 하드웨어 최적화 자동 감지\n");
+    printf("  - 배치 처리 최적화\n");
+    printf("\n");
+
+    printf("라이선스: MIT License\n");
+    printf("프로젝트 홈페이지: https://github.com/libetude/libetude\n");
+    printf("문서: https://libetude.readthedocs.io/\n");
 }
 
 ETResult load_pitch_bend_file(const char* file_path, float** pitch_bend, int* length) {
