@@ -2652,8 +2652,7 @@ ETResult world_spectrum_analyzer_cheaptrick(WorldSpectrumAnalyzer* analyzer,
 
     return ET_SUCCESS;
 }
-//
-============================================================================
+// ============================================================================
 // SIMD 최적화 함수들
 // ============================================================================
 
@@ -3004,8 +3003,7 @@ int world_spectrum_analyzer_get_simd_capabilities(void) {
 
     return capabilities;
 }
-// ====
-========================================================================
+// ============================================================================
 // WORLD 비주기성 분석기 함수들
 // ============================================================================
 
@@ -3450,8 +3448,9 @@ ETResult world_aperiodicity_analyzer_extract_bands(WorldAperiodicityAnalyzer* an
     }
 
     return ET_SUCCESS;
-}// ========
-====================================================================
+}
+
+// ============================================================================
 // D4C 알고리즘 내부 함수들
 // ============================================================================
 
@@ -4343,8 +4342,9 @@ void world_apply_lightweight_postprocess(double* f0, int f0_length) {
             }
         }
     }
-}// ==
-==========================================================================
+}
+
+// ============================================================================
 // 실시간 합성 최적화 함수들
 // ============================================================================
 
@@ -4815,8 +4815,7 @@ ETResult world_adaptive_optimization(WorldSynthesisEngine* engine,
 
     return ET_SUCCESS;
 }
-//
- ============================================================================
+// ============================================================================
 // 음성 파라미터 제어 함수들
 // ============================================================================
 
@@ -5016,4 +5015,1435 @@ float frequency_ratio_to_cents(double ratio) {
         return 0.0f;
     }
     return (float)(1200.0 * log2(ratio));
+}
+// ============================================================================
+// WORLD 메모리 관리자 구현
+// ============================================================================
+
+WorldMemoryManager* world_memory_manager_create(size_t analysis_size,
+                                                size_t synthesis_size,
+                                                size_t cache_size) {
+    if (analysis_size == 0 || synthesis_size == 0 || cache_size == 0) {
+        return NULL;
+    }
+
+    WorldMemoryManager* manager = (WorldMemoryManager*)malloc(sizeof(WorldMemoryManager));
+    if (!manager) {
+        return NULL;
+    }
+
+    memset(manager, 0, sizeof(WorldMemoryManager));
+
+    // 메모리 풀 크기 설정
+    manager->analysis_pool_size = analysis_size;
+    manager->synthesis_pool_size = synthesis_size;
+    manager->cache_pool_size = cache_size;
+
+    // libetude 메모리 풀 생성
+    manager->analysis_pool = et_create_memory_pool(analysis_size, ET_DEFAULT_ALIGNMENT);
+    manager->synthesis_pool = et_create_memory_pool(synthesis_size, ET_DEFAULT_ALIGNMENT);
+    manager->cache_pool = et_create_memory_pool(cache_size, ET_DEFAULT_ALIGNMENT);
+
+    if (!manager->analysis_pool || !manager->synthesis_pool || !manager->cache_pool) {
+        world_memory_manager_destroy(manager);
+        return NULL;
+    }
+
+    // 기본 설정
+    manager->enable_memory_alignment = true;
+    manager->enable_pool_preallocation = true;
+    manager->alignment_size = 32; // SIMD 최적화를 위한 32바이트 정렬
+    manager->enable_statistics = true;
+    manager->is_initialized = true;
+
+    return manager;
+}
+
+void world_memory_manager_destroy(WorldMemoryManager* manager) {
+    if (!manager) {
+        return;
+    }
+
+    // 메모리 누수 검사 (디버그 모드에서)
+    #ifdef DEBUG
+    size_t leaked_bytes;
+    int leaked_allocations;
+    if (world_memory_check_leaks(manager, &leaked_bytes, &leaked_allocations) == ET_SUCCESS) {
+        if (leaked_bytes > 0 || leaked_allocations > 0) {
+            printf("WORLD Memory Manager: Memory leak detected - %zu bytes, %d allocations\n",
+                   leaked_bytes, leaked_allocations);
+        }
+    }
+    #endif
+
+    // libetude 메모리 풀 해제
+    if (manager->analysis_pool) {
+        et_destroy_memory_pool(manager->analysis_pool);
+    }
+    if (manager->synthesis_pool) {
+        et_destroy_memory_pool(manager->synthesis_pool);
+    }
+    if (manager->cache_pool) {
+        et_destroy_memory_pool(manager->cache_pool);
+    }
+
+    free(manager);
+}
+
+void* world_memory_alloc(WorldMemoryManager* manager, size_t size, WorldMemoryPoolType pool_type) {
+    if (!manager || !manager->is_initialized || size == 0) {
+        return NULL;
+    }
+
+    ETMemoryPool* pool = NULL;
+    size_t* allocated_counter = NULL;
+    size_t* peak_counter = NULL;
+
+    // 풀 타입에 따른 메모리 풀 선택
+    switch (pool_type) {
+        case WORLD_MEMORY_POOL_ANALYSIS:
+            pool = manager->analysis_pool;
+            allocated_counter = &manager->analysis_allocated;
+            peak_counter = &manager->peak_analysis_usage;
+            break;
+        case WORLD_MEMORY_POOL_SYNTHESIS:
+            pool = manager->synthesis_pool;
+            allocated_counter = &manager->synthesis_allocated;
+            peak_counter = &manager->peak_synthesis_usage;
+            break;
+        case WORLD_MEMORY_POOL_CACHE:
+            pool = manager->cache_pool;
+            allocated_counter = &manager->cache_allocated;
+            peak_counter = &manager->peak_cache_usage;
+            break;
+        default:
+            return NULL;
+    }
+
+    if (!pool) {
+        return NULL;
+    }
+
+    void* ptr = NULL;
+
+    // 메모리 정렬이 활성화된 경우
+    if (manager->enable_memory_alignment) {
+        ptr = world_memory_alloc_aligned(manager, size, manager->alignment_size, pool_type);
+    } else {
+        ptr = et_alloc_from_pool(pool, size);
+    }
+
+    if (ptr && manager->enable_statistics) {
+        // 통계 업데이트
+        *allocated_counter += size;
+        if (*allocated_counter > *peak_counter) {
+            *peak_counter = *allocated_counter;
+        }
+        manager->total_allocations++;
+        manager->active_allocations++;
+    }
+
+    return ptr;
+}
+
+void world_memory_free(WorldMemoryManager* manager, void* ptr, WorldMemoryPoolType pool_type) {
+    if (!manager || !manager->is_initialized || !ptr) {
+        return;
+    }
+
+    ETMemoryPool* pool = NULL;
+    size_t* allocated_counter = NULL;
+
+    // 풀 타입에 따른 메모리 풀 선택
+    switch (pool_type) {
+        case WORLD_MEMORY_POOL_ANALYSIS:
+            pool = manager->analysis_pool;
+            allocated_counter = &manager->analysis_allocated;
+            break;
+        case WORLD_MEMORY_POOL_SYNTHESIS:
+            pool = manager->synthesis_pool;
+            allocated_counter = &manager->synthesis_allocated;
+            break;
+        case WORLD_MEMORY_POOL_CACHE:
+            pool = manager->cache_pool;
+            allocated_counter = &manager->cache_allocated;
+            break;
+        default:
+            return;
+    }
+
+    if (!pool) {
+        return;
+    }
+
+    // libetude 메모리 풀에서 해제
+    et_free_to_pool(pool, ptr);
+
+    if (manager->enable_statistics) {
+        // 통계 업데이트 (정확한 크기를 알 수 없으므로 근사치 사용)
+        manager->total_deallocations++;
+        manager->active_allocations--;
+    }
+}
+
+void* world_memory_alloc_aligned(WorldMemoryManager* manager, size_t size,
+                                size_t alignment, WorldMemoryPoolType pool_type) {
+    if (!manager || !manager->is_initialized || size == 0 || alignment == 0) {
+        return NULL;
+    }
+
+    ETMemoryPool* pool = NULL;
+
+    // 풀 타입에 따른 메모리 풀 선택
+    switch (pool_type) {
+        case WORLD_MEMORY_POOL_ANALYSIS:
+            pool = manager->analysis_pool;
+            break;
+        case WORLD_MEMORY_POOL_SYNTHESIS:
+            pool = manager->synthesis_pool;
+            break;
+        case WORLD_MEMORY_POOL_CACHE:
+            pool = manager->cache_pool;
+            break;
+        default:
+            return NULL;
+    }
+
+    if (!pool) {
+        return NULL;
+    }
+
+    // 정렬된 메모리 할당
+    void* aligned_ptr = et_alloc_aligned_from_pool(pool, size, alignment);
+    if (!aligned_ptr) {
+        return NULL;
+    }
+
+    return aligned_ptr;
+}
+
+ETResult world_memory_pool_reset(WorldMemoryManager* manager, WorldMemoryPoolType pool_type) {
+    if (!manager || !manager->is_initialized) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    ETMemoryPool* pool = NULL;
+    size_t* allocated_counter = NULL;
+
+    // 풀 타입에 따른 메모리 풀 선택
+    switch (pool_type) {
+        case WORLD_MEMORY_POOL_ANALYSIS:
+            pool = manager->analysis_pool;
+            allocated_counter = &manager->analysis_allocated;
+            break;
+        case WORLD_MEMORY_POOL_SYNTHESIS:
+            pool = manager->synthesis_pool;
+            allocated_counter = &manager->synthesis_allocated;
+            break;
+        case WORLD_MEMORY_POOL_CACHE:
+            pool = manager->cache_pool;
+            allocated_counter = &manager->cache_allocated;
+            break;
+        default:
+            return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    if (!pool) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    // 메모리 풀 리셋
+    et_reset_pool(pool);
+    ETResult result = ET_SUCCESS;
+
+    if (result == ET_SUCCESS && manager->enable_statistics) {
+        // 통계 리셋
+        *allocated_counter = 0;
+        // 피크 사용량은 유지
+    }
+
+    return result;
+}
+
+ETResult world_memory_get_statistics(WorldMemoryManager* manager, WorldMemoryPoolType pool_type,
+                                     size_t* allocated, size_t* peak_usage, int* allocation_count) {
+    if (!manager || !manager->is_initialized) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    if (!allocated || !peak_usage || !allocation_count) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    // 풀 타입에 따른 통계 반환
+    switch (pool_type) {
+        case WORLD_MEMORY_POOL_ANALYSIS:
+            *allocated = manager->analysis_allocated;
+            *peak_usage = manager->peak_analysis_usage;
+            break;
+        case WORLD_MEMORY_POOL_SYNTHESIS:
+            *allocated = manager->synthesis_allocated;
+            *peak_usage = manager->peak_synthesis_usage;
+            break;
+        case WORLD_MEMORY_POOL_CACHE:
+            *allocated = manager->cache_allocated;
+            *peak_usage = manager->peak_cache_usage;
+            break;
+        default:
+            return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    *allocation_count = manager->total_allocations;
+
+    return ET_SUCCESS;
+}
+
+ETResult world_memory_pool_preallocate(WorldMemoryManager* manager, WorldMemoryPoolType pool_type) {
+    if (!manager || !manager->is_initialized) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    if (!manager->enable_pool_preallocation) {
+        return ET_SUCCESS; // 사전 할당이 비활성화됨
+    }
+
+    ETMemoryPool* pool = NULL;
+    size_t pool_size = 0;
+
+    // 풀 타입에 따른 메모리 풀 선택
+    switch (pool_type) {
+        case WORLD_MEMORY_POOL_ANALYSIS:
+            pool = manager->analysis_pool;
+            pool_size = manager->analysis_pool_size;
+            break;
+        case WORLD_MEMORY_POOL_SYNTHESIS:
+            pool = manager->synthesis_pool;
+            pool_size = manager->synthesis_pool_size;
+            break;
+        case WORLD_MEMORY_POOL_CACHE:
+            pool = manager->cache_pool;
+            pool_size = manager->cache_pool_size;
+            break;
+        default:
+            return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    if (!pool) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    // 메모리 풀 사전 할당 (libetude API 사용)
+    return et_memory_pool_preallocate(pool, pool_size);
+}
+
+ETResult world_memory_check_leaks(WorldMemoryManager* manager,
+                                 size_t* leaked_bytes, int* leaked_allocations) {
+    if (!manager || !manager->is_initialized) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    if (!leaked_bytes || !leaked_allocations) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    // 활성 할당과 해제 횟수 비교
+    *leaked_allocations = manager->active_allocations;
+
+    // 현재 할당된 총 메모리 계산
+    *leaked_bytes = manager->analysis_allocated +
+                   manager->synthesis_allocated +
+                   manager->cache_allocated;
+
+    return ET_SUCCESS;
+}
+
+// ============================================================================
+// WORLD 캐시 시스템 구현
+// ============================================================================
+
+#include <sys/stat.h>
+#include <time.h>
+#include <openssl/sha.h>
+
+WorldCache* world_cache_create(const char* cache_dir, int max_entries,
+                              WorldMemoryManager* memory_manager) {
+    if (!cache_dir || max_entries <= 0) {
+        return NULL;
+    }
+
+    WorldCache* cache = (WorldCache*)malloc(sizeof(WorldCache));
+    if (!cache) {
+        return NULL;
+    }
+
+    memset(cache, 0, sizeof(WorldCache));
+
+    // 캐시 디렉토리 설정
+    strncpy(cache->cache_dir, cache_dir, sizeof(cache->cache_dir) - 1);
+    snprintf(cache->index_file_path, sizeof(cache->index_file_path),
+             "%s/cache_index.dat", cache_dir);
+
+    // 캐시 엔트리 배열 할당
+    cache->entries = (WorldCacheEntry*)malloc(max_entries * sizeof(WorldCacheEntry));
+    if (!cache->entries) {
+        free(cache);
+        return NULL;
+    }
+
+    memset(cache->entries, 0, max_entries * sizeof(WorldCacheEntry));
+
+    // 기본 설정
+    cache->max_entries = max_entries;
+    cache->current_count = 0;
+    cache->next_index = 0;
+    cache->max_cache_age_seconds = 7 * 24 * 3600; // 7일
+    cache->max_cache_size_bytes = 100 * 1024 * 1024; // 100MB
+    cache->enable_compression = true;
+    cache->enable_auto_cleanup = true;
+    cache->memory_manager = memory_manager;
+    cache->is_initialized = true;
+
+    // 캐시 디렉토리 생성
+    #ifdef _WIN32
+    _mkdir(cache_dir);
+    #else
+    mkdir(cache_dir, 0755);
+    #endif
+
+    // 기존 캐시 인덱스 로드
+    world_cache_load_index(cache);
+
+    return cache;
+}
+
+void world_cache_destroy(WorldCache* cache) {
+    if (!cache) {
+        return;
+    }
+
+    // 인덱스 파일 저장
+    if (cache->is_dirty) {
+        world_cache_save_index(cache);
+    }
+
+    // 캐시 엔트리 해제
+    if (cache->entries) {
+        for (int i = 0; i < cache->current_count; i++) {
+            if (cache->entries[i].params) {
+                world_parameters_destroy(cache->entries[i].params);
+            }
+        }
+        free(cache->entries);
+    }
+
+    free(cache);
+}
+
+bool world_cache_get(WorldCache* cache, const char* file_path, WorldParameters* params) {
+    if (!cache || !cache->is_initialized || !file_path || !params) {
+        return false;
+    }
+
+    // 파일 해시 계산
+    char file_hash[64];
+    if (world_cache_compute_file_hash(file_path, file_hash) != ET_SUCCESS) {
+        cache->cache_misses++;
+        return false;
+    }
+
+    // 캐시에서 검색
+    for (int i = 0; i < cache->current_count; i++) {
+        WorldCacheEntry* entry = &cache->entries[i];
+
+        if (!entry->is_valid) {
+            continue;
+        }
+
+        if (strcmp(entry->file_hash, file_hash) == 0) {
+            // 캐시 히트
+            uint64_t current_time = (uint64_t)time(NULL);
+
+            // 캐시 만료 확인
+            if (current_time - entry->timestamp > cache->max_cache_age_seconds) {
+                entry->is_valid = false;
+                cache->cache_misses++;
+                return false;
+            }
+
+            // 파라미터 복사
+            if (world_parameters_copy(entry->params, params) == ET_SUCCESS) {
+                cache->cache_hits++;
+                return true;
+            }
+        }
+    }
+
+    cache->cache_misses++;
+    return false;
+}
+
+ETResult world_cache_set(WorldCache* cache, const char* file_path, const WorldParameters* params) {
+    if (!cache || !cache->is_initialized || !file_path || !params) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    // 파일 해시 계산
+    char file_hash[64];
+    ETResult result = world_cache_compute_file_hash(file_path, file_hash);
+    if (result != ET_SUCCESS) {
+        return result;
+    }
+
+    // 기존 엔트리 확인
+    WorldCacheEntry* entry = NULL;
+    for (int i = 0; i < cache->current_count; i++) {
+        if (strcmp(cache->entries[i].file_hash, file_hash) == 0) {
+            entry = &cache->entries[i];
+            break;
+        }
+    }
+
+    // 새 엔트리 생성
+    if (!entry) {
+        if (cache->current_count < cache->max_entries) {
+            entry = &cache->entries[cache->current_count];
+            cache->current_count++;
+        } else {
+            // LRU 방식으로 가장 오래된 엔트리 교체
+            entry = &cache->entries[cache->next_index];
+            cache->next_index = (cache->next_index + 1) % cache->max_entries;
+            cache->cache_evictions++;
+
+            // 기존 데이터 정리
+            if (entry->params) {
+                world_parameters_destroy(entry->params);
+                entry->params = NULL;
+            }
+        }
+    }
+
+    // 엔트리 설정
+    strncpy(entry->file_hash, file_hash, sizeof(entry->file_hash) - 1);
+    entry->timestamp = (uint64_t)time(NULL);
+    entry->sample_rate = params->sample_rate;
+    entry->audio_length = params->audio_length;
+    entry->is_valid = true;
+    entry->is_compressed = cache->enable_compression;
+
+    // 파라미터 복사
+    if (cache->memory_manager) {
+        entry->params = world_parameters_create(params->f0_length, params->fft_size,
+                                               cache->memory_manager->cache_pool);
+    } else {
+        entry->params = world_parameters_create(params->f0_length, params->fft_size, NULL);
+    }
+
+    if (!entry->params) {
+        entry->is_valid = false;
+        return ET_ERROR_MEMORY_ALLOCATION;
+    }
+
+    result = world_parameters_copy(params, entry->params);
+    if (result != ET_SUCCESS) {
+        world_parameters_destroy(entry->params);
+        entry->params = NULL;
+        entry->is_valid = false;
+        return result;
+    }
+
+    // 파일 크기 정보 (통계용)
+    struct stat file_stat;
+    if (stat(file_path, &file_stat) == 0) {
+        entry->file_size = file_stat.st_size;
+    }
+
+    cache->is_dirty = true;
+
+    // 자동 정리 실행
+    if (cache->enable_auto_cleanup) {
+        world_cache_cleanup(cache, cache->max_cache_age_seconds);
+    }
+
+    return ET_SUCCESS;
+}
+
+ETResult world_cache_cleanup(WorldCache* cache, uint64_t max_age_seconds) {
+    if (!cache || !cache->is_initialized) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    uint64_t current_time = (uint64_t)time(NULL);
+    int removed_count = 0;
+
+    // 만료된 엔트리 제거
+    for (int i = 0; i < cache->current_count; i++) {
+        WorldCacheEntry* entry = &cache->entries[i];
+
+        if (entry->is_valid &&
+            (current_time - entry->timestamp > max_age_seconds)) {
+
+            // 엔트리 무효화
+            entry->is_valid = false;
+            if (entry->params) {
+                world_parameters_destroy(entry->params);
+                entry->params = NULL;
+            }
+            removed_count++;
+        }
+    }
+
+    // 배열 압축 (무효한 엔트리 제거)
+    int write_index = 0;
+    for (int read_index = 0; read_index < cache->current_count; read_index++) {
+        if (cache->entries[read_index].is_valid) {
+            if (write_index != read_index) {
+                cache->entries[write_index] = cache->entries[read_index];
+                memset(&cache->entries[read_index], 0, sizeof(WorldCacheEntry));
+            }
+            write_index++;
+        }
+    }
+    cache->current_count = write_index;
+
+    if (removed_count > 0) {
+        cache->is_dirty = true;
+    }
+
+    return ET_SUCCESS;
+}
+
+ETResult world_cache_compute_file_hash(const char* file_path, char* hash_output) {
+    if (!file_path || !hash_output) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    FILE* file = fopen(file_path, "rb");
+    if (!file) {
+        return ET_ERROR_FILE_NOT_FOUND;
+    }
+
+    SHA256_CTX sha256_ctx;
+    SHA256_Init(&sha256_ctx);
+
+    unsigned char buffer[4096];
+    size_t bytes_read;
+
+    while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+        SHA256_Update(&sha256_ctx, buffer, bytes_read);
+    }
+
+    fclose(file);
+
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256_Final(hash, &sha256_ctx);
+
+    // 해시를 16진수 문자열로 변환
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+        sprintf(hash_output + (i * 2), "%02x", hash[i]);
+    }
+    hash_output[SHA256_DIGEST_LENGTH * 2] = '\0';
+
+    return ET_SUCCESS;
+}
+
+ETResult world_cache_serialize_entry(const WorldCacheEntry* entry,
+                                    uint8_t* buffer, size_t buffer_size, size_t* written_size) {
+    if (!entry || !buffer || !written_size) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    if (!entry->is_valid || !entry->params) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    size_t required_size = sizeof(WorldCacheEntry) +
+                          entry->params->f0_length * sizeof(double) * 2 + // f0 + time_axis
+                          entry->params->f0_length * (entry->params->fft_size / 2 + 1) * sizeof(double) * 2; // spectrogram + aperiodicity
+
+    if (buffer_size < required_size) {
+        *written_size = required_size;
+        return ET_ERROR_BUFFER_TOO_SMALL;
+    }
+
+    uint8_t* write_ptr = buffer;
+
+    // 캐시 엔트리 헤더 쓰기
+    memcpy(write_ptr, entry, sizeof(WorldCacheEntry));
+    write_ptr += sizeof(WorldCacheEntry);
+
+    // WorldParameters 데이터 쓰기
+    WorldParameters* params = entry->params;
+
+    // 기본 정보
+    memcpy(write_ptr, &params->sample_rate, sizeof(int));
+    write_ptr += sizeof(int);
+    memcpy(write_ptr, &params->audio_length, sizeof(int));
+    write_ptr += sizeof(int);
+    memcpy(write_ptr, &params->frame_period, sizeof(double));
+    write_ptr += sizeof(double);
+    memcpy(write_ptr, &params->f0_length, sizeof(int));
+    write_ptr += sizeof(int);
+    memcpy(write_ptr, &params->fft_size, sizeof(int));
+    write_ptr += sizeof(int);
+
+    // F0 데이터
+    size_t f0_size = params->f0_length * sizeof(double);
+    memcpy(write_ptr, params->f0, f0_size);
+    write_ptr += f0_size;
+    memcpy(write_ptr, params->time_axis, f0_size);
+    write_ptr += f0_size;
+
+    // 스펙트로그램 데이터
+    size_t spectrum_row_size = (params->fft_size / 2 + 1) * sizeof(double);
+    for (int i = 0; i < params->f0_length; i++) {
+        memcpy(write_ptr, params->spectrogram[i], spectrum_row_size);
+        write_ptr += spectrum_row_size;
+    }
+
+    // 비주기성 데이터
+    for (int i = 0; i < params->f0_length; i++) {
+        memcpy(write_ptr, params->aperiodicity[i], spectrum_row_size);
+        write_ptr += spectrum_row_size;
+    }
+
+    *written_size = write_ptr - buffer;
+    return ET_SUCCESS;
+}
+
+ETResult world_cache_deserialize_entry(const uint8_t* buffer, size_t buffer_size,
+                                      WorldCacheEntry* entry, WorldMemoryManager* memory_manager) {
+    if (!buffer || !entry || buffer_size < sizeof(WorldCacheEntry)) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    const uint8_t* read_ptr = buffer;
+
+    // 캐시 엔트리 헤더 읽기
+    memcpy(entry, read_ptr, sizeof(WorldCacheEntry));
+    read_ptr += sizeof(WorldCacheEntry);
+
+    // WorldParameters 생성
+    int f0_length, fft_size;
+    memcpy(&entry->sample_rate, read_ptr, sizeof(int));
+    read_ptr += sizeof(int);
+    memcpy(&entry->audio_length, read_ptr, sizeof(int));
+    read_ptr += sizeof(int);
+
+    double frame_period;
+    memcpy(&frame_period, read_ptr, sizeof(double));
+    read_ptr += sizeof(double);
+
+    memcpy(&f0_length, read_ptr, sizeof(int));
+    read_ptr += sizeof(int);
+    memcpy(&fft_size, read_ptr, sizeof(int));
+    read_ptr += sizeof(int);
+
+    // WorldParameters 생성
+    if (memory_manager) {
+        entry->params = world_parameters_create(f0_length, fft_size, memory_manager->cache_pool);
+    } else {
+        entry->params = world_parameters_create(f0_length, fft_size, NULL);
+    }
+
+    if (!entry->params) {
+        return ET_ERROR_MEMORY_ALLOCATION;
+    }
+
+    // 기본 정보 설정
+    entry->params->sample_rate = entry->sample_rate;
+    entry->params->audio_length = entry->audio_length;
+    entry->params->frame_period = frame_period;
+
+    // F0 데이터 읽기
+    size_t f0_size = f0_length * sizeof(double);
+    memcpy(entry->params->f0, read_ptr, f0_size);
+    read_ptr += f0_size;
+    memcpy(entry->params->time_axis, read_ptr, f0_size);
+    read_ptr += f0_size;
+
+    // 스펙트로그램 데이터 읽기
+    size_t spectrum_row_size = (fft_size / 2 + 1) * sizeof(double);
+    for (int i = 0; i < f0_length; i++) {
+        memcpy(entry->params->spectrogram[i], read_ptr, spectrum_row_size);
+        read_ptr += spectrum_row_size;
+    }
+
+    // 비주기성 데이터 읽기
+    for (int i = 0; i < f0_length; i++) {
+        memcpy(entry->params->aperiodicity[i], read_ptr, spectrum_row_size);
+        read_ptr += spectrum_row_size;
+    }
+
+    return ET_SUCCESS;
+}
+
+ETResult world_cache_save_index(WorldCache* cache) {
+    if (!cache || !cache->is_initialized) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    FILE* file = fopen(cache->index_file_path, "wb");
+    if (!file) {
+        return ET_ERROR_FILE_WRITE;
+    }
+
+    // 헤더 정보 쓰기
+    fwrite(&cache->current_count, sizeof(int), 1, file);
+    fwrite(&cache->cache_hits, sizeof(int), 1, file);
+    fwrite(&cache->cache_misses, sizeof(int), 1, file);
+    fwrite(&cache->cache_evictions, sizeof(int), 1, file);
+
+    // 각 엔트리의 메타데이터만 저장 (실제 데이터는 별도 파일)
+    for (int i = 0; i < cache->current_count; i++) {
+        WorldCacheEntry* entry = &cache->entries[i];
+        if (entry->is_valid) {
+            fwrite(entry->file_hash, sizeof(char), 64, file);
+            fwrite(&entry->timestamp, sizeof(uint64_t), 1, file);
+            fwrite(&entry->file_size, sizeof(uint64_t), 1, file);
+            fwrite(&entry->sample_rate, sizeof(uint32_t), 1, file);
+            fwrite(&entry->audio_length, sizeof(uint32_t), 1, file);
+            fwrite(&entry->is_compressed, sizeof(bool), 1, file);
+            fwrite(&entry->compressed_size, sizeof(size_t), 1, file);
+        }
+    }
+
+    fclose(file);
+    cache->is_dirty = false;
+
+    return ET_SUCCESS;
+}
+
+ETResult world_cache_load_index(WorldCache* cache) {
+    if (!cache || !cache->is_initialized) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    FILE* file = fopen(cache->index_file_path, "rb");
+    if (!file) {
+        // 인덱스 파일이 없으면 새로 시작
+        return ET_SUCCESS;
+    }
+
+    // 헤더 정보 읽기
+    if (fread(&cache->current_count, sizeof(int), 1, file) != 1) {
+        fclose(file);
+        return ET_ERROR_FILE_READ;
+    }
+
+    fread(&cache->cache_hits, sizeof(int), 1, file);
+    fread(&cache->cache_misses, sizeof(int), 1, file);
+    fread(&cache->cache_evictions, sizeof(int), 1, file);
+
+    // 엔트리 개수 제한
+    if (cache->current_count > cache->max_entries) {
+        cache->current_count = cache->max_entries;
+    }
+
+    // 각 엔트리의 메타데이터 로드
+    for (int i = 0; i < cache->current_count; i++) {
+        WorldCacheEntry* entry = &cache->entries[i];
+
+        if (fread(entry->file_hash, sizeof(char), 64, file) != 64) {
+            break;
+        }
+
+        fread(&entry->timestamp, sizeof(uint64_t), 1, file);
+        fread(&entry->file_size, sizeof(uint64_t), 1, file);
+        fread(&entry->sample_rate, sizeof(uint32_t), 1, file);
+        fread(&entry->audio_length, sizeof(uint32_t), 1, file);
+        fread(&entry->is_compressed, sizeof(bool), 1, file);
+        fread(&entry->compressed_size, sizeof(size_t), 1, file);
+
+        entry->is_valid = true;
+        entry->params = NULL; // 실제 데이터는 필요할 때 로드
+    }
+
+    fclose(file);
+    return ET_SUCCESS;
+}
+
+ETResult world_cache_get_statistics(WorldCache* cache, int* hits, int* misses,
+                                   double* hit_ratio, size_t* total_size) {
+    if (!cache || !cache->is_initialized) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    if (hits) *hits = cache->cache_hits;
+    if (misses) *misses = cache->cache_misses;
+
+    if (hit_ratio) {
+        int total_requests = cache->cache_hits + cache->cache_misses;
+        *hit_ratio = total_requests > 0 ? (double)cache->cache_hits / total_requests : 0.0;
+    }
+
+    if (total_size) {
+        *total_size = cache->current_cache_size;
+    }
+
+    return ET_SUCCESS;
+}
+
+ETResult world_cache_set_compression(WorldCache* cache, bool enable) {
+    if (!cache || !cache->is_initialized) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    cache->enable_compression = enable;
+    return ET_SUCCESS;
+}
+
+ETResult world_cache_set_auto_cleanup(WorldCache* cache, bool enable,
+                                     uint64_t max_age_seconds, size_t max_size_bytes) {
+    if (!cache || !cache->is_initialized) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    cache->enable_auto_cleanup = enable;
+    cache->max_cache_age_seconds = max_age_seconds;
+    cache->max_cache_size_bytes = max_size_bytes;
+
+    return ET_SUCCESS;
+}
+
+// ============================================================================
+// WORLD 캐시 파일 I/O 구현
+// ============================================================================
+
+#include <zlib.h>
+
+/**
+ * @brief 캐시 데이터 파일 경로 생성
+ */
+static void world_cache_get_data_file_path(WorldCache* cache, const char* file_hash,
+                                          char* data_file_path, size_t path_size) {
+    snprintf(data_file_path, path_size, "%s/%s.cache", cache->cache_dir, file_hash);
+}
+
+/**
+ * @brief 캐시 데이터를 파일에 저장
+ */
+ETResult world_cache_save_data_to_file(WorldCache* cache, const WorldCacheEntry* entry) {
+    if (!cache || !entry || !entry->is_valid || !entry->params) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    char data_file_path[512];
+    world_cache_get_data_file_path(cache, entry->file_hash, data_file_path, sizeof(data_file_path));
+
+    // 직렬화 버퍼 크기 계산
+    size_t buffer_size = 0;
+    ETResult result = world_cache_serialize_entry(entry, NULL, 0, &buffer_size);
+    if (result != ET_ERROR_BUFFER_TOO_SMALL) {
+        return result;
+    }
+
+    // 직렬화 버퍼 할당
+    uint8_t* buffer = NULL;
+    if (cache->memory_manager) {
+        buffer = (uint8_t*)world_memory_alloc(cache->memory_manager, buffer_size,
+                                             WORLD_MEMORY_POOL_CACHE);
+    } else {
+        buffer = (uint8_t*)malloc(buffer_size);
+    }
+
+    if (!buffer) {
+        return ET_ERROR_MEMORY_ALLOCATION;
+    }
+
+    // 데이터 직렬화
+    size_t written_size;
+    result = world_cache_serialize_entry(entry, buffer, buffer_size, &written_size);
+    if (result != ET_SUCCESS) {
+        if (cache->memory_manager) {
+            world_memory_free(cache->memory_manager, buffer, WORLD_MEMORY_POOL_CACHE);
+        } else {
+            free(buffer);
+        }
+        return result;
+    }
+
+    // 파일에 저장 (압축 여부에 따라)
+    if (cache->enable_compression) {
+        result = world_cache_save_compressed_data(data_file_path, buffer, written_size);
+    } else {
+        result = world_cache_save_raw_data(data_file_path, buffer, written_size);
+    }
+
+    // 버퍼 해제
+    if (cache->memory_manager) {
+        world_memory_free(cache->memory_manager, buffer, WORLD_MEMORY_POOL_CACHE);
+    } else {
+        free(buffer);
+    }
+
+    return result;
+}
+
+/**
+ * @brief 캐시 데이터를 파일에서 로드
+ */
+ETResult world_cache_load_data_from_file(WorldCache* cache, WorldCacheEntry* entry) {
+    if (!cache || !entry || !entry->is_valid) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    char data_file_path[512];
+    world_cache_get_data_file_path(cache, entry->file_hash, data_file_path, sizeof(data_file_path));
+
+    // 파일 존재 확인
+    FILE* test_file = fopen(data_file_path, "rb");
+    if (!test_file) {
+        return ET_ERROR_FILE_NOT_FOUND;
+    }
+    fclose(test_file);
+
+    uint8_t* buffer = NULL;
+    size_t buffer_size = 0;
+    ETResult result;
+
+    // 파일에서 데이터 로드 (압축 여부에 따라)
+    if (entry->is_compressed) {
+        result = world_cache_load_compressed_data(data_file_path, &buffer, &buffer_size);
+    } else {
+        result = world_cache_load_raw_data(data_file_path, &buffer, &buffer_size);
+    }
+
+    if (result != ET_SUCCESS) {
+        return result;
+    }
+
+    // 데이터 역직렬화
+    result = world_cache_deserialize_entry(buffer, buffer_size, entry, cache->memory_manager);
+
+    // 버퍼 해제
+    if (cache->memory_manager) {
+        world_memory_free(cache->memory_manager, buffer, WORLD_MEMORY_POOL_CACHE);
+    } else {
+        free(buffer);
+    }
+
+    return result;
+}
+
+/**
+ * @brief 원시 데이터를 파일에 저장
+ */
+ETResult world_cache_save_raw_data(const char* file_path, const uint8_t* data, size_t data_size) {
+    if (!file_path || !data || data_size == 0) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    FILE* file = fopen(file_path, "wb");
+    if (!file) {
+        return ET_ERROR_FILE_WRITE;
+    }
+
+    // 헤더 쓰기 (압축되지 않음을 표시)
+    uint32_t magic = 0x57524C44; // "WRLD"
+    uint32_t version = 1;
+    uint32_t compressed = 0;
+    uint64_t original_size = data_size;
+
+    fwrite(&magic, sizeof(uint32_t), 1, file);
+    fwrite(&version, sizeof(uint32_t), 1, file);
+    fwrite(&compressed, sizeof(uint32_t), 1, file);
+    fwrite(&original_size, sizeof(uint64_t), 1, file);
+
+    // 데이터 쓰기
+    size_t written = fwrite(data, 1, data_size, file);
+    fclose(file);
+
+    if (written != data_size) {
+        return ET_ERROR_FILE_WRITE;
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 원시 데이터를 파일에서 로드
+ */
+ETResult world_cache_load_raw_data(const char* file_path, uint8_t** data, size_t* data_size) {
+    if (!file_path || !data || !data_size) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    FILE* file = fopen(file_path, "rb");
+    if (!file) {
+        return ET_ERROR_FILE_NOT_FOUND;
+    }
+
+    // 헤더 읽기
+    uint32_t magic, version, compressed;
+    uint64_t original_size;
+
+    if (fread(&magic, sizeof(uint32_t), 1, file) != 1 ||
+        fread(&version, sizeof(uint32_t), 1, file) != 1 ||
+        fread(&compressed, sizeof(uint32_t), 1, file) != 1 ||
+        fread(&original_size, sizeof(uint64_t), 1, file) != 1) {
+        fclose(file);
+        return ET_ERROR_FILE_READ;
+    }
+
+    // 매직 넘버 확인
+    if (magic != 0x57524C44) {
+        fclose(file);
+        return ET_ERROR_INVALID_FORMAT;
+    }
+
+    // 압축 여부 확인
+    if (compressed != 0) {
+        fclose(file);
+        return ET_ERROR_INVALID_FORMAT;
+    }
+
+    // 데이터 버퍼 할당
+    *data = (uint8_t*)malloc(original_size);
+    if (!*data) {
+        fclose(file);
+        return ET_ERROR_MEMORY_ALLOCATION;
+    }
+
+    // 데이터 읽기
+    size_t read_size = fread(*data, 1, original_size, file);
+    fclose(file);
+
+    if (read_size != original_size) {
+        free(*data);
+        *data = NULL;
+        return ET_ERROR_FILE_READ;
+    }
+
+    *data_size = original_size;
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 압축된 데이터를 파일에 저장
+ */
+ETResult world_cache_save_compressed_data(const char* file_path, const uint8_t* data, size_t data_size) {
+    if (!file_path || !data || data_size == 0) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    // 압축 버퍼 할당 (원본 크기 + 여유분)
+    uLongf compressed_size = compressBound(data_size);
+    uint8_t* compressed_data = (uint8_t*)malloc(compressed_size);
+    if (!compressed_data) {
+        return ET_ERROR_MEMORY_ALLOCATION;
+    }
+
+    // zlib으로 압축
+    int compress_result = compress2(compressed_data, &compressed_size, data, data_size, Z_BEST_COMPRESSION);
+    if (compress_result != Z_OK) {
+        free(compressed_data);
+        return ET_ERROR_COMPRESSION_FAILED;
+    }
+
+    FILE* file = fopen(file_path, "wb");
+    if (!file) {
+        free(compressed_data);
+        return ET_ERROR_FILE_WRITE;
+    }
+
+    // 헤더 쓰기
+    uint32_t magic = 0x57524C44; // "WRLD"
+    uint32_t version = 1;
+    uint32_t compressed_flag = 1;
+    uint64_t original_size = data_size;
+    uint64_t compressed_size_64 = compressed_size;
+
+    fwrite(&magic, sizeof(uint32_t), 1, file);
+    fwrite(&version, sizeof(uint32_t), 1, file);
+    fwrite(&compressed_flag, sizeof(uint32_t), 1, file);
+    fwrite(&original_size, sizeof(uint64_t), 1, file);
+    fwrite(&compressed_size_64, sizeof(uint64_t), 1, file);
+
+    // 압축된 데이터 쓰기
+    size_t written = fwrite(compressed_data, 1, compressed_size, file);
+    fclose(file);
+    free(compressed_data);
+
+    if (written != compressed_size) {
+        return ET_ERROR_FILE_WRITE;
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 압축된 데이터를 파일에서 로드
+ */
+ETResult world_cache_load_compressed_data(const char* file_path, uint8_t** data, size_t* data_size) {
+    if (!file_path || !data || !data_size) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    FILE* file = fopen(file_path, "rb");
+    if (!file) {
+        return ET_ERROR_FILE_NOT_FOUND;
+    }
+
+    // 헤더 읽기
+    uint32_t magic, version, compressed_flag;
+    uint64_t original_size, compressed_size;
+
+    if (fread(&magic, sizeof(uint32_t), 1, file) != 1 ||
+        fread(&version, sizeof(uint32_t), 1, file) != 1 ||
+        fread(&compressed_flag, sizeof(uint32_t), 1, file) != 1 ||
+        fread(&original_size, sizeof(uint64_t), 1, file) != 1 ||
+        fread(&compressed_size, sizeof(uint64_t), 1, file) != 1) {
+        fclose(file);
+        return ET_ERROR_FILE_READ;
+    }
+
+    // 매직 넘버 및 압축 플래그 확인
+    if (magic != 0x57524C44 || compressed_flag != 1) {
+        fclose(file);
+        return ET_ERROR_INVALID_FORMAT;
+    }
+
+    // 압축된 데이터 버퍼 할당
+    uint8_t* compressed_data = (uint8_t*)malloc(compressed_size);
+    if (!compressed_data) {
+        fclose(file);
+        return ET_ERROR_MEMORY_ALLOCATION;
+    }
+
+    // 압축된 데이터 읽기
+    size_t read_size = fread(compressed_data, 1, compressed_size, file);
+    fclose(file);
+
+    if (read_size != compressed_size) {
+        free(compressed_data);
+        return ET_ERROR_FILE_READ;
+    }
+
+    // 원본 데이터 버퍼 할당
+    *data = (uint8_t*)malloc(original_size);
+    if (!*data) {
+        free(compressed_data);
+        return ET_ERROR_MEMORY_ALLOCATION;
+    }
+
+    // zlib으로 압축 해제
+    uLongf decompressed_size = original_size;
+    int decompress_result = uncompress(*data, &decompressed_size, compressed_data, compressed_size);
+    free(compressed_data);
+
+    if (decompress_result != Z_OK || decompressed_size != original_size) {
+        free(*data);
+        *data = NULL;
+        return ET_ERROR_DECOMPRESSION_FAILED;
+    }
+
+    *data_size = original_size;
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 캐시 파일 정리 (오래된 파일 삭제)
+ */
+ETResult world_cache_cleanup_files(WorldCache* cache) {
+    if (!cache || !cache->is_initialized) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    uint64_t current_time = (uint64_t)time(NULL);
+    int removed_files = 0;
+
+    // 각 엔트리에 대해 파일 정리
+    for (int i = 0; i < cache->current_count; i++) {
+        WorldCacheEntry* entry = &cache->entries[i];
+
+        if (!entry->is_valid) {
+            continue;
+        }
+
+        // 만료된 엔트리의 파일 삭제
+        if (current_time - entry->timestamp > cache->max_cache_age_seconds) {
+            char data_file_path[512];
+            world_cache_get_data_file_path(cache, entry->file_hash, data_file_path, sizeof(data_file_path));
+
+            if (remove(data_file_path) == 0) {
+                removed_files++;
+            }
+        }
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 캐시 디렉토리 크기 계산
+ */
+ETResult world_cache_calculate_directory_size(WorldCache* cache, size_t* total_size) {
+    if (!cache || !cache->is_initialized || !total_size) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    *total_size = 0;
+
+    for (int i = 0; i < cache->current_count; i++) {
+        WorldCacheEntry* entry = &cache->entries[i];
+
+        if (!entry->is_valid) {
+            continue;
+        }
+
+        char data_file_path[512];
+        world_cache_get_data_file_path(cache, entry->file_hash, data_file_path, sizeof(data_file_path));
+
+        struct stat file_stat;
+        if (stat(data_file_path, &file_stat) == 0) {
+            *total_size += file_stat.st_size;
+        }
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 캐시 무결성 검사
+ */
+ETResult world_cache_verify_integrity(WorldCache* cache, int* corrupted_entries) {
+    if (!cache || !cache->is_initialized || !corrupted_entries) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    *corrupted_entries = 0;
+
+    for (int i = 0; i < cache->current_count; i++) {
+        WorldCacheEntry* entry = &cache->entries[i];
+
+        if (!entry->is_valid) {
+            continue;
+        }
+
+        char data_file_path[512];
+        world_cache_get_data_file_path(cache, entry->file_hash, data_file_path, sizeof(data_file_path));
+
+        // 파일 존재 확인
+        struct stat file_stat;
+        if (stat(data_file_path, &file_stat) != 0) {
+            entry->is_valid = false;
+            (*corrupted_entries)++;
+            continue;
+        }
+
+        // 파일 크기 확인 (압축된 경우)
+        if (entry->is_compressed && entry->compressed_size > 0) {
+            if (file_stat.st_size != entry->compressed_size + 32) { // 헤더 크기 포함
+                entry->is_valid = false;
+                (*corrupted_entries)++;
+                continue;
+            }
+        }
+
+        // 파일 헤더 검증
+        FILE* file = fopen(data_file_path, "rb");
+        if (file) {
+            uint32_t magic;
+            if (fread(&magic, sizeof(uint32_t), 1, file) == 1) {
+                if (magic != 0x57524C44) {
+                    entry->is_valid = false;
+                    (*corrupted_entries)++;
+                }
+            } else {
+                entry->is_valid = false;
+                (*corrupted_entries)++;
+            }
+            fclose(file);
+        } else {
+            entry->is_valid = false;
+            (*corrupted_entries)++;
+        }
+    }
+
+    if (*corrupted_entries > 0) {
+        cache->is_dirty = true;
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 캐시 백업 생성
+ */
+ETResult world_cache_create_backup(WorldCache* cache, const char* backup_dir) {
+    if (!cache || !cache->is_initialized || !backup_dir) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    // 백업 디렉토리 생성
+    #ifdef _WIN32
+    _mkdir(backup_dir);
+    #else
+    mkdir(backup_dir, 0755);
+    #endif
+
+    // 인덱스 파일 백업
+    char backup_index_path[512];
+    snprintf(backup_index_path, sizeof(backup_index_path), "%s/cache_index.dat", backup_dir);
+
+    ETResult result = world_cache_copy_file(cache->index_file_path, backup_index_path);
+    if (result != ET_SUCCESS) {
+        return result;
+    }
+
+    // 각 캐시 데이터 파일 백업
+    for (int i = 0; i < cache->current_count; i++) {
+        WorldCacheEntry* entry = &cache->entries[i];
+
+        if (!entry->is_valid) {
+            continue;
+        }
+
+        char source_path[512], backup_path[512];
+        world_cache_get_data_file_path(cache, entry->file_hash, source_path, sizeof(source_path));
+        snprintf(backup_path, sizeof(backup_path), "%s/%s.cache", backup_dir, entry->file_hash);
+
+        result = world_cache_copy_file(source_path, backup_path);
+        if (result != ET_SUCCESS) {
+            // 개별 파일 백업 실패는 경고로 처리하고 계속 진행
+            printf("Warning: Failed to backup cache file %s\n", source_path);
+        }
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 파일 복사 유틸리티
+ */
+ETResult world_cache_copy_file(const char* source_path, const char* dest_path) {
+    if (!source_path || !dest_path) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    FILE* source = fopen(source_path, "rb");
+    if (!source) {
+        return ET_ERROR_FILE_NOT_FOUND;
+    }
+
+    FILE* dest = fopen(dest_path, "wb");
+    if (!dest) {
+        fclose(source);
+        return ET_ERROR_FILE_WRITE;
+    }
+
+    char buffer[4096];
+    size_t bytes_read;
+
+    while ((bytes_read = fread(buffer, 1, sizeof(buffer), source)) > 0) {
+        if (fwrite(buffer, 1, bytes_read, dest) != bytes_read) {
+            fclose(source);
+            fclose(dest);
+            return ET_ERROR_FILE_WRITE;
+        }
+    }
+
+    fclose(source);
+    fclose(dest);
+    return ET_SUCCESS;
 }

@@ -22,6 +22,43 @@
 extern "C" {
 #endif
 
+// libetude 에러 코드 확장 (누락된 코드들)
+#ifndef ET_ERROR_MEMORY_ALLOCATION
+#define ET_ERROR_MEMORY_ALLOCATION -100
+#endif
+
+#ifndef ET_ERROR_INITIALIZATION_FAILED
+#define ET_ERROR_INITIALIZATION_FAILED -101
+#endif
+
+#ifndef ET_ERROR_BUFFER_TOO_SMALL
+#define ET_ERROR_BUFFER_TOO_SMALL -102
+#endif
+
+#ifndef ET_ERROR_FILE_NOT_FOUND
+#define ET_ERROR_FILE_NOT_FOUND -103
+#endif
+
+#ifndef ET_ERROR_FILE_READ
+#define ET_ERROR_FILE_READ -104
+#endif
+
+#ifndef ET_ERROR_FILE_WRITE
+#define ET_ERROR_FILE_WRITE -105
+#endif
+
+#ifndef ET_ERROR_INVALID_FORMAT
+#define ET_ERROR_INVALID_FORMAT -106
+#endif
+
+#ifndef ET_ERROR_COMPRESSION_FAILED
+#define ET_ERROR_COMPRESSION_FAILED -107
+#endif
+
+#ifndef ET_ERROR_DECOMPRESSION_FAILED
+#define ET_ERROR_DECOMPRESSION_FAILED -108
+#endif
+
 // 전방 선언
 typedef struct WorldAnalysisEngine WorldAnalysisEngine;
 typedef struct WorldSynthesisEngine WorldSynthesisEngine;
@@ -29,6 +66,8 @@ typedef struct WorldParameters WorldParameters;
 typedef struct WorldF0Extractor WorldF0Extractor;
 typedef struct WorldSpectrumAnalyzer WorldSpectrumAnalyzer;
 typedef struct WorldAperiodicityAnalyzer WorldAperiodicityAnalyzer;
+typedef struct WorldMemoryManager WorldMemoryManager;
+typedef struct WorldCache WorldCache;
 
 /**
  * @brief WORLD 파라미터 구조체
@@ -296,6 +335,108 @@ typedef struct WorldSynthesisEngine {
  * @return true 계속 처리, false 중단
  */
 typedef bool (*WorldAudioStreamCallback)(const float* audio_data, int sample_count, void* user_data);
+
+/**
+ * @brief WORLD 메모리 풀 타입
+ */
+typedef enum {
+    WORLD_MEMORY_POOL_ANALYSIS = 0,    /**< 분석용 메모리 풀 */
+    WORLD_MEMORY_POOL_SYNTHESIS = 1,   /**< 합성용 메모리 풀 */
+    WORLD_MEMORY_POOL_CACHE = 2,       /**< 캐시용 메모리 풀 */
+    WORLD_MEMORY_POOL_COUNT = 3        /**< 메모리 풀 개수 */
+} WorldMemoryPoolType;
+
+/**
+ * @brief WORLD 전용 메모리 관리자 구조체
+ *
+ * libetude 메모리 풀을 활용하여 WORLD 알고리즘에 최적화된 메모리 관리를 제공합니다.
+ */
+typedef struct WorldMemoryManager {
+    // libetude 메모리 풀들
+    ETMemoryPool* analysis_pool;     /**< 분석용 메모리 풀 */
+    ETMemoryPool* synthesis_pool;    /**< 합성용 메모리 풀 */
+    ETMemoryPool* cache_pool;        /**< 캐시용 메모리 풀 */
+
+    // 메모리 풀 설정
+    size_t analysis_pool_size;       /**< 분석용 풀 크기 (바이트) */
+    size_t synthesis_pool_size;      /**< 합성용 풀 크기 (바이트) */
+    size_t cache_pool_size;          /**< 캐시용 풀 크기 (바이트) */
+
+    // 메모리 사용량 통계
+    size_t analysis_allocated;       /**< 분석용 할당된 메모리 (바이트) */
+    size_t synthesis_allocated;      /**< 합성용 할당된 메모리 (바이트) */
+    size_t cache_allocated;          /**< 캐시용 할당된 메모리 (바이트) */
+    size_t peak_analysis_usage;      /**< 분석용 피크 사용량 (바이트) */
+    size_t peak_synthesis_usage;     /**< 합성용 피크 사용량 (바이트) */
+    size_t peak_cache_usage;         /**< 캐시용 피크 사용량 (바이트) */
+
+    // 할당 통계
+    int total_allocations;           /**< 총 할당 횟수 */
+    int total_deallocations;         /**< 총 해제 횟수 */
+    int active_allocations;          /**< 활성 할당 개수 */
+
+    // 성능 최적화 설정
+    bool enable_memory_alignment;    /**< 메모리 정렬 사용 여부 */
+    bool enable_pool_preallocation;  /**< 풀 사전 할당 사용 여부 */
+    int alignment_size;              /**< 메모리 정렬 크기 (바이트) */
+
+    // 상태 정보
+    bool is_initialized;             /**< 초기화 상태 */
+    bool enable_statistics;          /**< 통계 수집 사용 여부 */
+} WorldMemoryManager;
+
+/**
+ * @brief WORLD 캐시 엔트리 구조체
+ */
+typedef struct {
+    char file_hash[64];              /**< 파일 해시 (SHA-256) */
+    WorldParameters* params;         /**< 분석 결과 */
+    uint64_t timestamp;              /**< 캐시 생성 시간 (Unix timestamp) */
+    uint64_t file_size;              /**< 원본 파일 크기 (바이트) */
+    uint32_t sample_rate;            /**< 샘플링 레이트 */
+    uint32_t audio_length;           /**< 오디오 길이 (샘플) */
+    bool is_valid;                   /**< 유효성 플래그 */
+    bool is_compressed;              /**< 압축 여부 */
+    size_t compressed_size;          /**< 압축된 크기 (바이트) */
+} WorldCacheEntry;
+
+/**
+ * @brief WORLD 캐시 시스템 구조체
+ *
+ * 분석 결과를 파일 기반으로 캐싱하여 재분석을 방지합니다.
+ */
+typedef struct WorldCache {
+    // 캐시 엔트리 관리
+    WorldCacheEntry* entries;        /**< 캐시 엔트리 배열 */
+    int max_entries;                 /**< 최대 엔트리 수 */
+    int current_count;               /**< 현재 엔트리 수 */
+    int next_index;                  /**< 다음 삽입 인덱스 (순환) */
+
+    // 캐시 디렉토리 설정
+    char cache_dir[512];             /**< 캐시 디렉토리 경로 */
+    char index_file_path[512];       /**< 인덱스 파일 경로 */
+
+    // 캐시 정책 설정
+    uint64_t max_cache_age_seconds;  /**< 최대 캐시 유지 시간 (초) */
+    size_t max_cache_size_bytes;     /**< 최대 캐시 크기 (바이트) */
+    size_t current_cache_size;       /**< 현재 캐시 크기 (바이트) */
+    bool enable_compression;         /**< 압축 사용 여부 */
+    bool enable_auto_cleanup;        /**< 자동 정리 사용 여부 */
+
+    // 캐시 통계
+    int cache_hits;                  /**< 캐시 히트 횟수 */
+    int cache_misses;                /**< 캐시 미스 횟수 */
+    int cache_evictions;             /**< 캐시 제거 횟수 */
+    double total_load_time_ms;       /**< 총 로드 시간 (밀리초) */
+    double total_save_time_ms;       /**< 총 저장 시간 (밀리초) */
+
+    // 메모리 관리
+    WorldMemoryManager* memory_manager; /**< 메모리 관리자 참조 */
+
+    // 상태 정보
+    bool is_initialized;             /**< 초기화 상태 */
+    bool is_dirty;                   /**< 인덱스 파일 업데이트 필요 여부 */
+} WorldCache;
 
 // ============================================================================
 // WorldParameters 관리 함수들
@@ -1266,6 +1407,236 @@ void world_spectrum_analyzer_set_simd_optimization(WorldSpectrumAnalyzer* analyz
  * @return SIMD 기능 비트마스크 (0x01: SSE2, 0x02: AVX, 0x04: NEON)
  */
 int world_spectrum_analyzer_get_simd_capabilities(void);
+
+// ============================================================================
+// WORLD 메모리 관리자 함수들
+// ============================================================================
+
+/**
+ * @brief WORLD 메모리 관리자 생성
+ *
+ * @param analysis_size 분석용 메모리 풀 크기 (바이트)
+ * @param synthesis_size 합성용 메모리 풀 크기 (바이트)
+ * @param cache_size 캐시용 메모리 풀 크기 (바이트)
+ * @return 생성된 메모리 관리자 포인터, 실패시 NULL
+ */
+WorldMemoryManager* world_memory_manager_create(size_t analysis_size,
+                                                size_t synthesis_size,
+                                                size_t cache_size);
+
+/**
+ * @brief WORLD 메모리 관리자 해제
+ *
+ * @param manager 해제할 메모리 관리자
+ */
+void world_memory_manager_destroy(WorldMemoryManager* manager);
+
+/**
+ * @brief 메모리 할당 (풀 기반)
+ *
+ * @param manager 메모리 관리자
+ * @param size 할당할 크기 (바이트)
+ * @param pool_type 메모리 풀 타입
+ * @return 할당된 메모리 포인터, 실패시 NULL
+ */
+void* world_memory_alloc(WorldMemoryManager* manager, size_t size, WorldMemoryPoolType pool_type);
+
+/**
+ * @brief 메모리 해제 (풀 기반)
+ *
+ * @param manager 메모리 관리자
+ * @param ptr 해제할 메모리 포인터
+ * @param pool_type 메모리 풀 타입
+ */
+void world_memory_free(WorldMemoryManager* manager, void* ptr, WorldMemoryPoolType pool_type);
+
+/**
+ * @brief 정렬된 메모리 할당
+ *
+ * @param manager 메모리 관리자
+ * @param size 할당할 크기 (바이트)
+ * @param alignment 정렬 크기 (바이트)
+ * @param pool_type 메모리 풀 타입
+ * @return 할당된 메모리 포인터, 실패시 NULL
+ */
+void* world_memory_alloc_aligned(WorldMemoryManager* manager, size_t size,
+                                size_t alignment, WorldMemoryPoolType pool_type);
+
+/**
+ * @brief 메모리 풀 리셋
+ *
+ * @param manager 메모리 관리자
+ * @param pool_type 리셋할 메모리 풀 타입
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_memory_pool_reset(WorldMemoryManager* manager, WorldMemoryPoolType pool_type);
+
+/**
+ * @brief 메모리 사용량 통계 조회
+ *
+ * @param manager 메모리 관리자
+ * @param pool_type 조회할 메모리 풀 타입
+ * @param allocated 현재 할당된 메모리 (바이트)
+ * @param peak_usage 피크 사용량 (바이트)
+ * @param allocation_count 할당 횟수
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_memory_get_statistics(WorldMemoryManager* manager, WorldMemoryPoolType pool_type,
+                                     size_t* allocated, size_t* peak_usage, int* allocation_count);
+
+/**
+ * @brief 메모리 풀 사전 할당
+ *
+ * @param manager 메모리 관리자
+ * @param pool_type 사전 할당할 메모리 풀 타입
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_memory_pool_preallocate(WorldMemoryManager* manager, WorldMemoryPoolType pool_type);
+
+/**
+ * @brief 메모리 누수 검사
+ *
+ * @param manager 메모리 관리자
+ * @param leaked_bytes 누수된 메모리 크기 (바이트)
+ * @param leaked_allocations 누수된 할당 개수
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_memory_check_leaks(WorldMemoryManager* manager,
+                                 size_t* leaked_bytes, int* leaked_allocations);
+
+// ============================================================================
+// WORLD 캐시 시스템 함수들
+// ============================================================================
+
+/**
+ * @brief WORLD 캐시 시스템 생성
+ *
+ * @param cache_dir 캐시 디렉토리 경로
+ * @param max_entries 최대 엔트리 수
+ * @param memory_manager 메모리 관리자 (NULL이면 내부에서 생성)
+ * @return 생성된 캐시 시스템 포인터, 실패시 NULL
+ */
+WorldCache* world_cache_create(const char* cache_dir, int max_entries,
+                              WorldMemoryManager* memory_manager);
+
+/**
+ * @brief WORLD 캐시 시스템 해제
+ *
+ * @param cache 해제할 캐시 시스템
+ */
+void world_cache_destroy(WorldCache* cache);
+
+/**
+ * @brief 캐시에서 분석 결과 조회
+ *
+ * @param cache 캐시 시스템
+ * @param file_path 파일 경로
+ * @param params 분석 결과를 저장할 WorldParameters
+ * @return true 캐시 히트, false 캐시 미스
+ */
+bool world_cache_get(WorldCache* cache, const char* file_path, WorldParameters* params);
+
+/**
+ * @brief 캐시에 분석 결과 저장
+ *
+ * @param cache 캐시 시스템
+ * @param file_path 파일 경로
+ * @param params 저장할 분석 결과
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_cache_set(WorldCache* cache, const char* file_path, const WorldParameters* params);
+
+/**
+ * @brief 캐시 정리 (오래된 엔트리 제거)
+ *
+ * @param cache 캐시 시스템
+ * @param max_age_seconds 최대 유지 시간 (초)
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_cache_cleanup(WorldCache* cache, uint64_t max_age_seconds);
+
+/**
+ * @brief 파일 해시 계산
+ *
+ * @param file_path 파일 경로
+ * @param hash_output 해시 결과 버퍼 (최소 64바이트)
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_cache_compute_file_hash(const char* file_path, char* hash_output);
+
+/**
+ * @brief 캐시 엔트리 직렬화
+ *
+ * @param entry 캐시 엔트리
+ * @param buffer 출력 버퍼
+ * @param buffer_size 버퍼 크기
+ * @param written_size 실제 쓰여진 크기
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_cache_serialize_entry(const WorldCacheEntry* entry,
+                                    uint8_t* buffer, size_t buffer_size, size_t* written_size);
+
+/**
+ * @brief 캐시 엔트리 역직렬화
+ *
+ * @param buffer 입력 버퍼
+ * @param buffer_size 버퍼 크기
+ * @param entry 출력 캐시 엔트리
+ * @param memory_manager 메모리 관리자
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_cache_deserialize_entry(const uint8_t* buffer, size_t buffer_size,
+                                      WorldCacheEntry* entry, WorldMemoryManager* memory_manager);
+
+/**
+ * @brief 캐시 인덱스 파일 저장
+ *
+ * @param cache 캐시 시스템
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_cache_save_index(WorldCache* cache);
+
+/**
+ * @brief 캐시 인덱스 파일 로드
+ *
+ * @param cache 캐시 시스템
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_cache_load_index(WorldCache* cache);
+
+/**
+ * @brief 캐시 통계 조회
+ *
+ * @param cache 캐시 시스템
+ * @param hits 캐시 히트 횟수
+ * @param misses 캐시 미스 횟수
+ * @param hit_ratio 캐시 히트 비율 (0.0 ~ 1.0)
+ * @param total_size 총 캐시 크기 (바이트)
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_cache_get_statistics(WorldCache* cache, int* hits, int* misses,
+                                   double* hit_ratio, size_t* total_size);
+
+/**
+ * @brief 캐시 압축 활성화/비활성화
+ *
+ * @param cache 캐시 시스템
+ * @param enable 압축 사용 여부
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_cache_set_compression(WorldCache* cache, bool enable);
+
+/**
+ * @brief 캐시 자동 정리 설정
+ *
+ * @param cache 캐시 시스템
+ * @param enable 자동 정리 사용 여부
+ * @param max_age_seconds 최대 유지 시간 (초)
+ * @param max_size_bytes 최대 캐시 크기 (바이트)
+ * @return ET_SUCCESS 성공, 그 외 오류 코드
+ */
+ETResult world_cache_set_auto_cleanup(WorldCache* cache, bool enable,
+                                     uint64_t max_age_seconds, size_t max_size_bytes);
 
 #ifdef __cplusplus
 }
