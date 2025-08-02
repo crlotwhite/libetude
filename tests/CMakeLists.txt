@@ -352,6 +352,28 @@ endif()
 # 음성 파라미터 제어 테스트 등록
 add_test(NAME VoiceParameterControlTest COMMAND voice_parameter_control_test)
 
+# WORLD4UTAU 에러 처리 테스트 (world4utau 예제용)
+# 이 테스트는 world4utau 예제의 에러 처리 시스템을 테스트합니다
+add_executable(world_error_handling_test
+    unit/test_world_error_handling.c
+    ../examples/world4utau/src/world_error.c
+)
+target_link_libraries(world_error_handling_test
+    libetude_static
+)
+target_include_directories(world_error_handling_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../examples/world4utau/include
+)
+# pthread 라이브러리 링크 (Unix 계열)
+if(NOT WIN32)
+    target_link_libraries(world_error_handling_test pthread m)
+endif()
+
+# WORLD4UTAU 에러 처리 테스트 등록
+add_test(NAME WorldErrorHandlingTest COMMAND world_error_handling_test)
+
 # 통합 테스트 등록 (16번 작업)
 add_test(NAME IntegrationPipelineTest COMMAND integration_pipeline_test)
 add_test(NAME IntegrationStreamingTest COMMAND integration_streaming_test)
@@ -553,6 +575,13 @@ set_tests_properties(SpectrumAnalysisTest PROPERTIES
 set_tests_properties(VoiceParameterControlTest PROPERTIES
     TIMEOUT 300
     LABELS "voice;parameter;control;pitch;volume;modulation;timing;world4utau;example;utau;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# WORLD4UTAU 에러 처리 테스트 속성 설정
+set_tests_properties(WorldErrorHandlingTest PROPERTIES
+    TIMEOUT 180
+    LABELS "world4utau;error;logging;callback;filtering;stress;example;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
