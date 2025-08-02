@@ -71,3 +71,25 @@ world4utau는 libetude 라이브러리를 기반으로 한 UTAU 음성 합성 �
 2. WHEN 메모리 사용량을 최적화할 때 THEN libetude의 메모리 풀 시스템을 활용해야 합니다
 3. WHEN CPU 집약적인 연산을 수행할 때 THEN 멀티스레딩을 지원해야 합니다
 4. WHEN 스트리밍 처리가 필요할 때 THEN 청크 단위로 처리할 수 있어야 합니다
+
+### Requirement 7: DSP 블록 다이어그램 기반 처리 파이프라인
+
+**User Story:** 개발자로서, WORLD 엔진의 작업 과정을 DSP 블록 다이어그램처럼 순차적이고 모듈화된 방식으로 처리하고 싶습니다.
+
+#### Acceptance Criteria
+
+1. WHEN 음성 처리 파이프라인을 설계할 때 THEN DSP 블록 다이어그램 형태로 각 처리 단계를 정의해야 합니다
+2. WHEN 각 처리 블록이 실행될 때 THEN 입력과 출력이 명확히 정의된 인터페이스를 통해 데이터가 전달되어야 합니다
+3. WHEN 블록 다이어그램이 정의되면 THEN libetude의 그래프 엔진을 사용하여 실행 가능한 계산 그래프로 변환되어야 합니다
+4. WHEN 그래프가 실행될 때 THEN 각 노드의 의존성에 따라 올바른 순서로 처리되어야 합니다
+
+### Requirement 8: 그래프 엔진 기반 WORLD 처리
+
+**User Story:** 시스템 아키텍트로서, libetude의 그래프 엔진을 활용하여 WORLD 알고리즘을 효율적으로 실행하고 싶습니다.
+
+#### Acceptance Criteria
+
+1. WHEN WORLD 처리 그래프를 생성할 때 THEN libetude 그래프 엔진의 노드와 엣지 시스템을 사용해야 합니다
+2. WHEN 그래프 노드가 실행될 때 THEN 각 WORLD 처리 단계(F0 추출, 스펙트럼 분석, 비주기성 분석, 합성)가 독립적인 노드로 구현되어야 합니다
+3. WHEN 그래프 최적화가 필요할 때 THEN libetude의 그래프 최적화 기능을 활용하여 불필요한 연산을 제거해야 합니다
+4. WHEN 병렬 처리가 가능할 때 THEN 그래프 엔진이 자동으로 병렬 실행을 스케줄링해야 합니다
