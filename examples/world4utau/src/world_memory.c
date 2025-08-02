@@ -349,3 +349,316 @@ ETResult world_memory_check_leaks(WorldMemoryManager* manager, size_t* leaked_by
 
     return ET_SUCCESS;
 }
+
+// ============================================================================
+// 메모리 사용량 최적화 함수들 (요구사항 6.2)
+// ============================================================================
+
+/**
+ * @brief 메모리 풀 효율성 개선
+ */
+ETResult world_memory_optimize_pools(WorldMemoryManager* manager) {
+    if (!manager || !manager->is_initialized) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    ETResult result = ET_SUCCESS;
+
+    // 각 풀의 사용 패턴 분석
+    size_t analysis_usage = manager->peak_analysis_usage;
+    size_t synthesis_usage = manager->peak_synthesis_usage;
+    size_t cache_usage = manager->peak_cache_usage;
+
+    // 풀 크기 동적 조정 (사용량의 120%로 설정하여 여유분 확보)
+    size_t optimal_analysis_size = analysis_usage * 12 / 10;
+    size_t optimal_synthesis_size = synthesis_usage * 12 / 10;
+    size_t optimal_cache_size = cache_usage * 12 / 10;
+
+    // 최소 크기 보장
+    if (optimal_analysis_size < 64 * 1024) optimal_analysis_size = 64 * 1024;  // 64KB
+    if (optimal_synthesis_size < 128 * 1024) optimal_synthesis_size = 128 * 1024;  // 128KB
+    if (optimal_cache_size < 32 * 1024) optimal_cache_size = 32 * 1024;  // 32KB
+
+    // 풀 크기가 현재보다 작아질 수 있는 경우에만 재생성
+    if (optimal_analysis_size < manager->analysis_pool_size ||
+        optimal_synthesis_size < manager->synthesis_pool_size ||
+        optimal_cache_size < manager->cache_pool_size) {
+
+        // 기존 풀 해제
+        et_destroy_memory_pool(manager->analysis_pool);
+        et_destroy_memory_pool(manager->synthesis_pool);
+        et_destroy_memory_pool(manager->cache_pool);
+
+        // 최적화된 크기로 새 풀 생성
+        manager->analysis_pool = et_create_memory_pool(optimal_analysis_size, manager->alignment_size);
+        manager->synthesis_pool = et_create_memory_pool(optimal_synthesis_size, manager->alignment_size);
+        manager->cache_pool = et_create_memory_pool(optimal_cache_size, manager->alignment_size);
+
+        if (!manager->analysis_pool || !manager->synthesis_pool || !manager->cache_pool) {
+            return ET_ERROR_OUT_OF_MEMORY;
+        }
+
+        // 새로운 풀 크기 저장
+        manager->analysis_pool_size = optimal_analysis_size;
+        manager->synthesis_pool_size = optimal_synthesis_size;
+        manager->cache_pool_size = optimal_cache_size;
+
+        // 사용량 통계 리셋
+        manager->analysis_allocated = 0;
+        manager->synthesis_allocated = 0;
+        manager->cache_allocated = 0;
+    }
+
+    return result;
+}
+
+/**
+ * @brief 메모리 풀 압축 (단편화 해결)
+ */
+ETResult world_memory_compact_pools(WorldMemoryManager* manager) {
+    if (!manager || !manager->is_initialized) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    // libetude 메모리 풀 압축 기능 사용
+    ETResult result1 = et_memory_pool_compact(manager->analysis_pool);
+    ETResult result2 = et_memory_pool_compact(manager->synthesis_pool);
+    ETResult result3 = et_memory_pool_compact(manager->cache_pool);
+
+    // 하나라도 실패하면 실패로 간주
+    if (result1 != ET_SUCCESS || result2 != ET_SUCCESS || result3 != ET_SUCCESS) {
+        return ET_ERROR_OPERATION_FAILED;
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 메모리 사용량 모니터링 및 경고
+ */
+ETResult world_memory_monitor_usage(WorldMemoryManager* manager, double warning_threshold) {
+    if (!manager || !manager->is_initialized || warning_threshold <= 0.0 || warning_threshold > 1.0) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    // 각 풀의 사용률 계산
+    double analysis_usage_ratio = (double)manager->analysis_allocated / manager->analysis_pool_size;
+    double synthesis_usage_ratio = (double)manager->synthesis_allocated / manager->synthesis_pool_size;
+    double cache_usage_ratio = (double)manager->cache_allocated / manager->cache_pool_size;
+
+    // 경고 임계값 초과 검사
+    if (analysis_usage_ratio > warning_threshold) {
+        printf("경고: 분석 메모리 풀 사용률 높음: %.1f%% (임계값: %.1f%%)\n",
+               analysis_usage_ratio * 100.0, warning_threshold * 100.0);
+    }
+
+    if (synthesis_usage_ratio > warning_threshold) {
+        printf("경고: 합성 메모리 풀 사용률 높음: %.1f%% (임계값: %.1f%%)\n",
+               synthesis_usage_ratio * 100.0, warning_threshold * 100.0);
+    }
+
+    if (cache_usage_ratio > warning_threshold) {
+        printf("경고: 캐시 메모리 풀 사용률 높음: %.1f%% (임계값: %.1f%%)\n",
+               cache_usage_ratio * 100.0, warning_threshold * 100.0);
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 메모리 누수 방지를 위한 자동 정리
+ */
+ETResult world_memory_auto_cleanup(WorldMemoryManager* manager, int max_idle_time_ms) {
+    if (!manager || !manager->is_initialized || max_idle_time_ms < 0) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    static int last_cleanup_time = 0;
+    static int last_allocation_count = 0;
+
+    // 현재 시간 (간단한 구현을 위해 할당 카운터 사용)
+    int current_time = manager->total_allocations;
+
+    // 일정 시간 동안 새로운 할당이 없으면 정리 수행
+    if (current_time - last_cleanup_time > max_idle_time_ms / 10 &&  // 대략적인 시간 계산
+        manager->total_allocations == last_allocation_count) {
+
+        // 메모리 풀 압축
+        world_memory_compact_pools(manager);
+
+        // 사용하지 않는 캐시 정리
+        if (manager->cache_allocated > 0) {
+            et_reset_pool(manager->cache_pool);
+            manager->cache_allocated = 0;
+        }
+
+        last_cleanup_time = current_time;
+    }
+
+    last_allocation_count = manager->total_allocations;
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 메모리 사용량 프로파일링
+ */
+typedef struct {
+    size_t total_allocated;
+    size_t peak_usage;
+    size_t current_usage;
+    double fragmentation_ratio;
+    int allocation_count;
+    int deallocation_count;
+    double average_allocation_size;
+} WorldMemoryProfile;
+
+ETResult world_memory_get_profile(WorldMemoryManager* manager, WorldMemoryProfile* profile) {
+    if (!manager || !manager->is_initialized || !profile) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    memset(profile, 0, sizeof(WorldMemoryProfile));
+
+    // 전체 통계 계산
+    profile->total_allocated = manager->analysis_pool_size + manager->synthesis_pool_size + manager->cache_pool_size;
+    profile->peak_usage = manager->peak_analysis_usage + manager->peak_synthesis_usage + manager->peak_cache_usage;
+    profile->current_usage = manager->analysis_allocated + manager->synthesis_allocated + manager->cache_allocated;
+    profile->allocation_count = manager->total_allocations;
+    profile->deallocation_count = manager->total_deallocations;
+
+    // 평균 할당 크기 계산
+    if (manager->total_allocations > 0) {
+        profile->average_allocation_size = (double)profile->peak_usage / manager->total_allocations;
+    }
+
+    // 단편화 비율 추정 (사용률 기반)
+    if (profile->total_allocated > 0) {
+        double usage_ratio = (double)profile->current_usage / profile->total_allocated;
+        profile->fragmentation_ratio = 1.0 - usage_ratio;
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 메모리 최적화 설정 조정
+ */
+ETResult world_memory_set_optimization_settings(WorldMemoryManager* manager,
+                                               bool enable_alignment,
+                                               bool enable_preallocation,
+                                               int alignment_size) {
+    if (!manager || !manager->is_initialized) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    if (alignment_size <= 0 || (alignment_size & (alignment_size - 1)) != 0) {
+        return ET_ERROR_INVALID_PARAMETER;  // alignment_size는 2의 거듭제곱이어야 함
+    }
+
+    manager->enable_memory_alignment = enable_alignment;
+    manager->enable_pool_preallocation = enable_preallocation;
+    manager->alignment_size = alignment_size;
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 메모리 풀 사전 할당 (성능 최적화)
+ */
+ETResult world_memory_preallocate_pools(WorldMemoryManager* manager) {
+    if (!manager || !manager->is_initialized) {
+        return ET_ERROR_INVALID_PARAMETER;
+    }
+
+    if (!manager->enable_pool_preallocation) {
+        return ET_SUCCESS;  // 사전 할당이 비활성화됨
+    }
+
+    // 각 풀에서 작은 블록들을 미리 할당하여 초기화
+    const size_t prealloc_sizes[] = {64, 128, 256, 512, 1024, 2048, 4096};
+    const int num_sizes = sizeof(prealloc_sizes) / sizeof(prealloc_sizes[0]);
+
+    for (int i = 0; i < num_sizes; i++) {
+        // 분석 풀 사전 할당
+        void* analysis_ptr = et_alloc_from_pool(manager->analysis_pool, prealloc_sizes[i]);
+        if (analysis_ptr) {
+            et_free_to_pool(manager->analysis_pool, analysis_ptr);
+        }
+
+        // 합성 풀 사전 할당
+        void* synthesis_ptr = et_alloc_from_pool(manager->synthesis_pool, prealloc_sizes[i]);
+        if (synthesis_ptr) {
+            et_free_to_pool(manager->synthesis_pool, synthesis_ptr);
+        }
+
+        // 캐시 풀 사전 할당
+        void* cache_ptr = et_alloc_from_pool(manager->cache_pool, prealloc_sizes[i]);
+        if (cache_ptr) {
+            et_free_to_pool(manager->cache_pool, cache_ptr);
+        }
+    }
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 메모리 사용량 리포트 생성
+ */
+void world_memory_print_report(WorldMemoryManager* manager) {
+    if (!manager || !manager->is_initialized) {
+        printf("메모리 관리자가 초기화되지 않음\n");
+        return;
+    }
+
+    printf("\n=== WORLD 메모리 사용량 리포트 ===\n");
+
+    // 풀별 사용량
+    printf("분석 풀: %zu/%zu bytes (%.1f%%), 피크: %zu bytes\n",
+           manager->analysis_allocated, manager->analysis_pool_size,
+           (double)manager->analysis_allocated / manager->analysis_pool_size * 100.0,
+           manager->peak_analysis_usage);
+
+    printf("합성 풀: %zu/%zu bytes (%.1f%%), 피크: %zu bytes\n",
+           manager->synthesis_allocated, manager->synthesis_pool_size,
+           (double)manager->synthesis_allocated / manager->synthesis_pool_size * 100.0,
+           manager->peak_synthesis_usage);
+
+    printf("캐시 풀: %zu/%zu bytes (%.1f%%), 피크: %zu bytes\n",
+           manager->cache_allocated, manager->cache_pool_size,
+           (double)manager->cache_allocated / manager->cache_pool_size * 100.0,
+           manager->peak_cache_usage);
+
+    // 전체 통계
+    size_t total_allocated = manager->analysis_allocated + manager->synthesis_allocated + manager->cache_allocated;
+    size_t total_pool_size = manager->analysis_pool_size + manager->synthesis_pool_size + manager->cache_pool_size;
+    size_t total_peak = manager->peak_analysis_usage + manager->peak_synthesis_usage + manager->peak_cache_usage;
+
+    printf("\n전체 사용량: %zu/%zu bytes (%.1f%%)\n",
+           total_allocated, total_pool_size,
+           (double)total_allocated / total_pool_size * 100.0);
+
+    printf("전체 피크 사용량: %zu bytes\n", total_peak);
+
+    // 할당 통계
+    printf("\n할당 통계:\n");
+    printf("  총 할당: %d회\n", manager->total_allocations);
+    printf("  총 해제: %d회\n", manager->total_deallocations);
+    printf("  활성 할당: %d개\n", manager->active_allocations);
+
+    if (manager->total_allocations > 0) {
+        printf("  평균 할당 크기: %.1f bytes\n",
+               (double)total_peak / manager->total_allocations);
+    }
+
+    // 최적화 설정
+    printf("\n최적화 설정:\n");
+    printf("  메모리 정렬: %s (%d bytes)\n",
+           manager->enable_memory_alignment ? "활성화" : "비활성화",
+           manager->alignment_size);
+    printf("  풀 사전 할당: %s\n",
+           manager->enable_pool_preallocation ? "활성화" : "비활성화");
+    printf("  통계 수집: %s\n",
+           manager->enable_statistics ? "활성화" : "비활성화");
+
+    printf("================================\n\n");
+}
