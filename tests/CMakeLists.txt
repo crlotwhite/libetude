@@ -1,4 +1,6 @@
 # LibEtude 테스트 CMake 설정
+cmake_minimum_required(VERSION 3.16)
+project(LibEtudeTests C CXX)
 
 # Unity 테스트 프레임워크 추가
 include(FetchContent)
@@ -233,6 +235,22 @@ if(WIN32)
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
     )
+
+    # Windows 보안 기능 테스트 (DEP/ASLR)
+    add_executable(windows_security_dep_aslr_test unit/windows/test_windows_security_dep_aslr_en.c)
+    target_link_libraries(windows_security_dep_aslr_test libetude_static)
+    target_include_directories(windows_security_dep_aslr_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+
+    # Windows 보안 기능 테스트 (UAC)
+    add_executable(windows_security_uac_test unit/windows/test_windows_security_uac.c)
+    target_link_libraries(windows_security_uac_test libetude_static)
+    target_include_directories(windows_security_uac_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
 endif()
 
 # 오디오 효과 플러그인 테스트
@@ -362,6 +380,8 @@ if(WIN32)
     add_test(NAME WindowsPlatformSimpleTest COMMAND windows_platform_simple_test)
     add_test(NAME WASAPIDeviceEnumerationTest COMMAND wasapi_device_enumeration_test)
     add_test(NAME DirectSoundFallbackTest COMMAND directsound_fallback_test)
+    add_test(NAME WindowsSecurityDEPASLRTest COMMAND windows_security_dep_aslr_test)
+    add_test(NAME WindowsSecurityUACTest COMMAND windows_security_uac_test)
 endif()
 
 # UTAU 파라미터 파싱 테스트

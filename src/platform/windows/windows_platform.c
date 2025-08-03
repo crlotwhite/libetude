@@ -34,6 +34,8 @@ ETWindowsPlatformConfig et_windows_create_default_config(void) {
     config.security.enforce_dep = true;
     config.security.require_aslr = true;
     config.security.check_uac = true;
+    config.security.use_secure_allocator = true;
+    config.security.minimum_uac_level = ET_UAC_LEVEL_USER;
 
     /* 개발 도구 기본 설정 */
     config.development.enable_etw_logging = false;
@@ -120,11 +122,20 @@ ETResult et_windows_init(const ETWindowsPlatformConfig* config) {
         }
     }
 
+    /* ASLR 호환성 확인 */
+    if (g_windows_platform.config.security.require_aslr) {
+        if (!et_windows_check_aslr_compatibility()) {
+            return ET_ERROR_SECURITY_CHECK_FAILED;
+        }
+    }
+
     /* UAC 권한 확인 */
     if (g_windows_platform.config.security.check_uac) {
-        if (!et_windows_check_uac_permissions()) {
+        ETUACLevel current_level = et_windows_check_uac_level();
+        if (current_level < g_windows_platform.config.security.minimum_uac_level) {
             /* UAC 권한이 부족하면 일부 기능 제한 */
             g_windows_platform.config.performance.enable_large_pages = false;
+            g_windows_platform.config.security.use_secure_allocator = false;
         }
     }
 

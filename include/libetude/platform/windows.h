@@ -24,6 +24,7 @@
 
 /* 필요한 전방 선언 */
 #include "libetude/audio_io.h"
+#include "libetude/platform/windows_security.h"
 
 /* Windows 플랫폼 설정 구조체 */
 typedef struct {
@@ -46,6 +47,8 @@ typedef struct {
         bool enforce_dep;          /* DEP 강제 적용 */
         bool require_aslr;         /* ASLR 요구 */
         bool check_uac;            /* UAC 권한 확인 */
+        bool use_secure_allocator; /* 보안 메모리 할당자 사용 */
+        ETUACLevel minimum_uac_level; /* 최소 UAC 권한 레벨 */
     } security;
 
     /* 개발 도구 설정 */

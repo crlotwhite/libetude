@@ -1,10 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(WindowsSecurityTest C)
 
-# C99 표준 설정
-set(CMAKE_C_STANDARD 99)
-set(CMAKE_C_STANDARD_REQUIRED ON)
-
 # Windows에서만 빌드
 if(WIN32)
     add_executable(test_windows_security_simple test_windows_security_simple.c)

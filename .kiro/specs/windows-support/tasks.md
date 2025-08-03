@@ -53,13 +53,22 @@
   - 기존 DirectSound 코드 개선 및 오류 처리 강화
   - _Requirements: 2.1_
 
-- [ ] 4. Windows 보안 기능 통합
-- [ ] 4.1 DEP 및 ASLR 호환성 구현
+- [x] 4. Windows 보안 기능 통합
+
+
+
+
+
+- [x] 4.1 DEP 및 ASLR 호환성 구현
+
+
   - DEP 호환성 확인 함수 및 ASLR 호환 메모리 할당 구현
   - 메모리 보호 기능과 통합된 할당자 작성
   - _Requirements: 3.1, 3.2_
 
-- [ ] 4.2 UAC 권한 관리 구현
+- [x] 4.2 UAC 권한 관리 구현
+
+
   - UAC 권한 확인 및 최소 권한 원칙 적용 로직 구현
   - 권한 부족 시 기능 제한 모드 구현
   - _Requirements: 3.3_

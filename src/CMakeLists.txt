@@ -110,6 +110,7 @@ if(WIN32)
         platform/windows/windows_audio_wasapi.c
         platform/windows/windows_audio_directsound.c
         platform/windows/windows_audio_fallback.c
+        platform/windows/windows_security.c
     )
 elseif(APPLE)
     list(APPEND LIBETUDE_CORE_SOURCES
