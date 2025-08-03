@@ -28,6 +28,16 @@ typedef LibEtudeErrorCode ETErrorCode;
 #define ET_ERROR_QUANTIZATION -18       ///< 양자화 관련 오류
 #define ET_ERROR_GRAPH -19              ///< 그래프 관련 오류
 #define ET_ERROR_KERNEL -20             ///< 커널 관련 오류
+
+// Windows 플랫폼 특화 오류 코드
+#define ET_ERROR_PLATFORM_INIT_FAILED -21      ///< 플랫폼 초기화 실패
+#define ET_ERROR_UNSUPPORTED_PLATFORM -22      ///< 지원되지 않는 플랫폼
+#define ET_ERROR_SECURITY_CHECK_FAILED -23     ///< 보안 검사 실패
+#define ET_ERROR_PLATFORM_INFO_UNAVAILABLE -24 ///< 플랫폼 정보 조회 불가
+#define ET_ERROR_BUFFER_TOO_SMALL -25          ///< 버퍼 크기 부족
+#define ET_ERROR_INVALID_PARAMETER -26         ///< 잘못된 매개변수
+#define ET_ERROR_NOT_SUPPORTED -27             ///< 지원되지 않는 기능
+
 #define ET_ERROR_UNKNOWN -999           ///< 알 수 없는 오류
 
 /**

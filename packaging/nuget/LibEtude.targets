@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!-- LibEtude NuGet 패키지 MSBuild 타겟 파일 -->
+
+  <PropertyGroup>
+    <LibEtudePackageRoot>$(MSBuildThisFileDirectory)</LibEtudePackageRoot>
+    <LibEtudeIncludePath>$(LibEtudePackageRoot)include</LibEtudeIncludePath>
+    <LibEtudeLibPath>$(LibEtudePackageRoot)lib\$(Configuration)</LibEtudeLibPath>
+    <LibEtudeBinPath>$(LibEtudePackageRoot)bin\$(Configuration)</LibEtudeBinPath>
+  </PropertyGroup>
+
+  <!-- 포함 디렉토리 설정 -->
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(LibEtudeIncludePath);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>LIBETUDE_PLATFORM_WINDOWS=1;_WIN32_WINNT=0x0A00;WIN32_LEAN_AND_MEAN;NOMINMAX;UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <!-- 라이브러리 링크 설정 -->
+  <ItemDefinitionGroup>
+    <Link>
+      <AdditionalLibraryDirectories>$(LibEtudeLibPath);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libetude.lib;kernel32.lib;user32.lib;gdi32.lib;ole32.lib;oleaut32.lib;uuid.lib;advapi32.lib;shell32.lib;comdlg32.lib;winspool.lib;winmm.lib;dsound.lib;ksuser.lib;mmdevapi.lib;audioses.lib;avrt.lib;ws2_32.lib;iphlpapi.lib;crypt32.lib;secur32.lib;pdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- 동적 라이브러리 복사 (DLL 사용 시) -->
+  <PropertyGroup Condition="'$(LibEtudeUseDynamicLibrary)' == 'true'">
+    <LibEtudeDllSource>$(LibEtudeBinPath)\libetude.dll</LibEtudeDllSource>
+    <LibEtudeDllTarget>$(OutputPath)libetude.dll</LibEtudeDllTarget>
+  </PropertyGroup>
+
+  <Target Name="CopyLibEtudeDll" BeforeTargets="Build" Condition="'$(LibEtudeUseDynamicLibrary)' == 'true' and Exists('$(LibEtudeDllSource)')">
+    <Copy SourceFiles="$(LibEtudeDllSource)" DestinationFiles="$(LibEtudeDllTarget)" SkipUnchangedFiles="true" />
+    <Message Text="LibEtude DLL을 출력 디렉토리로 복사했습니다: $(LibEtudeDllTarget)" Importance="normal" />
+  </Target>
+
+  <!-- 컴파일러별 최적화 설정 -->
+  <ItemDefinitionGroup Condition="'$(Configuration)' == 'Release'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>true</OmitFramePointers>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <EnableEnhancedInstructionSet Condition="'$(Platform)' == 'x64'">AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)' == 'Debug'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <PreprocessorDefinitions>_DEBUG;LIBETUDE_DEBUG_WINDOWS=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- 플랫폼별 설정 -->
+  <ItemDefinitionGroup Condition="'$(Platform)' == 'x64'">
+    <ClCompile>
+      <PreprocessorDefinitions>LIBETUDE_ARCH_X64=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Platform)' == 'Win32'">
+    <ClCompile>
+      <PreprocessorDefinitions>LIBETUDE_ARCH_X86=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Platform)' == 'ARM64'">
+    <ClCompile>
+      <PreprocessorDefinitions>LIBETUDE_ARCH_ARM64=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <!-- 사용자 정의 속성 -->
+  <PropertyGroup>
+    <LibEtudeEnableSIMD Condition="'$(LibEtudeEnableSIMD)' == ''">true</LibEtudeEnableSIMD>
+    <LibEtudeEnableGPU Condition="'$(LibEtudeEnableGPU)' == ''">false</LibEtudeEnableGPU>
+    <LibEtudeMinimal Condition="'$(LibEtudeMinimal)' == ''">false</LibEtudeMinimal>
+  </PropertyGroup>
+
+  <!-- SIMD 지원 설정 -->
+  <ItemDefinitionGroup Condition="'$(LibEtudeEnableSIMD)' == 'true'">
+    <ClCompile>
+      <PreprocessorDefinitions>LIBETUDE_ENABLE_SIMD=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <!-- GPU 가속 지원 설정 -->
+  <ItemDefinitionGroup Condition="'$(LibEtudeEnableGPU)' == 'true'">
+    <ClCompile>
+      <PreprocessorDefinitions>LIBETUDE_ENABLE_GPU=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <!-- 최소 빌드 모드 설정 -->
+  <ItemDefinitionGroup Condition="'$(LibEtudeMinimal)' == 'true'">
+    <ClCompile>
+      <PreprocessorDefinitions>LIBETUDE_MINIMAL=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <!-- 빌드 후 메시지 -->
+  <Target Name="LibEtudePostBuild" AfterTargets="Build">
+    <Message Text="LibEtude 라이브러리가 성공적으로 링크되었습니다." Importance="normal" />
+    <Message Text="  버전: 1.0.0" Importance="normal" />
+    <Message Text="  구성: $(Configuration)" Importance="normal" />
+    <Message Text="  플랫폼: $(Platform)" Importance="normal" />
+    <Message Text="  SIMD 지원: $(LibEtudeEnableSIMD)" Importance="normal" />
+    <Message Text="  GPU 가속: $(LibEtudeEnableGPU)" Importance="normal" />
+    <Message Text="  최소 빌드: $(LibEtudeMinimal)" Importance="normal" />
+  </Target>
+
+</Project>

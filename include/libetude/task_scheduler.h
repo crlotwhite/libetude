@@ -3,7 +3,13 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+
+#ifndef _WIN32
 #include <pthread.h>
+#else
+/* Windows에서는 Windows 스레딩 API 사용 */
+#include <windows.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {

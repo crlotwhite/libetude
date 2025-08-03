@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>LibEtude</id>
+    <version>1.0.0</version>
+    <title>LibEtude - AI Voice Synthesis Engine</title>
+    <authors>LibEtude Project</authors>
+    <owners>LibEtude Project</owners>
+    <license type="file">LICENSE</license>
+    <projectUrl>https://github.com/libetude/libetude</projectUrl>
+    <iconUrl>https://github.com/libetude/libetude/raw/main/docs/logo.png</iconUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>LibEtude는 음성 합성에 특화된 AI 추론 엔진입니다. 실시간 음성 합성을 위한 고성능 최적화와 크로스 플랫폼 지원을 제공합니다.</description>
+    <releaseNotes>
+      v1.0.0:
+      - Windows 네이티브 지원 강화
+      - WASAPI 및 DirectSound 오디오 백엔드
+      - MSVC 및 MinGW 컴파일러 최적화
+      - AVX2/AVX-512 SIMD 최적화
+      - Windows Thread Pool 통합
+      - Large Page 메모리 지원
+      - ETW (Event Tracing for Windows) 지원
+      - Visual Studio 디버깅 지원
+    </releaseNotes>
+    <copyright>Copyright (c) 2025 LibEtude Project</copyright>
+    <tags>ai voice synthesis tts speech audio realtime windows native performance</tags>
+    <dependencies>
+      <group targetFramework="native">
+        <!-- Windows 시스템 라이브러리는 자동으로 링크됨 -->
+      </group>
+    </dependencies>
+  </metadata>
+  <files>
+    <!-- 헤더 파일 -->
+    <file src="include\**\*.h" target="build\native\include\" />
+
+    <!-- 정적 라이브러리 (Release) -->
+    <file src="lib\Release\libetude.lib" target="build\native\lib\Release\" />
+    <file src="lib\Release\libetude.pdb" target="build\native\lib\Release\" />
+
+    <!-- 정적 라이브러리 (Debug) -->
+    <file src="lib\Debug\libetude.lib" target="build\native\lib\Debug\" />
+    <file src="lib\Debug\libetude.pdb" target="build\native\lib\Debug\" />
+
+    <!-- 동적 라이브러리 (Release) -->
+    <file src="bin\Release\libetude.dll" target="build\native\bin\Release\" />
+    <file src="lib\Release\libetude.lib" target="build\native\lib\Release\libetude_import.lib" />
+
+    <!-- 동적 라이브러리 (Debug) -->
+    <file src="bin\Debug\libetude.dll" target="build\native\bin\Debug\" />
+    <file src="lib\Debug\libetude.lib" target="build\native\lib\Debug\libetude_import.lib" />
+
+    <!-- CMake 설정 파일 -->
+    <file src="cmake\LibEtudeConfig.cmake" target="build\native\cmake\" />
+    <file src="cmake\WindowsConfig.cmake" target="build\native\cmake\" />
+
+    <!-- MSBuild 타겟 파일 -->
+    <file src="LibEtude.targets" target="build\native\" />
+
+    <!-- 도구 -->
+    <file src="tools\**\*" target="tools\" exclude="**\*.pdb;**\*.ilk" />
+
+    <!-- 예제 -->
+    <file src="examples\**\*" target="examples\" exclude="**\build\**;**\*.exe;**\*.obj" />
+
+    <!-- 문서 -->
+    <file src="README.md" target="docs\" />
+    <file src="LICENSE" target="" />
+    <file src="docs\**\*" target="docs\" exclude="**\*.tmp" />
+  </files>
+</package>

@@ -39,6 +39,8 @@ endif()
 # 플랫폼별 설정
 if(WIN32)
     add_definitions(-DLIBETUDE_PLATFORM_WINDOWS)
+    # Windows 특화 설정 모듈 포함
+    include(cmake/WindowsConfig.cmake)
 elseif(APPLE)
     add_definitions(-DLIBETUDE_PLATFORM_MACOS)
 elseif(ANDROID)
@@ -115,6 +117,32 @@ option(LIBETUDE_BUILD_BINDINGS "Build language bindings" ON)
 if(LIBETUDE_BUILD_BINDINGS)
     add_subdirectory(bindings)
 endif()
+
+# CMake 설정 파일 생성
+include(CMakePackageConfigHelpers)
+
+# LibEtudeConfig.cmake 파일 생성
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/LibEtudeConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/LibEtudeConfig.cmake
+    INSTALL_DESTINATION lib/cmake/LibEtude
+    PATH_VARS CMAKE_INSTALL_PREFIX
+)
+
+# LibEtudeConfigVersion.cmake 파일 생성
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/LibEtudeConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+# CMake 설정 파일 설치
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/LibEtudeConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/LibEtudeConfigVersion.cmake
+    DESTINATION lib/cmake/LibEtude
+    COMPONENT Development
+)
 
 # 설치 설정
 install(FILES README.md LICENSE DESTINATION share/libetude COMPONENT Documentation)

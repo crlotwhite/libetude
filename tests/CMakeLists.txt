@@ -201,6 +201,40 @@ create_unity_test(plugin_test "unit/test_plugin.c")
 # 플러그인 의존성 관리 테스트
 create_unity_test(plugin_dependency_test "unit/test_plugin_dependency.c")
 
+# Windows 플랫폼 테스트 (Windows에서만 빌드)
+if(WIN32)
+    add_executable(windows_platform_test unit/windows/test_windows_platform.c)
+    target_link_libraries(windows_platform_test libetude_static)
+    target_include_directories(windows_platform_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+
+    # 간단한 Windows 플랫폼 테스트
+    add_executable(windows_platform_simple_test unit/windows/test_windows_platform_simple.c)
+    target_link_libraries(windows_platform_simple_test libetude_static)
+    target_include_directories(windows_platform_simple_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+
+    # WASAPI 디바이스 열거 테스트
+    add_executable(wasapi_device_enumeration_test unit/windows/test_wasapi_device_enumeration_simple.c)
+    target_link_libraries(wasapi_device_enumeration_test libetude_static)
+    target_include_directories(wasapi_device_enumeration_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+
+    # DirectSound 폴백 메커니즘 테스트
+    add_executable(directsound_fallback_test unit/windows/test_directsound_fallback.c)
+    target_link_libraries(directsound_fallback_test libetude_static)
+    target_include_directories(directsound_fallback_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+endif()
+
 # 오디오 효과 플러그인 테스트
 create_unity_test(audio_effects_test "unit/test_audio_effects.c")
 
@@ -321,6 +355,14 @@ add_test(NAME PluginDependencyTest COMMAND plugin_dependency_test)
 
 # 오디오 효과 플러그인 테스트
 add_test(NAME AudioEffectsTest COMMAND audio_effects_test)
+
+# Windows 플랫폼 테스트 등록 (Windows에서만)
+if(WIN32)
+    add_test(NAME WindowsPlatformTest COMMAND windows_platform_test)
+    add_test(NAME WindowsPlatformSimpleTest COMMAND windows_platform_simple_test)
+    add_test(NAME WASAPIDeviceEnumerationTest COMMAND wasapi_device_enumeration_test)
+    add_test(NAME DirectSoundFallbackTest COMMAND directsound_fallback_test)
+endif()
 
 # UTAU 파라미터 파싱 테스트
 add_test(NAME UTAUParameterParsingTest COMMAND utau_parameter_parsing_test)

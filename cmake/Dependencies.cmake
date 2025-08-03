@@ -18,11 +18,28 @@ function(find_libetude_dependencies)
 
     # 플랫폼별 의존성
     if(WIN32)
-        # Windows 의존성
+        # Windows 의존성 - 강화된 버전
         find_library(WINMM_LIBRARY winmm)
         find_library(DSOUND_LIBRARY dsound)
+        find_library(MMDEVAPI_LIBRARY mmdevapi)
+        find_library(AUDIOSES_LIBRARY audioses)
+        find_library(AVRT_LIBRARY avrt)
+        find_library(KSUSER_LIBRARY ksuser)
+
         if(NOT WINMM_LIBRARY)
             message(FATAL_ERROR "winmm 라이브러리를 찾을 수 없습니다.")
+        endif()
+
+        # WASAPI 지원을 위한 추가 라이브러리 확인
+        if(MMDEVAPI_LIBRARY)
+            message(STATUS "WASAPI 지원 라이브러리 발견")
+            add_definitions(-DLIBETUDE_HAVE_WASAPI)
+        endif()
+
+        # DirectSound 지원 확인
+        if(DSOUND_LIBRARY)
+            message(STATUS "DirectSound 라이브러리 발견")
+            add_definitions(-DLIBETUDE_HAVE_DIRECTSOUND)
         endif()
     elseif(APPLE)
         # macOS 의존성
@@ -106,6 +123,18 @@ function(link_libetude_dependencies target)
         target_link_libraries(${target} PRIVATE ${WINMM_LIBRARY})
         if(DSOUND_LIBRARY)
             target_link_libraries(${target} PRIVATE ${DSOUND_LIBRARY})
+        endif()
+        if(MMDEVAPI_LIBRARY)
+            target_link_libraries(${target} PRIVATE ${MMDEVAPI_LIBRARY})
+        endif()
+        if(AUDIOSES_LIBRARY)
+            target_link_libraries(${target} PRIVATE ${AUDIOSES_LIBRARY})
+        endif()
+        if(AVRT_LIBRARY)
+            target_link_libraries(${target} PRIVATE ${AVRT_LIBRARY})
+        endif()
+        if(KSUSER_LIBRARY)
+            target_link_libraries(${target} PRIVATE ${KSUSER_LIBRARY})
         endif()
     elseif(APPLE)
         target_link_libraries(${target} PRIVATE
