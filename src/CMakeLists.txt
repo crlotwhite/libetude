@@ -85,11 +85,11 @@ if(LIBETUDE_ENABLE_SIMD)
         )
     endif()
 
-    if(HAVE_AVX)
+    if(HAVE_AVX2)
         list(APPEND LIBETUDE_CORE_SOURCES
             core/kernels/simd/avx_kernels.c
         )
-        set_source_files_properties(core/kernels/simd/avx_kernels.c PROPERTIES COMPILE_FLAGS "-mavx")
+        set_source_files_properties(core/kernels/simd/avx_kernels.c PROPERTIES COMPILE_FLAGS "-mavx2")
     endif()
 
     if(HAVE_NEON)
@@ -98,7 +98,7 @@ if(LIBETUDE_ENABLE_SIMD)
         )
     endif()
 
-    message(STATUS "SIMD support enabled. HAVE_SSE=${HAVE_SSE}, HAVE_AVX=${HAVE_AVX}, HAVE_NEON=${HAVE_NEON}")
+    message(STATUS "SIMD support enabled. HAVE_SSE=${HAVE_SSE}, HAVE_AVX=${HAVE_AVX}, HAVE_AVX2=${HAVE_AVX2}, HAVE_NEON=${HAVE_NEON}")
 endif()
 
 # GPU 커널 소스 (조건부 컴파일)
@@ -136,9 +136,9 @@ add_library(libetude_static STATIC ${LIBETUDE_CORE_SOURCES})
 target_include_directories(libetude_static PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
-# Ensure -mavx is applied to avx_kernels.c for libetude_static
-if(HAVE_AVX)
-    target_compile_options(libetude_static PRIVATE $<$<COMPILE_LANGUAGE:C>:-mavx>)
+# Ensure -mavx2 is applied to avx_kernels.c for libetude_static
+if(HAVE_AVX2)
+    target_compile_options(libetude_static PRIVATE $<$<COMPILE_LANGUAGE:C>:-mavx2>)
 endif()
 
 # 동적 라이브러리 생성 (선택적)
@@ -148,9 +148,9 @@ if(NOT LIBETUDE_MINIMAL)
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
     )
     target_compile_definitions(libetude_shared PRIVATE LIBETUDE_EXPORTS)
-    # Ensure -mavx is applied to avx_kernels.c for libetude_shared
-    if(HAVE_AVX)
-        target_compile_options(libetude_shared PRIVATE $<$<COMPILE_LANGUAGE:C>:-mavx>)
+    # Ensure -mavx2 is applied to avx_kernels.c for libetude_shared
+    if(HAVE_AVX2)
+        target_compile_options(libetude_shared PRIVATE $<$<COMPILE_LANGUAGE:C>:-mavx2>)
     endif()
     # 라이브러리 이름 설정
     set_target_properties(libetude_shared PROPERTIES

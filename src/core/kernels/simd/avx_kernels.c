@@ -724,6 +724,13 @@ extern void cpu_matrix_mul(const float* a, const float* b, float* c, size_t m, s
 #define avx_vector_scale sse_vector_scale
 #define avx_relu sse_relu
 #define avx_matrix_mul cpu_matrix_mul
+
+// BF16 함수들에 대한 기본 구현 선언
+void avx_float32_to_bfloat16(const float* input, uint16_t* output, size_t size);
+void avx_bfloat16_to_float32(const uint16_t* input, float* output, size_t size);
+void avx_bfloat16_vector_add(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size);
+void avx_bfloat16_vector_mul(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size);
+void avx_bfloat16_gemm(const uint16_t* a, const uint16_t* b, uint16_t* c, size_t m, size_t n, size_t k);
 #endif
 
 // ============================================================================
@@ -855,10 +862,10 @@ void register_avx_kernels(void) {
 #endif
 }
 // ============================================================================
-// AVX BF16 양자화 최적화 커널
+// AVX BF16 양자화 최적화 커널 (AVX2 필요)
 // ============================================================================
 
-#ifdef LIBETUDE_HAVE_AVX
+#ifdef LIBETUDE_HAVE_AVX2
 /**
  * @brief AVX 최적화된 float32 to BF16 변환
  */
@@ -1117,7 +1124,7 @@ void avx_bfloat16_gemm(const uint16_t* a, const uint16_t* b, uint16_t* c,
     }
 }
 
-#else // LIBETUDE_HAVE_AVX가 정의되지 않은 경우
+#else // LIBETUDE_HAVE_AVX2가 정의되지 않은 경우
 
 // AVX가 지원되지 않는 경우 더미 함수들
 void avx_float32_to_bfloat16(const float* input, uint16_t* output, size_t size) {
@@ -1173,5 +1180,7 @@ void avx_bfloat16_gemm(const uint16_t* a, const uint16_t* b, uint16_t* c,
         }
     }
 }
+
+#endif // LIBETUDE_HAVE_AVX2
 
 #endif // LIBETUDE_HAVE_AVX
