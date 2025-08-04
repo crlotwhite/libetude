@@ -774,6 +774,14 @@ ETResult et_stft_fft_parallel(const float* input, float* output_real, float* out
 
 ETResult et_stft_ifft_parallel(const float* input_real, const float* input_imag, float* output,
                                int n_frames, int fft_size, int num_threads) {
+    // 사용되지 않는 매개변수 경고 억제
+    (void)input_real;
+    (void)input_imag;
+    (void)output;
+    (void)n_frames;
+    (void)fft_size;
+    (void)num_threads;
+
     // IFFT 병렬 처리 구현 (FFT와 유사)
     return ET_SUCCESS; // 간단한 구현
 }

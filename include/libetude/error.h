@@ -21,16 +21,9 @@ extern "C" {
 // types.h에서 정의된 오류 코드를 사용
 typedef LibEtudeErrorCode ETErrorCode;
 
-// 추가 오류 코드 정의 (types.h에 없는 것들)
+// 추가 오류 코드 정의 (types.h에서 이미 정의됨)
 #define LIBETUDE_ERROR_INVALID_PARAMETER LIBETUDE_ERROR_INVALID_ARGUMENT  ///< 잘못된 매개변수 (별칭)
-#define LIBETUDE_ERROR_SYSTEM -15       ///< 시스템 오류
-#define ET_ERROR_THREAD -16             ///< 스레드 관련 오류
-#define ET_ERROR_AUDIO -17              ///< 오디오 관련 오류
-#define ET_ERROR_COMPRESSION -18        ///< 압축 관련 오류
-#define ET_ERROR_QUANTIZATION -19       ///< 양자화 관련 오류
-#define ET_ERROR_GRAPH -20              ///< 그래프 관련 오류
-#define ET_ERROR_KERNEL -21             ///< 커널 관련 오류
-#define ET_ERROR_UNKNOWN -999           ///< 알 수 없는 오류
+#define LIBETUDE_ERROR_SYSTEM LIBETUDE_ERROR_SYSTEM  ///< 시스템 오류 (types.h에서 정의됨)
 
 /**
  * @brief 로그 레벨 열거형

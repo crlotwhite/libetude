@@ -40,7 +40,15 @@ typedef enum {
     LIBETUDE_ERROR_UNSUPPORTED = -11,        /**< 지원되지 않음 */
     LIBETUDE_ERROR_NOT_FOUND = -12,          /**< 찾을 수 없음 */
     LIBETUDE_ERROR_INVALID_STATE = -13,      /**< 잘못된 상태 */
-    LIBETUDE_ERROR_BUFFER_FULL = -14         /**< 버퍼 가득 참 */
+    LIBETUDE_ERROR_BUFFER_FULL = -14,        /**< 버퍼 가득 참 */
+    LIBETUDE_ERROR_SYSTEM = -15,             /**< 시스템 오류 */
+    ET_ERROR_THREAD = -16,                   /**< 스레드 관련 오류 */
+    ET_ERROR_AUDIO = -17,                    /**< 오디오 관련 오류 */
+    ET_ERROR_COMPRESSION = -18,              /**< 압축 관련 오류 */
+    ET_ERROR_QUANTIZATION = -19,             /**< 양자화 관련 오류 */
+    ET_ERROR_GRAPH = -20,                    /**< 그래프 관련 오류 */
+    ET_ERROR_KERNEL = -21,                   /**< 커널 관련 오류 */
+    ET_ERROR_UNKNOWN = -999                  /**< 알 수 없는 오류 */
 } LibEtudeErrorCode;
 
 /**

@@ -857,7 +857,10 @@ static float et_round_to_nearest_even(float x) {
  * @brief 양자화 오차 계산
  */
 static bool et_compute_quantization_error(const ETTensor* original, const ETTensor* quantized,
-                                         const ETQuantizationParams* params, ETQuantizationError* error) {
+                                          const ETQuantizationParams* params, ETQuantizationError* error) __attribute__((unused));
+
+static bool et_compute_quantization_error(const ETTensor* original, const ETTensor* quantized,
+                                          const ETQuantizationParams* params, ETQuantizationError* error) {
     if (!et_validate_tensor(original) || !et_validate_tensor(quantized) || !error) {
         return false;
     }

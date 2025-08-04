@@ -11,6 +11,7 @@
 #define LIBETUDE_MOBILE_OPTIMIZATION_H
 
 #include "libetude/types.h"
+#include "libetude/api.h"
 
 #ifdef __cplusplus
 extern "C" {
