@@ -8,6 +8,11 @@
 #include <float.h>
 #include <stdio.h>
 
+// M_PI 정의 (Windows에서 누락되는 경우를 대비)
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 // 테스트 허용 오차
 #define TOLERANCE_HIGH 0.01f    // 1% 오차
 #define TOLERANCE_MED 0.05f     // 5% 오차

@@ -688,7 +688,7 @@ void et_mel_sparse_matvec_simd(const float* sparse_filters, const int* indices,
     }
 }
 
-void et_mel_batch_transform_simd(const ETMelFilterbank* mel_fb, const float* spectrogram,
+void et_mel_batch_transform_simd(ETMelFilterbank* mel_fb, const float* spectrogram,
                                 float* mel_spec, int time_frames, int n_freq_bins, int n_mels) {
     if (mel_fb->sparse_filters.data) {
         // 희소 행렬 사용

@@ -147,7 +147,7 @@ static void print_performance_stats(TTSDemo* demo) {
 }
 
 // 오디오 콜백 함수
-static void audio_callback(const float* audio_data, int num_samples, void* user_data) {
+static void audio_callback(float* audio_data, int num_samples, void* user_data) {
     TTSDemo* demo = (TTSDemo*)user_data;
 
     if (demo->verbose_mode) {
@@ -252,7 +252,7 @@ static int synthesize_text(TTSDemo* demo, const char* text) {
 
     if (result != 0) {
         fprintf(stderr, "오류: 음성 합성 실패 (코드: %d)\n", result);
-        ETError* error = et_get_last_error();
+        const ETError* error = et_get_last_error();
         if (error) {
             fprintf(stderr, "상세 오류: %s\n", error->message);
         }

@@ -9,10 +9,13 @@
 #ifndef LIBETUDE_MEMORY_H
 #define LIBETUDE_MEMORY_H
 
+#include "config.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#ifndef LIBETUDE_PLATFORM_WINDOWS
 #include <pthread.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {

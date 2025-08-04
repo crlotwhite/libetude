@@ -187,14 +187,16 @@ void test_desktop_environment(void) {
     printf("데스크톱 최적화 테스트\n");
 
     // 데스크톱 최적화 설정 테스트
-    int desktop_result = et_desktop_optimization_init();
+    LibEtudeDesktopOptimizer desktop_optimizer;
+    int desktop_result = libetude_desktop_optimizer_init(&desktop_optimizer);
 
-    if (desktop_result == ET_SUCCESS) {
+    if (desktop_result == LIBETUDE_SUCCESS) {
         printf("데스크톱 최적화 초기화 성공\n");
 
         // 멀티코어 최적화 테스트
         printf("멀티코어 최적화 설정 테스트\n");
-        int multicore_result = et_desktop_set_thread_count(platform_info.cpu_cores);
+        LibEtudeMulticoreOptimizer multicore;
+        int multicore_result = libetude_multicore_auto_configure(&multicore, &platform_info);
 
         if (multicore_result == ET_SUCCESS) {
             printf("멀티코어 최적화 설정 성공: %d 코어\n", platform_info.cpu_cores);
@@ -276,7 +278,7 @@ void test_desktop_environment(void) {
         free(desktop_audio_buffer);
 
         // 데스크톱 최적화 정리
-        et_desktop_optimization_cleanup();
+        libetude_desktop_optimizer_destroy(&desktop_optimizer);
 
     } else if (desktop_result == ET_ERROR_NOT_IMPLEMENTED) {
         printf("데스크톱 최적화 기능 미구현 (정상)\n");

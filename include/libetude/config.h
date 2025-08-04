@@ -24,11 +24,17 @@
 // ============================================================================
 
 #if defined(_WIN32) || defined(_WIN64)
-    #define LIBETUDE_PLATFORM_WINDOWS
+    #ifndef LIBETUDE_PLATFORM_WINDOWS
+        #define LIBETUDE_PLATFORM_WINDOWS
+    #endif
     #if defined(_WIN64)
-        #define LIBETUDE_PLATFORM_WIN64
+        #ifndef LIBETUDE_PLATFORM_WIN64
+            #define LIBETUDE_PLATFORM_WIN64
+        #endif
     #else
-        #define LIBETUDE_PLATFORM_WIN32
+        #ifndef LIBETUDE_PLATFORM_WIN32
+            #define LIBETUDE_PLATFORM_WIN32
+        #endif
     #endif
 #elif defined(__APPLE__)
     #ifndef LIBETUDE_PLATFORM_MACOS
@@ -41,10 +47,16 @@
         #endif
     #endif
 #elif defined(__ANDROID__)
-    #define LIBETUDE_PLATFORM_ANDROID
-    #define LIBETUDE_PLATFORM_LINUX
+    #ifndef LIBETUDE_PLATFORM_ANDROID
+        #define LIBETUDE_PLATFORM_ANDROID
+    #endif
+    #ifndef LIBETUDE_PLATFORM_LINUX
+        #define LIBETUDE_PLATFORM_LINUX
+    #endif
 #elif defined(__linux__)
-    #define LIBETUDE_PLATFORM_LINUX
+    #ifndef LIBETUDE_PLATFORM_LINUX
+        #define LIBETUDE_PLATFORM_LINUX
+    #endif
 #else
     #define LIBETUDE_PLATFORM_UNKNOWN
 #endif
@@ -69,7 +81,9 @@
 // ============================================================================
 
 #ifdef LIBETUDE_PLATFORM_WINDOWS
-    #ifdef LIBETUDE_EXPORTS
+    #ifdef LIBETUDE_STATIC_LIB
+        #define LIBETUDE_API
+    #elif defined(LIBETUDE_EXPORTS)
         #define LIBETUDE_API __declspec(dllexport)
     #else
         #define LIBETUDE_API __declspec(dllimport)

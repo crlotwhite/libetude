@@ -167,8 +167,10 @@ static int test_special_values() {
     float nan_val = sqrtf(-1.0f);
     TEST_ASSERT(isnan(nan_val), "NaN detection test");
 
-    // 무한대 테스트
-    float inf_val = 1.0f / 0.0f;
+    // 무한대 테스트 (컴파일러 경고를 피하기 위해 변수 사용)
+    volatile float one = 1.0f;
+    volatile float zero = 0.0f;
+    float inf_val = one / zero;
     TEST_ASSERT(isinf(inf_val), "Infinity detection test");
 
     // 0으로 나누기 처리

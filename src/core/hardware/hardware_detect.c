@@ -25,6 +25,10 @@
     #include <unistd.h>
     #include <sys/sysinfo.h>
     #include <cpuid.h>
+    #include <stdlib.h>
+    #include <pthread.h>
+    #include <sched.h>
+    #define _GNU_SOURCE
 #endif
 
 // ============================================================================
