@@ -251,6 +251,28 @@ if(WIN32)
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
     )
+
+    # Windows 빌드 시스템 통합 테스트 (작업 9.3)
+    add_executable(windows_build_system_integration_test unit/windows/test_windows_build_system_integration.c)
+    target_include_directories(windows_build_system_integration_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+    # Windows 시스템 라이브러리만 링크 (libetude 의존성 없음)
+    target_link_libraries(windows_build_system_integration_test PRIVATE
+        kernel32 user32 ole32 oleaut32 uuid winmm dsound mmdevapi
+    )
+
+    # Windows 배포 검증 테스트 (작업 9.3)
+    add_executable(windows_deployment_validation_test unit/windows/test_windows_deployment_validation.c)
+    target_include_directories(windows_deployment_validation_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+    # Windows 시스템 라이브러리만 링크 (libetude 의존성 없음)
+    target_link_libraries(windows_deployment_validation_test PRIVATE
+        kernel32 user32 ole32 oleaut32 uuid winmm dsound mmdevapi shlwapi
+    )
 endif()
 
 # 오디오 효과 플러그인 테스트
@@ -382,6 +404,23 @@ if(WIN32)
     add_test(NAME DirectSoundFallbackTest COMMAND directsound_fallback_test)
     add_test(NAME WindowsSecurityDEPASLRTest COMMAND windows_security_dep_aslr_test)
     add_test(NAME WindowsSecurityUACTest COMMAND windows_security_uac_test)
+
+    # Windows 빌드 시스템 및 배포 테스트 등록 (작업 9.3)
+    add_test(NAME WindowsBuildSystemIntegrationTest COMMAND windows_build_system_integration_test)
+    add_test(NAME WindowsDeploymentValidationTest COMMAND windows_deployment_validation_test)
+
+    # 빌드 시스템 테스트 속성 설정
+    set_tests_properties(WindowsBuildSystemIntegrationTest PROPERTIES
+        TIMEOUT 600
+        LABELS "windows;build;integration;msvc;mingw;cmake;deployment;core;libetude"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+
+    set_tests_properties(WindowsDeploymentValidationTest PROPERTIES
+        TIMEOUT 600
+        LABELS "windows;deployment;nuget;cmake;package;validation;core;libetude"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
 endif()
 
 # UTAU 파라미터 파싱 테스트
