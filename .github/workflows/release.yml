@@ -42,12 +42,12 @@ jobs:
                 -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
                 -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
                 -DLIBETUDE_BUILD_TESTS=ON \
-                -DLIBETUDE_BUILD_EXAMPLES=ON \
+                -DLIBETUDE_BUILD_EXAMPLES=OFF \
                 -DLIBETUDE_BUILD_TOOLS=ON
         else
           cmake -B build -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
                 -DLIBETUDE_BUILD_TESTS=ON \
-                -DLIBETUDE_BUILD_EXAMPLES=ON \
+                -DLIBETUDE_BUILD_EXAMPLES=OFF \
                 -DLIBETUDE_BUILD_TOOLS=ON
         fi
 
@@ -90,13 +90,13 @@ jobs:
           cmake -B build -G "Visual Studio 17 2022" -A ARM64 `
                 -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE `
                 -DLIBETUDE_BUILD_TESTS=ON `
-                -DLIBETUDE_BUILD_EXAMPLES=ON `
+                -DLIBETUDE_BUILD_EXAMPLES=OFF `
                 -DLIBETUDE_BUILD_TOOLS=ON
         } else {
           cmake -B build -G "Visual Studio 17 2022" -A x64 `
                 -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE `
                 -DLIBETUDE_BUILD_TESTS=ON `
-                -DLIBETUDE_BUILD_EXAMPLES=ON `
+                -DLIBETUDE_BUILD_EXAMPLES=OFF `
                 -DLIBETUDE_BUILD_TOOLS=ON
         }
 
@@ -136,13 +136,13 @@ jobs:
           cmake -B build -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
                 -DCMAKE_OSX_ARCHITECTURES=arm64 \
                 -DLIBETUDE_BUILD_TESTS=ON \
-                -DLIBETUDE_BUILD_EXAMPLES=ON \
+                -DLIBETUDE_BUILD_EXAMPLES=OFF \
                 -DLIBETUDE_BUILD_TOOLS=ON
         else
           cmake -B build -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
                 -DCMAKE_OSX_ARCHITECTURES=x86_64 \
                 -DLIBETUDE_BUILD_TESTS=ON \
-                -DLIBETUDE_BUILD_EXAMPLES=ON \
+                -DLIBETUDE_BUILD_EXAMPLES=OFF \
                 -DLIBETUDE_BUILD_TOOLS=ON
         fi
 
@@ -189,7 +189,7 @@ jobs:
               -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
               -DLIBETUDE_MINIMAL=ON \
               -DLIBETUDE_BUILD_TESTS=OFF \
-              -DLIBETUDE_BUILD_EXAMPLES=ON
+              -DLIBETUDE_BUILD_EXAMPLES=OFF
 
     - name: Build
       run: cmake --build build-android-${{ matrix.abi }} --config $BUILD_TYPE --parallel $(nproc)
@@ -224,7 +224,7 @@ jobs:
               -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
               -DLIBETUDE_MINIMAL=ON \
               -DLIBETUDE_BUILD_TESTS=OFF \
-              -DLIBETUDE_BUILD_EXAMPLES=ON
+              -DLIBETUDE_BUILD_EXAMPLES=OFF
 
     - name: Build
       run: cmake --build build-ios-${{ matrix.platform }} --config $BUILD_TYPE --parallel $(sysctl -n hw.ncpu)

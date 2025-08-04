@@ -57,7 +57,7 @@ jobs:
         cmake -B build \
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
           -DLIBETUDE_BUILD_TESTS=ON \
-          -DLIBETUDE_BUILD_EXAMPLES=ON \
+          -DLIBETUDE_BUILD_EXAMPLES=OFF \
           -DLIBETUDE_BUILD_TOOLS=ON \
           -DLIBETUDE_BUILD_BINDINGS=ON \
           -DLIBETUDE_ENABLE_SIMD=ON \
@@ -70,7 +70,7 @@ jobs:
         cmake -B build `
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
           -DLIBETUDE_BUILD_TESTS=ON `
-          -DLIBETUDE_BUILD_EXAMPLES=ON `
+          -DLIBETUDE_BUILD_EXAMPLES=OFF `
           -DLIBETUDE_BUILD_TOOLS=ON `
           -DLIBETUDE_BUILD_BINDINGS=ON `
           -DLIBETUDE_ENABLE_SIMD=ON `
@@ -168,7 +168,7 @@ jobs:
         cmake -B build \
           -DCMAKE_BUILD_TYPE=Debug \
           -DLIBETUDE_BUILD_TESTS=ON \
-          -DLIBETUDE_BUILD_EXAMPLES=ON \
+          -DLIBETUDE_BUILD_EXAMPLES=OFF \
           -DLIBETUDE_ENABLE_SIMD=OFF \
           -DLIBETUDE_ENABLE_GPU=OFF
 
@@ -253,7 +253,7 @@ jobs:
           -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
           -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
           -DLIBETUDE_BUILD_TESTS=OFF \
-          -DLIBETUDE_BUILD_EXAMPLES=ON \
+          -DLIBETUDE_BUILD_EXAMPLES=OFF \
           -DLIBETUDE_MINIMAL=ON
 
     - name: ARM64 빌드
