@@ -136,6 +136,10 @@ add_library(libetude_static STATIC ${LIBETUDE_CORE_SOURCES})
 target_include_directories(libetude_static PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
+# Ensure -mavx is applied to avx_kernels.c for libetude_static
+if(HAVE_AVX)
+    target_compile_options(libetude_static PRIVATE $<$<COMPILE_LANGUAGE:C>:-mavx>)
+endif()
 
 # 동적 라이브러리 생성 (선택적)
 if(NOT LIBETUDE_MINIMAL)
@@ -144,7 +148,10 @@ if(NOT LIBETUDE_MINIMAL)
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
     )
     target_compile_definitions(libetude_shared PRIVATE LIBETUDE_EXPORTS)
-
+    # Ensure -mavx is applied to avx_kernels.c for libetude_shared
+    if(HAVE_AVX)
+        target_compile_options(libetude_shared PRIVATE $<$<COMPILE_LANGUAGE:C>:-mavx>)
+    endif()
     # 라이브러리 이름 설정
     set_target_properties(libetude_shared PROPERTIES
         OUTPUT_NAME "libetude"
