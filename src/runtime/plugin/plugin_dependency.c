@@ -5,11 +5,57 @@
 #include <stdio.h>
 #include <time.h>
 #include <sys/stat.h>
-// #include <curl/curl.h>  // 임시로 비활성화
-// #include <json-c/json.h>  // 임시로 비활성화
-// #include <openssl/sha.h>  // 임시로 비활성화
-// #include <openssl/rsa.h>  // 임시로 비활성화
-// #include <openssl/pem.h>  // 임시로 비활성화
+#include <dirent.h>
+#include <unistd.h>
+// 외부 라이브러리들 - 스텁 구현으로 대체
+// #include <curl/curl.h>
+// #include <json-c/json.h>
+// #include <openssl/sha.h>
+// #include <openssl/rsa.h>
+// #include <openssl/pem.h>
+
+// 스텁 구현을 위한 타입 정의
+typedef int CURL;
+typedef int CURLcode;
+typedef long long curl_off_t;
+typedef int json_object;
+typedef int RSA;
+typedef unsigned char SHA256_CTX[128];  // 임시 크기
+
+#define CURLE_OK 0
+#define CURLOPT_URL 1
+#define CURLOPT_WRITEFUNCTION 2
+#define CURLOPT_WRITEDATA 3
+#define CURLOPT_TIMEOUT 4
+#define CURLOPT_FOLLOWLOCATION 5
+#define CURLOPT_NOPROGRESS 6
+#define CURLOPT_XFERINFOFUNCTION 7
+#define CURLOPT_XFERINFODATA 8
+#define SHA256_DIGEST_LENGTH 32
+#define NID_sha256 1
+
+// 스텁 함수들
+static CURL* curl_easy_init() { return NULL; }
+static void curl_easy_cleanup(CURL* curl) { (void)curl; }
+static CURLcode curl_easy_perform(CURL* curl) { (void)curl; return CURLE_OK; }
+static void curl_easy_setopt(CURL* curl, int option, ...) { (void)curl; (void)option; }
+static json_object* json_tokener_parse(const char* str) { (void)str; return NULL; }
+static void json_object_put(json_object* obj) { (void)obj; }
+static int json_object_object_get_ex(json_object* obj, const char* key, json_object** value) { (void)obj; (void)key; (void)value; return 0; }
+static int json_object_is_type(json_object* obj, int type) { (void)obj; (void)type; return 0; }
+static int json_object_array_length(json_object* obj) { (void)obj; return 0; }
+static json_object* json_object_array_get_idx(json_object* obj, int idx) { (void)obj; (void)idx; return NULL; }
+static const char* json_object_get_string(json_object* obj) { (void)obj; return ""; }
+static int json_object_get_boolean(json_object* obj) { (void)obj; return 0; }
+static RSA* PEM_read_RSA_PUBKEY(FILE* fp, RSA** x, void* cb, void* u) { (void)fp; (void)x; (void)cb; (void)u; return NULL; }
+static void RSA_free(RSA* rsa) { (void)rsa; }
+static void SHA256_Init(SHA256_CTX* c) { (void)c; }
+static void SHA256_Update(SHA256_CTX* c, const void* data, size_t len) { (void)c; (void)data; (void)len; }
+static void SHA256_Final(unsigned char* md, SHA256_CTX* c) { (void)md; (void)c; }
+static int RSA_verify(int type, const unsigned char* m, unsigned int m_len, const unsigned char* sigbuf, unsigned int siglen, RSA* rsa) { (void)type; (void)m; (void)m_len; (void)sigbuf; (void)siglen; (void)rsa; return 0; }
+
+#define json_type_array 1
+#define json_type_object 2
 
 // 의존성 캐시 구조체
 struct DependencyCache {
@@ -869,8 +915,9 @@ PluginError dependency_find_best_match(PluginRegistry* registry, const char* plu
     }
 
     return ET_ERROR_NOT_FOUND;
-}//
-업데이트 다운로드 진행률 구조체
+}
+
+// 업데이트 다운로드 진행률 구조체
 typedef struct {
     UpdateProgressCallback callback;
     void* user_data;

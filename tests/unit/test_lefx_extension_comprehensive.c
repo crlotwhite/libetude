@@ -461,7 +461,7 @@ static int test_differential_model() {
     strcpy(header.extension_author, "LibEtude Research");
     strcpy(header.extension_version, "1.0.0");
 
-    size_t written = fwrite(&header, sizeof(LEFXHeader), 1, ext_file);
+    size_t written = fwrite(&header, sizeof(LEFXHeader), 1, diff_file);
     TEST_ASSERT(written == 1, "차분 모델 헤더 쓰기");
 
     // 차분 메타데이터
@@ -597,7 +597,7 @@ static int test_conditional_activation() {
     rule3.operator_type = 0; // 같음 연산자
     strcpy(rule3.condition_value, "ko");
     rule3.activation_weight = 1.0f;
-    rule3.priority = 300;
+    rule3.priority = 255;  // uint8_t 최대값으로 수정
 
     TEST_ASSERT(lefx_validate_activation_rule(&rule3), "언어 조건 규칙 검증");
 

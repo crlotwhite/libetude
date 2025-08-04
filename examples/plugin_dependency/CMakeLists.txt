@@ -16,7 +16,7 @@ if(WIN32)
 elseif(APPLE)
     target_link_libraries(plugin_dependency_example "-framework AudioToolbox" "-framework CoreAudio" dl)
 elseif(UNIX)
-    target_link_libraries(plugin_dependency_example asound pthread m dl uuid curl json-c ssl crypto)
+    target_link_libraries(plugin_dependency_example asound pthread m dl uuid)
 endif()
 
 # 설치 설정

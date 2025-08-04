@@ -92,11 +92,11 @@ void basicTextToSpeechExample() {
         std::cout << "합성 완료! 시간: " << duration.count() << "ms, 샘플 수: " << audio.size() << std::endl;
 
         // 성능 통계 출력
-        PerformanceStats stats = engine.getPerformanceStats();
+        libetude::PerformanceStats stats = engine.getPerformanceStats();
         std::cout << "성능 통계:" << std::endl;
-        std::cout << "  추론 시간: " << stats.inference_time_ms << "ms" << std::endl;
-        std::cout << "  메모리 사용량: " << stats.memory_usage_mb << "MB" << std::endl;
-        std::cout << "  CPU 사용률: " << stats.cpu_usage_percent << "%" << std::endl;
+        std::cout << " 추론 시간: " << stats.inference_time_ms << "ms" << std::endl;
+        std::cout << " 메모리 사용량: " << stats.memory_usage_mb << "MB" << std::endl;
+        std::cout << " CPU 사용률: " << stats.cpu_usage_percent << "%" << std::endl;
 
         // WAV 파일로 저장
         saveWavFile("output_basic.wav", audio);
@@ -207,10 +207,10 @@ void qualityAndGpuExample() {
         const std::string test_text = "품질 모드 테스트 문장입니다.";
 
         // 다양한 품질 모드 테스트
-        std::vector<QualityMode> quality_modes = {
-            QualityMode::Fast,
-            QualityMode::Balanced,
-            QualityMode::High
+        std::vector<libetude::QualityMode> quality_modes = {
+            libetude::QualityMode::Fast,
+            libetude::QualityMode::Balanced,
+            libetude::QualityMode::High
         };
 
         std::vector<std::string> mode_names = {"Fast", "Balanced", "High"};
@@ -226,7 +226,7 @@ void qualityAndGpuExample() {
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
             std::cout << "합성 시간: " << duration.count() << "ms" << std::endl;
 
-            PerformanceStats stats = engine.getPerformanceStats();
+            libetude::PerformanceStats stats = engine.getPerformanceStats();
             std::cout << "추론 시간: " << stats.inference_time_ms << "ms" << std::endl;
 
             saveWavFile("output_quality_" + mode_names[i] + ".wav", audio);

@@ -71,10 +71,10 @@ typedef struct {
 // 스트리밍 컨텍스트
 typedef struct {
     LibEtudeEngine* engine;
-    AudioDevice* audio_device;
-    PerformanceAnalyzer* perf_analyzer;
+    ETAudioDevice* audio_device;
+    ETPerformanceAnalyzer* perf_analyzer;
     Profiler* profiler;
-    TaskScheduler* scheduler;
+    ETTaskScheduler* scheduler;
 
     StreamState state;
     StreamingParams params;
@@ -252,7 +252,7 @@ static void* synthesis_thread_func(void* arg) {
 
         // 프로파일링 시작
         if (ctx->profiler) {
-            profiler_start_profile(ctx->profiler, "streaming_synthesis");
+            et_profiler_start_profile(ctx->profiler, "streaming_synthesis");
         }
 
         // 스트리밍 음성 합성 시작
@@ -278,7 +278,7 @@ static void* synthesis_thread_func(void* arg) {
 
         // 프로파일링 종료
         if (ctx->profiler) {
-            profiler_end_profile(ctx->profiler, "streaming_synthesis");
+            et_profiler_end_profile(ctx->profiler, "streaming_synthesis");
         }
 
         // 통계 업데이트
@@ -286,7 +286,7 @@ static void* synthesis_thread_func(void* arg) {
         ctx->stats.total_synthesis_time += synthesis_time;
 
         if (ctx->perf_analyzer) {
-            performance_analyzer_record_inference(ctx->perf_analyzer, synthesis_time);
+            et_performance_analyzer_record_inference(ctx->perf_analyzer, synthesis_time);
         }
 
         printf("음성 합성 완료 (%.2f ms)\n", synthesis_time);
@@ -562,19 +562,19 @@ static int init_streaming_context(StreamingContext* ctx, const char* model_path)
     }
 
     // 성능 분석기 초기화
-    ctx->perf_analyzer = performance_analyzer_create();
+    ctx->perf_analyzer = et_performance_analyzer_create();
     if (!ctx->perf_analyzer) {
         fprintf(stderr, "경고: 성능 분석기 초기화 실패\n");
     }
 
     // 프로파일러 초기화
-    ctx->profiler = profiler_create(2000);
+    ctx->profiler = et_profiler_create(2000);
     if (!ctx->profiler) {
         fprintf(stderr, "경고: 프로파일러 초기화 실패\n");
     }
 
     // 작업 스케줄러 초기화
-    ctx->scheduler = task_scheduler_create(100, 4);
+    ctx->scheduler = et_task_scheduler_create(100, 4);
     if (!ctx->scheduler) {
         fprintf(stderr, "경고: 작업 스케줄러 초기화 실패\n");
     }
@@ -587,7 +587,7 @@ static int init_streaming_context(StreamingContext* ctx, const char* model_path)
     }
 
     // 오디오 디바이스 초기화
-    AudioFormat audio_format = {
+    ETAudioFormat audio_format = {
         .sample_rate = 22050,
         .bit_depth = 16,
         .num_channels = 1,
@@ -595,7 +595,7 @@ static int init_streaming_context(StreamingContext* ctx, const char* model_path)
         .buffer_size = STREAMING_CHUNK_SIZE * 4
     };
 
-    ctx->audio_device = audio_open_output_device(NULL, &audio_format);
+    ctx->audio_device = et_audio_open_output_device(NULL, &audio_format);
     if (!ctx->audio_device) {
         fprintf(stderr, "경고: 오디오 디바이스 초기화 실패\n");
     }
@@ -631,24 +631,14 @@ static void cleanup_streaming_context(StreamingContext* ctx) {
 
     // 리소스 정리
     if (ctx->audio_device) {
-        audio_close_device(ctx->audio_device);
+        et_audio_close_device(ctx->audio_device);
     }
 
     if (ctx->audio_queue) {
         audio_queue_destroy(ctx->audio_queue);
     }
 
-    if (ctx->scheduler) {
-        task_scheduler_destroy(ctx->scheduler);
-    }
-
-    if (ctx->profiler) {
-        profiler_destroy(ctx->profiler);
-    }
-
-    if (ctx->perf_analyzer) {
-        performance_analyzer_destroy(ctx->perf_analyzer);
-    }
+    // 성능 분석기, 프로파일러, 스케줄러는 엔진과 함께 해제됨
 
     if (ctx->engine) {
         libetude_destroy_engine(ctx->engine);

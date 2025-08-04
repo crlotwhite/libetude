@@ -37,8 +37,8 @@ typedef struct {
 // 애플리케이션 상태 구조체
 typedef struct {
     LibEtudeEngine* engine;
-    AudioDevice* audio_device;
-    PerformanceAnalyzer* perf_analyzer;
+    ETAudioDevice* audio_device;
+    ETPerformanceAnalyzer* perf_analyzer;
     Profiler* profiler;
 
     SpeakerInfo speakers[MAX_SPEAKERS];
@@ -133,16 +133,13 @@ static void print_performance_stats(TTSDemo* demo) {
     }
 
     PerformanceStats stats;
-    if (performance_analyzer_get_stats(demo->perf_analyzer, &stats) == 0) {
+    if (libetude_get_performance_stats(demo->engine, &stats) == 0) {
         printf("\n=== 성능 통계 ===\n");
-        printf("총 추론 시간: %.2f ms\n", stats.total_inference_time_ms);
-        printf("평균 추론 시간: %.2f ms\n", stats.avg_inference_time_ms);
-        printf("최대 추론 시간: %.2f ms\n", stats.max_inference_time_ms);
-        printf("최소 추론 시간: %.2f ms\n", stats.min_inference_time_ms);
-        printf("총 처리된 요청: %d\n", stats.total_requests);
+        printf("추론 시간: %.2f ms\n", stats.inference_time_ms);
         printf("메모리 사용량: %.2f MB\n", stats.memory_usage_mb);
         printf("CPU 사용률: %.1f%%\n", stats.cpu_usage_percent);
         printf("GPU 사용률: %.1f%%\n", stats.gpu_usage_percent);
+        printf("활성 스레드: %d\n", stats.active_threads);
         printf("\n");
     } else {
         printf("성능 통계를 가져올 수 없습니다.\n");
@@ -173,19 +170,12 @@ static int init_tts_engine(TTSDemo* demo, const char* model_path) {
     }
 
     // 성능 분석기 초기화
-    demo->perf_analyzer = performance_analyzer_create();
-    if (!demo->perf_analyzer) {
-        fprintf(stderr, "경고: 성능 분석기 초기화 실패\n");
-    }
-
-    // 프로파일러 초기화
-    demo->profiler = profiler_create(1000);  // 최대 1000개 엔트리
-    if (!demo->profiler) {
-        fprintf(stderr, "경고: 프로파일러 초기화 실패\n");
-    }
+    // 성능 분석기와 프로파일러는 엔진에 내장되어 있음
+    demo->perf_analyzer = NULL;  // 사용하지 않음
+    demo->profiler = NULL;       // 사용하지 않음
 
     // 오디오 디바이스 초기화
-    AudioFormat audio_format = {
+    ETAudioFormat audio_format = {
         .sample_rate = 22050,
         .bit_depth = 16,
         .num_channels = 1,
@@ -193,12 +183,12 @@ static int init_tts_engine(TTSDemo* demo, const char* model_path) {
         .buffer_size = 2048
     };
 
-    demo->audio_device = audio_open_output_device(NULL, &audio_format);
+    demo->audio_device = et_audio_open_output_device(NULL, &audio_format);
     if (!demo->audio_device) {
         fprintf(stderr, "경고: 오디오 디바이스 초기화 실패\n");
     } else {
-        audio_set_callback(demo->audio_device, audio_callback, demo);
-        audio_start(demo->audio_device);
+        et_audio_set_callback(demo->audio_device, audio_callback, demo);
+        et_audio_start(demo->audio_device);
     }
 
     printf("TTS 엔진 초기화 완료\n");
@@ -210,20 +200,12 @@ static void cleanup_tts_engine(TTSDemo* demo) {
     printf("TTS 엔진 정리 중...\n");
 
     if (demo->audio_device) {
-        audio_stop(demo->audio_device);
-        audio_close_device(demo->audio_device);
+        et_audio_stop(demo->audio_device);
+        et_audio_close_device(demo->audio_device);
         demo->audio_device = NULL;
     }
 
-    if (demo->profiler) {
-        profiler_destroy(demo->profiler);
-        demo->profiler = NULL;
-    }
-
-    if (demo->perf_analyzer) {
-        performance_analyzer_destroy(demo->perf_analyzer);
-        demo->perf_analyzer = NULL;
-    }
+    // 성능 분석기와 프로파일러는 엔진과 함께 해제됨
 
     if (demo->engine) {
         libetude_destroy_engine(demo->engine);
@@ -244,9 +226,7 @@ static int synthesize_text(TTSDemo* demo, const char* text) {
 
     // 성능 모니터링 시작
     clock_t start_time = clock();
-    if (demo->profiler) {
-        profiler_start_profile(demo->profiler, "text_synthesis");
-    }
+    // 프로파일링은 엔진 내부에서 처리됨
 
     // 현재 화자 설정 적용
     SpeakerInfo* speaker = &demo->speakers[demo->current_speaker];
@@ -268,9 +248,7 @@ static int synthesize_text(TTSDemo* demo, const char* text) {
     clock_t end_time = clock();
     double synthesis_time = ((double)(end_time - start_time)) / CLOCKS_PER_SEC * 1000.0;
 
-    if (demo->profiler) {
-        profiler_end_profile(demo->profiler, "text_synthesis");
-    }
+    // 프로파일링은 엔진 내부에서 처리됨
 
     if (result != 0) {
         fprintf(stderr, "오류: 음성 합성 실패 (코드: %d)\n", result);
@@ -284,9 +262,7 @@ static int synthesize_text(TTSDemo* demo, const char* text) {
     printf("음성 합성 완료 (%.2f ms, %d 샘플)\n", synthesis_time, audio_length);
 
     // 성능 통계 업데이트
-    if (demo->perf_analyzer) {
-        performance_analyzer_record_inference(demo->perf_analyzer, synthesis_time);
-    }
+    // 성능 통계는 엔진 내부에서 자동으로 기록됨
 
     // 모니터링이 활성화된 경우 실시간 통계 출력
     if (demo->monitoring_enabled) {

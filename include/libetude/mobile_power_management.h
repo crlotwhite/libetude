@@ -115,6 +115,7 @@ typedef struct {
     bool is_charging;                       ///< 충전 중 여부
     bool is_fast_charging;                  ///< 고속 충전 여부
     bool is_wireless_charging;              ///< 무선 충전 여부
+    bool low_power_mode;                    ///< 저전력 모드 여부
 
     int charge_cycles;                      ///< 충전 사이클 수
     float health_percentage;                ///< 배터리 건강도 (0.0-1.0)
