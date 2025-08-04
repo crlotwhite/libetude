@@ -22,6 +22,13 @@
 #else
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+// Windows threading alternatives
+typedef HANDLE pthread_t;
+typedef CRITICAL_SECTION pthread_mutex_t;
+#define pthread_mutex_lock(m) EnterCriticalSection(m)
+#define pthread_mutex_unlock(m) LeaveCriticalSection(m)
+#define pthread_create(thread, attr, func, arg) ((*thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)func, arg, 0, NULL)) ? 0 : -1)
+#define pthread_join(thread, retval) (WaitForSingleObject(thread, INFINITE) == WAIT_OBJECT_0 ? 0 : -1)
 #endif
 
 #ifdef ANDROID_PLATFORM
@@ -81,6 +88,9 @@ static int64_t get_current_time_ms();
 // ============================================================================
 
 int thermal_management_init() {
+#ifdef LIBETUDE_PLATFORM_WINDOWS
+    InitializeCriticalSection(&g_thermal_state.mutex);
+#endif
     pthread_mutex_lock(&g_thermal_state.mutex);
 
     if (g_thermal_state.initialized) {
@@ -142,6 +152,10 @@ int thermal_management_cleanup() {
 
     g_thermal_state.initialized = false;
     pthread_mutex_unlock(&g_thermal_state.mutex);
+
+#ifdef LIBETUDE_PLATFORM_WINDOWS
+    DeleteCriticalSection(&g_thermal_state.mutex);
+#endif
 
     return LIBETUDE_SUCCESS;
 }

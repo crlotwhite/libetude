@@ -14,14 +14,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#ifdef LIBETUDE_PLATFORM_WINDOWS
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-typedef CRITICAL_SECTION et_mutex_t;
-#else
-#include <pthread.h>
-typedef pthread_mutex_t et_mutex_t;
-#endif
+#include "threading.h"
 
 #ifdef __cplusplus
 extern "C" {

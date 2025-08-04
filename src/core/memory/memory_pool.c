@@ -14,7 +14,11 @@
 #include <errno.h>
 #include <time.h>
 #include <stdio.h>
+#ifdef LIBETUDE_PLATFORM_WINDOWS
+#include <windows.h>
+#else
 #include <sys/time.h>
+#endif
 
 // 내부 상수
 #define ET_MEMORY_BLOCK_HEADER_SIZE sizeof(ETMemoryBlock)

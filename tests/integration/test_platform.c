@@ -13,6 +13,7 @@
 #include "libetude/mobile_power_management.h"
 #include "libetude/embedded_optimization.h"
 #include "libetude/hardware.h"
+#include "libetude/thermal_management.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -395,7 +396,6 @@ void test_mobile_environment(void) {
             printf("배터리 사용량: %.2f%%\n", battery_usage);
 
             // 모바일 환경 요구사항 검증
-            double audio_duration = (double)output_length / 44100.0;
             double battery_per_hour = (battery_usage / processing_time) * 3600.0;
 
             printf("시간당 예상 배터리 사용량: %.2f%%\n", battery_per_hour);

@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <assert.h>
-#include <pthread.h>
+#include "libetude/threading.h"
 #include <semaphore.h>
 #include <unistd.h>
 

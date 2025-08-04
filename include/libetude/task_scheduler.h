@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <pthread.h>
+#include "threading.h"
 
 #ifdef __cplusplus
 extern "C" {

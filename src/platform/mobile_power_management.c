@@ -22,6 +22,13 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <powrprof.h>
+// Windows threading alternatives
+typedef HANDLE pthread_t;
+typedef CRITICAL_SECTION pthread_mutex_t;
+#define pthread_mutex_lock(m) EnterCriticalSection(m)
+#define pthread_mutex_unlock(m) LeaveCriticalSection(m)
+#define pthread_create(thread, attr, func, arg) ((*thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)func, arg, 0, NULL)) ? 0 : -1)
+#define pthread_join(thread, retval) (WaitForSingleObject(thread, INFINITE) == WAIT_OBJECT_0 ? 0 : -1)
 #endif
 
 #ifdef ANDROID_PLATFORM
@@ -65,6 +72,9 @@ static float calculate_energy_efficiency();
 // ============================================================================
 
 int power_management_init() {
+#ifdef LIBETUDE_PLATFORM_WINDOWS
+    InitializeCriticalSection(&g_power_state.mutex);
+#endif
     pthread_mutex_lock(&g_power_state.mutex);
 
     if (g_power_state.initialized) {
@@ -124,6 +134,10 @@ int power_management_cleanup() {
     pthread_mutex_lock(&g_power_state.mutex);
     g_power_state.initialized = false;
     pthread_mutex_unlock(&g_power_state.mutex);
+
+#ifdef LIBETUDE_PLATFORM_WINDOWS
+    DeleteCriticalSection(&g_power_state.mutex);
+#endif
 
     return LIBETUDE_SUCCESS;
 }
