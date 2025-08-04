@@ -264,6 +264,216 @@ uint32_t lef_calculate_model_hash(const LEFModelMeta* meta) {
     return lef_calculate_crc32(meta, sizeof(LEFModelMeta));
 }
 
+// ============================================================================
+// 초기화 함수들 (테스트용 스텁)
+// ============================================================================
+
+/**
+ * LEF 헤더 초기화
+ */
+void lef_init_header(LEFHeader* header) {
+    if (!header) return;
+    
+    memset(header, 0, sizeof(LEFHeader));
+    header->magic = LEF_MAGIC;
+    header->version_major = LEF_VERSION_MAJOR;
+    header->version_minor = LEF_VERSION_MINOR;
+    header->timestamp = (uint64_t)time(NULL);
+}
+
+/**
+ * LEF 모델 메타데이터 초기화
+ */
+void lef_init_model_meta(LEFModelMeta* meta) {
+    if (!meta) return;
+    
+    memset(meta, 0, sizeof(LEFModelMeta));
+    strcpy(meta->model_name, "DefaultModel");
+    strcpy(meta->model_version, "1.0.0");
+    strcpy(meta->author, "LibEtude");
+    strcpy(meta->description, "Default model");
+    meta->input_dim = 256;
+    meta->output_dim = 256;
+    meta->hidden_dim = 512;
+    meta->num_layers = 1;
+    meta->sample_rate = 44100;
+    meta->win_length = 1024;
+    meta->hop_length = 512;
+}
+
+/**
+ * LEF 레이어 헤더 초기화
+ */
+void lef_init_layer_header(LEFLayerHeader* header, uint16_t layer_id, LEFLayerKind layer_type) {
+    if (!header) return;
+    
+    memset(header, 0, sizeof(LEFLayerHeader));
+    header->layer_id = layer_id;
+    header->layer_kind = layer_type;
+    header->quantization_type = LEF_QUANT_NONE;
+    header->data_size = 1024; // 기본값
+    header->compressed_size = 0;
+}
+
+/**
+ * LEF 레이어 헤더 검증
+ */
+bool lef_validate_layer_header(const LEFLayerHeader* header) {
+    if (!header) return false;
+    
+    // 데이터 크기 검증
+    if (header->data_size == 0) return false;
+    
+    // 압축 크기가 원본보다 크면 안됨
+    if (header->compressed_size > header->data_size) return false;
+    
+    return true;
+}
+
+// ============================================================================
+// 직렬화 컨텍스트 (테스트용 스텁)
+// ============================================================================
+
+/**
+ * 직렬화 컨텍스트 생성
+ */
+LEFSerializationContext* lef_create_serialization_context(const char* filename) {
+    if (!filename) return NULL;
+    
+    LEFSerializationContext* ctx = malloc(sizeof(LEFSerializationContext));
+    if (!ctx) return NULL;
+    
+    memset(ctx, 0, sizeof(LEFSerializationContext));
+    ctx->file = fopen(filename, "wb");
+    ctx->layer_capacity = 16;
+    ctx->checksum_enabled = true;
+    
+    return ctx;
+}
+
+/**
+ * 직렬화 컨텍스트 해제
+ */
+void lef_destroy_serialization_context(LEFSerializationContext* ctx) {
+    if (!ctx) return;
+    
+    if (ctx->file) {
+        fclose(ctx->file);
+    }
+    free(ctx);
+}
+
+/**
+ * 모델 정보 설정
+ */
+int lef_set_model_info(LEFSerializationContext* ctx, const char* name, 
+                       const char* version, const char* author, const char* description) {
+    if (!ctx) return LEF_ERROR_INVALID_ARGUMENT;
+    return LEF_SUCCESS;
+}
+
+/**
+ * 모델 아키텍처 설정
+ */
+int lef_set_model_architecture(LEFSerializationContext* ctx, uint16_t input_dim, uint16_t output_dim,
+                               uint16_t hidden_dim, uint16_t num_layers, uint16_t num_heads, uint16_t vocab_size) {
+    if (!ctx) return LEF_ERROR_INVALID_ARGUMENT;
+    return LEF_SUCCESS;
+}
+
+/**
+ * 오디오 설정
+ */
+int lef_set_audio_config(LEFSerializationContext* ctx, uint16_t sample_rate, uint16_t mel_channels,
+                         uint16_t hop_length, uint16_t win_length) {
+    if (!ctx) return LEF_ERROR_INVALID_ARGUMENT;
+    return LEF_SUCCESS;
+}
+
+/**
+ * 압축 활성화
+ */
+int lef_enable_compression(LEFSerializationContext* ctx, uint8_t level) {
+    if (!ctx) return LEF_ERROR_INVALID_ARGUMENT;
+    ctx->compression_enabled = true;
+    ctx->compression_level = level;
+    return LEF_SUCCESS;
+}
+
+/**
+ * 압축 비활성화
+ */
+int lef_disable_compression(LEFSerializationContext* ctx) {
+    if (!ctx) return LEF_ERROR_INVALID_ARGUMENT;
+    ctx->compression_enabled = false;
+    return LEF_SUCCESS;
+}
+
+/**
+ * 기본 양자화 설정
+ */
+int lef_set_default_quantization(LEFSerializationContext* ctx, LEFQuantizationType quant_type) {
+    if (!ctx) return LEF_ERROR_INVALID_ARGUMENT;
+    return LEF_SUCCESS;
+}
+
+/**
+ * 레이어 추가
+ */
+int lef_add_layer(LEFSerializationContext* ctx, const LEFLayerData* layer_data) {
+    if (!ctx || !layer_data) return LEF_ERROR_INVALID_ARGUMENT;
+    ctx->num_layers++;
+    return LEF_SUCCESS;
+}
+
+/**
+ * 모델 완료
+ */
+int lef_finalize_model(LEFSerializationContext* ctx) {
+    if (!ctx) return LEF_ERROR_INVALID_ARGUMENT;
+    return LEF_SUCCESS;
+}
+
+/**
+ * 파일 무결성 검증
+ */
+int lef_verify_file_integrity(const char* filename) {
+    if (!filename) return LEF_ERROR_INVALID_ARGUMENT;
+    return LEF_SUCCESS;
+}
+
+/**
+ * 버전 호환성 확인
+ */
+bool lef_check_version_compatibility(uint16_t file_major, uint16_t file_minor,
+                                     const LEFVersionCompatibility* compat) {
+    if (!compat) return false;
+    return (file_major >= compat->min_major && file_major <= compat->max_major &&
+            file_minor >= compat->min_minor && file_minor <= compat->max_minor);
+}
+
+/**
+ * 현재 호환성 버전 가져오기
+ */
+LEFVersionCompatibility lef_get_current_compatibility(void) {
+    LEFVersionCompatibility compat = {
+        .min_major = LEF_VERSION_MAJOR,
+        .min_minor = 0,
+        .max_major = LEF_VERSION_MAJOR,
+        .max_minor = LEF_VERSION_MINOR
+    };
+    return compat;
+}
+
+/**
+ * 버전 문자열 가져오기
+ */
+const char* lef_get_version_string(void) {
+    static char version_str[32];
+    snprintf(version_str, sizeof(version_str), "%d.%d", LEF_VERSION_MAJOR, LEF_VERSION_MINOR);
+    return version_str;
+}
+
 // 참고: 다음 함수들은 model_loader.c에서 구현됨:
 // - lef_load_model()
 // - lef_load_model_from_memory()

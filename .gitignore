@@ -2,10 +2,10 @@ build/
 .DS_Store
 
 # 테스트 관련 임시 파일
-test_*_simple
-test_*_simple.c
-test_*_advanced
-test_*_advanced.c
+#test_*_simple
+#test_*_simple.c
+#test_*_advanced
+#test_*_advanced.c
 *.o
 *.so
 *.dylib
