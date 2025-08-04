@@ -1120,3 +1120,103 @@ int memory_ios_handle_memory_pressure_ended(void* engine) {
     return memory_handle_pressure(engine, MEMORY_PRESSURE_NONE);
 }
 #endif
+// ============================================================================
+// 인플레이스 메모리 컨텍스트 구현
+// ============================================================================
+
+/**
+ * 인플레이스 메모리 컨텍스트를 생성합니다
+ */
+ETInPlaceContext* et_create_inplace_context(size_t buffer_size, size_t alignment, bool initialize) {
+    if (buffer_size == 0 || alignment == 0) {
+        return NULL;
+    }
+
+    ETInPlaceContext* context = (ETInPlaceContext*)malloc(sizeof(ETInPlaceContext));
+    if (!context) {
+        return NULL;
+    }
+
+    // 정렬된 메모리 할당
+#ifdef _WIN32
+    context->buffer = _aligned_malloc(buffer_size, alignment);
+#else
+    context->buffer = aligned_alloc(alignment, buffer_size);
+#endif
+    if (!context->buffer) {
+        free(context);
+        return NULL;
+    }
+
+    context->buffer_size = buffer_size;
+    context->alignment = alignment;
+    context->is_initialized = initialize;
+    context->used_size = 0;
+    context->current_ptr = context->buffer;
+
+    if (initialize) {
+        memset(context->buffer, 0, buffer_size);
+    }
+
+    return context;
+}
+
+/**
+ * 인플레이스 메모리 컨텍스트를 해제합니다
+ */
+int et_destroy_inplace_context(ETInPlaceContext* context) {
+    if (!context) {
+        return LIBETUDE_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (context->buffer) {
+#ifdef _WIN32
+        _aligned_free(context->buffer);
+#else
+        free(context->buffer);
+#endif
+    }
+
+    free(context);
+    return LIBETUDE_SUCCESS;
+}
+
+/**
+ * 인플레이스 컨텍스트에서 메모리를 할당합니다
+ */
+void* et_inplace_alloc(ETInPlaceContext* context, size_t size) {
+    if (!context || size == 0) {
+        return NULL;
+    }
+
+    // 정렬 조정
+    size_t aligned_size = (size + context->alignment - 1) & ~(context->alignment - 1);
+
+    if (context->used_size + aligned_size > context->buffer_size) {
+        return NULL; // 공간 부족
+    }
+
+    void* ptr = context->current_ptr;
+    context->current_ptr = (char*)context->current_ptr + aligned_size;
+    context->used_size += aligned_size;
+
+    return ptr;
+}
+
+/**
+ * 인플레이스 컨텍스트를 리셋합니다
+ */
+int et_inplace_reset(ETInPlaceContext* context) {
+    if (!context) {
+        return LIBETUDE_ERROR_INVALID_ARGUMENT;
+    }
+
+    context->used_size = 0;
+    context->current_ptr = context->buffer;
+
+    if (context->is_initialized) {
+        memset(context->buffer, 0, context->buffer_size);
+    }
+
+    return LIBETUDE_SUCCESS;
+}

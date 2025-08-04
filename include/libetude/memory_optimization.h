@@ -149,6 +149,18 @@ typedef struct {
 typedef void (*MemoryEventCallback)(MemoryPressureLevel old_level, MemoryPressureLevel new_level,
                                    const MemoryUsageStats* stats, void* user_data);
 
+/**
+ * 인플레이스 메모리 컨텍스트
+ */
+typedef struct {
+    void* buffer;                          ///< 메모리 버퍼
+    size_t buffer_size;                    ///< 버퍼 크기
+    size_t alignment;                      ///< 메모리 정렬
+    bool is_initialized;                   ///< 초기화 여부
+    size_t used_size;                      ///< 사용된 크기
+    void* current_ptr;                     ///< 현재 포인터
+} ETInPlaceContext;
+
 // ============================================================================
 // 메모리 최적화 초기화 및 정리 함수들
 // ============================================================================
@@ -508,6 +520,45 @@ int memory_ios_handle_memory_warning(LibEtudeEngine* engine, int warning_level);
  */
 int memory_ios_handle_memory_pressure_ended(LibEtudeEngine* engine);
 #endif
+
+// ============================================================================
+// 인플레이스 메모리 컨텍스트 함수들
+// ============================================================================
+
+/**
+ * 인플레이스 메모리 컨텍스트를 생성합니다
+ *
+ * @param buffer_size 버퍼 크기
+ * @param alignment 메모리 정렬
+ * @param initialize 초기화 여부
+ * @return 생성된 컨텍스트 포인터
+ */
+ETInPlaceContext* et_create_inplace_context(size_t buffer_size, size_t alignment, bool initialize);
+
+/**
+ * 인플레이스 메모리 컨텍스트를 해제합니다
+ *
+ * @param context 해제할 컨텍스트
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int et_destroy_inplace_context(ETInPlaceContext* context);
+
+/**
+ * 인플레이스 컨텍스트에서 메모리를 할당합니다
+ *
+ * @param context 컨텍스트
+ * @param size 할당할 크기
+ * @return 할당된 메모리 포인터
+ */
+void* et_inplace_alloc(ETInPlaceContext* context, size_t size);
+
+/**
+ * 인플레이스 컨텍스트를 리셋합니다
+ *
+ * @param context 컨텍스트
+ * @return 성공 시 LIBETUDE_SUCCESS
+ */
+int et_inplace_reset(ETInPlaceContext* context);
 
 #ifdef __cplusplus
 }

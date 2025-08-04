@@ -47,6 +47,7 @@ typedef enum {
  * @brief 결과 타입 (오류 코드와 동일)
  */
 typedef LibEtudeErrorCode ETResult;
+typedef LibEtudeErrorCode LibEtudeResult;
 
 // 편의를 위한 별칭
 #define ET_SUCCESS LIBETUDE_SUCCESS
@@ -182,6 +183,20 @@ typedef struct {
     uint16_t hop_length;        /**< Hop 길이 */
     uint16_t win_length;        /**< 윈도우 길이 */
 } LibEtudeModelMeta;
+
+// ============================================================================
+// 시스템 정보 관련 타입
+// ============================================================================
+
+/**
+ * @brief 시스템 정보 구조체
+ */
+typedef struct {
+    uint64_t total_memory;      /**< 총 메모리 크기 (바이트) */
+    uint64_t available_memory;  /**< 사용 가능한 메모리 크기 (바이트) */
+    uint32_t cpu_count;         /**< CPU 코어 수 */
+    char system_name[64];       /**< 시스템 이름 */
+} LibEtudeSystemInfo;
 
 // ============================================================================
 // 로그 관련 타입
