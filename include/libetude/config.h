@@ -31,10 +31,14 @@
         #define LIBETUDE_PLATFORM_WIN32
     #endif
 #elif defined(__APPLE__)
-    #define LIBETUDE_PLATFORM_MACOS
+    #ifndef LIBETUDE_PLATFORM_MACOS
+        #define LIBETUDE_PLATFORM_MACOS
+    #endif
     #include <TargetConditionals.h>
     #if TARGET_OS_IPHONE
-        #define LIBETUDE_PLATFORM_IOS
+        #ifndef LIBETUDE_PLATFORM_IOS
+            #define LIBETUDE_PLATFORM_IOS
+        #endif
     #endif
 #elif defined(__ANDROID__)
     #define LIBETUDE_PLATFORM_ANDROID
