@@ -260,8 +260,8 @@ ETResult read_wav_file(const char* file_path, AudioData* audio_data) {
            file_path, audio_data->info.num_samples);
 
     return ET_SUCCESS;
-}E
-TResult get_wav_file_info(const char* file_path, AudioFileInfo* info) {
+}
+ETResult get_wav_file_info(const char* file_path, AudioFileInfo* info) {
     if (!file_path || !info) {
         fprintf(stderr, "Error: get_wav_file_info에 NULL 파라미터가 전달되었습니다.\n");
         return ET_ERROR_INVALID_ARGUMENT;
@@ -666,8 +666,9 @@ void debug_print_audio_data(const AudioData* audio_data, const char* label) {
     }
 
     printf("=====================================\n");
-}ETR
-esult write_wav_file(const char* file_path, const AudioData* audio_data) {
+}
+
+ETResult write_wav_file(const char* file_path, const AudioData* audio_data) {
     if (!file_path || !audio_data || !audio_data->data) {
         fprintf(stderr, "Error: write_wav_file에 NULL 파라미터가 전달되었습니다.\n");
         return ET_ERROR_INVALID_ARGUMENT;
@@ -1241,8 +1242,9 @@ ETResult trim_audio_silence(AudioData* audio_data, float threshold) {
            (double)(audio_data->info.num_samples - end_sample) / audio_data->info.sample_rate);
 
     return ET_SUCCESS;
-}//
- ============================================================================
+}
+
+// ============================================================================
 // libetude 오디오 I/O 통합 구현
 // ============================================================================
 
