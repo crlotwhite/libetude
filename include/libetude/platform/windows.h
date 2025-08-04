@@ -25,6 +25,7 @@
 /* 필요한 전방 선언 */
 #include "libetude/audio_io.h"
 #include "libetude/platform/windows_security.h"
+#include "libetude/platform/windows_error.h"
 
 /* Windows 플랫폼 설정 구조체 */
 typedef struct {
@@ -95,10 +96,15 @@ typedef enum {
 
 /* Windows CPU 기능 정보 */
 typedef struct {
-    bool has_sse41;
-    bool has_avx;
-    bool has_avx2;
-    bool has_avx512;
+    bool has_sse;           ///< SSE 지원 여부
+    bool has_sse2;          ///< SSE2 지원 여부
+    bool has_sse41;         ///< SSE4.1 지원 여부
+    bool has_avx;           ///< AVX 지원 여부
+    bool has_avx2;          ///< AVX2 지원 여부
+    bool has_avx512f;       ///< AVX-512 Foundation 지원 여부
+    bool has_avx512dq;      ///< AVX-512 DQ 지원 여부
+    bool has_avx512bw;      ///< AVX-512 BW 지원 여부
+    bool has_avx512vl;      ///< AVX-512 VL 지원 여부
 } ETWindowsCPUFeatures;
 
 /* Windows Thread Pool 래퍼 */
@@ -191,18 +197,55 @@ void et_windows_log_error_event(ETErrorCode error_code, const char* description)
 
 /* CPU 기능 감지 */
 ETWindowsCPUFeatures et_windows_detect_cpu_features(void);
+void et_windows_cpu_features_to_string(const ETWindowsCPUFeatures* features,
+                                     char* buffer, size_t buffer_size);
 
 /* SIMD 최적화 커널 */
 void et_windows_simd_matrix_multiply_avx2(const float* a, const float* b,
                                         float* c, int m, int n, int k);
+void et_windows_simd_matrix_multiply_avx512(const float* a, const float* b,
+                                          float* c, int m, int n, int k);
+void et_windows_simd_matrix_multiply_auto(const float* a, const float* b,
+                                        float* c, int m, int n, int k);
+void et_windows_simd_vector_add_avx2(const float* a, const float* b,
+                                   float* c, int size);
+float et_windows_simd_vector_dot_avx2(const float* a, const float* b, int size);
+ETResult et_windows_simd_init(void);
+void et_windows_simd_finalize(void);
 
 /* Thread Pool 관리 */
 ETResult et_windows_threadpool_init(ETWindowsThreadPool* pool,
                                   DWORD min_threads, DWORD max_threads);
+void et_windows_threadpool_finalize(void);
+ETResult et_windows_threadpool_submit_async(void (*callback)(void*), void* context);
+ETResult et_windows_threadpool_submit_sync(void (*callback)(void*), void* context);
+ETResult et_windows_threadpool_wait_all(DWORD timeout_ms);
+ETResult et_windows_threadpool_get_status(LONG* active_work_items,
+                                        DWORD* min_threads, DWORD* max_threads);
+bool et_windows_threadpool_is_initialized(void);
 
 /* Large Page 메모리 할당 */
-void* et_windows_alloc_large_pages(size_t size);
+ETResult et_windows_large_pages_init(void);
+void et_windows_large_pages_finalize(void);
 bool et_windows_enable_large_page_privilege(void);
+void* et_windows_alloc_large_pages(size_t size);
+void et_windows_free_large_pages(void* memory, size_t size);
+void* et_windows_realloc_large_pages(void* memory, size_t old_size, size_t new_size);
+void* et_windows_alloc_aligned_large_pages(size_t size, size_t alignment);
+
+/* Large Page 상태 정보 구조체 */
+typedef struct {
+    bool is_supported;
+    bool privilege_enabled;
+    SIZE_T large_page_size;
+    SIZE_T total_allocated;
+    SIZE_T fallback_allocated;
+    LONG allocation_count;
+    LONG fallback_count;
+} ETLargePageInfo;
+
+ETResult et_windows_large_pages_get_info(ETLargePageInfo* info);
+ETResult et_windows_large_pages_status_to_string(char* buffer, size_t buffer_size);
 
 #ifdef __cplusplus
 }

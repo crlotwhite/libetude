@@ -3,26 +3,20 @@
 
   <!-- LibEtude NuGet 패키지 MSBuild 타겟 파일 -->
 
-  <PropertyGroup>
-    <LibEtudePackageRoot>$(MSBuildThisFileDirectory)</LibEtudePackageRoot>
-    <LibEtudeIncludePath>$(LibEtudePackageRoot)include</LibEtudeIncludePath>
-    <LibEtudeLibPath>$(LibEtudePackageRoot)lib\$(Configuration)</LibEtudeLibPath>
-    <LibEtudeBinPath>$(LibEtudePackageRoot)bin\$(Configuration)</LibEtudeBinPath>
-  </PropertyGroup>
+  <!-- LibEtude.props에서 기본 속성을 가져옴 -->
+  <Import Project="$(MSBuildThisFileDirectory)LibEtude.props" Condition="Exists('$(MSBuildThisFileDirectory)LibEtude.props')" />
 
-  <!-- 포함 디렉토리 설정 -->
-  <ItemDefinitionGroup>
-    <ClCompile>
-      <AdditionalIncludeDirectories>$(LibEtudeIncludePath);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>LIBETUDE_PLATFORM_WINDOWS=1;_WIN32_WINNT=0x0A00;WIN32_LEAN_AND_MEAN;NOMINMAX;UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
-  </ItemDefinitionGroup>
+  <!-- 라이브러리 선택 로직 -->
+  <PropertyGroup>
+    <LibEtudeLibraryName Condition="'$(LibEtudeUseDynamicLibrary)' == 'true'">libetude_import.lib</LibEtudeLibraryName>
+    <LibEtudeLibraryName Condition="'$(LibEtudeUseDynamicLibrary)' != 'true'">libetude.lib</LibEtudeLibraryName>
+  </PropertyGroup>
 
   <!-- 라이브러리 링크 설정 -->
   <ItemDefinitionGroup>
     <Link>
       <AdditionalLibraryDirectories>$(LibEtudeLibPath);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>libetude.lib;kernel32.lib;user32.lib;gdi32.lib;ole32.lib;oleaut32.lib;uuid.lib;advapi32.lib;shell32.lib;comdlg32.lib;winspool.lib;winmm.lib;dsound.lib;ksuser.lib;mmdevapi.lib;audioses.lib;avrt.lib;ws2_32.lib;iphlpapi.lib;crypt32.lib;secur32.lib;pdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(LibEtudeLibraryName);kernel32.lib;user32.lib;gdi32.lib;ole32.lib;oleaut32.lib;uuid.lib;advapi32.lib;shell32.lib;comdlg32.lib;winspool.lib;winmm.lib;dsound.lib;ksuser.lib;mmdevapi.lib;audioses.lib;avrt.lib;ws2_32.lib;iphlpapi.lib;crypt32.lib;secur32.lib;pdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 
@@ -35,6 +29,13 @@
   <Target Name="CopyLibEtudeDll" BeforeTargets="Build" Condition="'$(LibEtudeUseDynamicLibrary)' == 'true' and Exists('$(LibEtudeDllSource)')">
     <Copy SourceFiles="$(LibEtudeDllSource)" DestinationFiles="$(LibEtudeDllTarget)" SkipUnchangedFiles="true" />
     <Message Text="LibEtude DLL을 출력 디렉토리로 복사했습니다: $(LibEtudeDllTarget)" Importance="normal" />
+  </Target>
+
+  <!-- 라이브러리 존재 확인 -->
+  <Target Name="CheckLibEtudeLibrary" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(LibEtudeLibPath)\$(LibEtudeLibraryName)')"
+           Text="LibEtude 라이브러리를 찾을 수 없습니다: $(LibEtudeLibPath)\$(LibEtudeLibraryName). 플랫폼($(Platform))과 구성($(Configuration))을 확인해주세요." />
+    <Message Text="LibEtude 라이브러리 확인됨: $(LibEtudeLibPath)\$(LibEtudeLibraryName)" Importance="normal" />
   </Target>
 
   <!-- 컴파일러별 최적화 설정 -->
@@ -120,12 +121,8 @@
   <!-- 빌드 후 메시지 -->
   <Target Name="LibEtudePostBuild" AfterTargets="Build">
     <Message Text="LibEtude 라이브러리가 성공적으로 링크되었습니다." Importance="normal" />
-    <Message Text="  버전: 1.0.0" Importance="normal" />
-    <Message Text="  구성: $(Configuration)" Importance="normal" />
-    <Message Text="  플랫폼: $(Platform)" Importance="normal" />
-    <Message Text="  SIMD 지원: $(LibEtudeEnableSIMD)" Importance="normal" />
-    <Message Text="  GPU 가속: $(LibEtudeEnableGPU)" Importance="normal" />
-    <Message Text="  최소 빌드: $(LibEtudeMinimal)" Importance="normal" />
+    <Message Text="  라이브러리: $(LibEtudeLibraryName)" Importance="normal" />
+    <Message Text="  경로: $(LibEtudeLibPath)" Importance="normal" />
   </Target>
 
 </Project>

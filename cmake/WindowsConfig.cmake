@@ -89,8 +89,14 @@ function(configure_msvc_optimization target)
 
                 if(HAVE_AVX2_MSVC)
                     target_compile_options(${target} PRIVATE /arch:AVX2)
-                    target_compile_definitions(${target} PRIVATE LIBETUDE_HAVE_AVX2)
-                    message(STATUS "AVX2 최적화 활성화")
+                    target_compile_definitions(${target} PRIVATE
+                        LIBETUDE_HAVE_AVX2
+                        LIBETUDE_HAVE_AVX
+                        LIBETUDE_HAVE_SSE41
+                        LIBETUDE_HAVE_SSE2
+                        LIBETUDE_HAVE_SSE
+                    )
+                    message(STATUS "AVX2 최적화 활성화 (AVX, SSE 포함)")
                 else()
                     # AVX 지원 확인
                     set(CMAKE_REQUIRED_FLAGS "/arch:AVX")
@@ -104,8 +110,13 @@ function(configure_msvc_optimization target)
 
                     if(HAVE_AVX_MSVC)
                         target_compile_options(${target} PRIVATE /arch:AVX)
-                        target_compile_definitions(${target} PRIVATE LIBETUDE_HAVE_AVX)
-                        message(STATUS "AVX 최적화 활성화")
+                        target_compile_definitions(${target} PRIVATE
+                            LIBETUDE_HAVE_AVX
+                            LIBETUDE_HAVE_SSE41
+                            LIBETUDE_HAVE_SSE2
+                            LIBETUDE_HAVE_SSE
+                        )
+                        message(STATUS "AVX 최적화 활성화 (SSE 포함)")
                     endif()
                 endif()
                 set(CMAKE_REQUIRED_FLAGS "")
@@ -122,18 +133,48 @@ function(configure_msvc_optimization target)
         # Debug 모드 설정
         if(CMAKE_BUILD_TYPE STREQUAL "Debug")
             target_compile_options(${target} PRIVATE
-                /Zi                # 디버그 정보 생성
+                /Zi                # 디버그 정보 생성 (PDB 파일)
+                /ZI                # Edit and Continue 지원
                 /Od                # 최적화 비활성화
                 /RTC1              # 런타임 검사
                 /MDd               # 멀티스레드 디버그 DLL
+                /JMC               # Just My Code 디버깅 지원
+                /bigobj            # 큰 오브젝트 파일 지원
             )
-            target_link_options(${target} PRIVATE /DEBUG:FULL)
+            target_link_options(${target} PRIVATE
+                /DEBUG:FULL        # 전체 디버그 정보
+                /INCREMENTAL       # 증분 링크 활성화
+                /EDITANDCONTINUE   # Edit and Continue 지원
+                /SUBSYSTEM:CONSOLE # 콘솔 서브시스템 (디버깅용)
+            )
+
+            # PDB 파일 출력 경로 설정
+            set_target_properties(${target} PROPERTIES
+                PDB_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/debug"
+                PDB_NAME "${target}_debug"
+            )
         endif()
 
-        # RelWithDebInfo 모드 설정
+        # RelWithDebInfo 모드 설정 (최적화된 디버그 빌드)
         if(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
-            target_compile_options(${target} PRIVATE /Zi)
-            target_link_options(${target} PRIVATE /DEBUG:FULL /INCREMENTAL:NO)
+            target_compile_options(${target} PRIVATE
+                /Zi                # 디버그 정보 생성
+                /O2                # 최적화 활성화
+                /Oi                # 내장 함수 사용
+                /DNDEBUG           # NDEBUG 정의
+            )
+            target_link_options(${target} PRIVATE
+                /DEBUG:FULL        # 전체 디버그 정보
+                /INCREMENTAL:NO    # 증분 링크 비활성화 (최적화)
+                /OPT:REF           # 참조되지 않는 함수 제거
+                /OPT:ICF           # 동일한 함수 병합
+            )
+
+            # PDB 파일 출력 경로 설정
+            set_target_properties(${target} PROPERTIES
+                PDB_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release"
+                PDB_NAME "${target}_release"
+            )
         endif()
     endif()
 endfunction()
@@ -178,9 +219,15 @@ function(configure_mingw_optimization target)
                 " HAVE_AVX2_GCC)
 
                 if(HAVE_AVX2_GCC)
-                    target_compile_options(${target} PRIVATE -mavx2 -mfma)
-                    target_compile_definitions(${target} PRIVATE LIBETUDE_HAVE_AVX2)
-                    message(STATUS "AVX2 최적화 활성화")
+                    target_compile_options(${target} PRIVATE -mavx2 -mfma -mavx -msse4.1 -msse2)
+                    target_compile_definitions(${target} PRIVATE
+                        LIBETUDE_HAVE_AVX2
+                        LIBETUDE_HAVE_AVX
+                        LIBETUDE_HAVE_SSE41
+                        LIBETUDE_HAVE_SSE2
+                        LIBETUDE_HAVE_SSE
+                    )
+                    message(STATUS "AVX2 최적화 활성화 (AVX, SSE 포함)")
                 else()
                     # AVX 지원 확인
                     set(CMAKE_REQUIRED_FLAGS "-mavx")
@@ -193,9 +240,14 @@ function(configure_mingw_optimization target)
                     " HAVE_AVX_GCC)
 
                     if(HAVE_AVX_GCC)
-                        target_compile_options(${target} PRIVATE -mavx)
-                        target_compile_definitions(${target} PRIVATE LIBETUDE_HAVE_AVX)
-                        message(STATUS "AVX 최적화 활성화")
+                        target_compile_options(${target} PRIVATE -mavx -msse4.1 -msse2)
+                        target_compile_definitions(${target} PRIVATE
+                            LIBETUDE_HAVE_AVX
+                            LIBETUDE_HAVE_SSE41
+                            LIBETUDE_HAVE_SSE2
+                            LIBETUDE_HAVE_SSE
+                        )
+                        message(STATUS "AVX 최적화 활성화 (SSE 포함)")
                     endif()
                 endif()
                 set(CMAKE_REQUIRED_FLAGS "")
@@ -259,6 +311,20 @@ function(link_windows_libraries target)
     target_link_libraries(${target} PRIVATE
         pdh         # 성능 데이터 헬퍼
     )
+
+    # 디버깅 및 진단 라이브러리
+    target_link_libraries(${target} PRIVATE
+        dbghelp     # 디버그 도우미 라이브러리 (스택 트레이스)
+        psapi       # 프로세스 상태 API
+        version     # 버전 정보 API
+        imagehlp    # 이미지 도우미 라이브러리
+    )
+
+    # ETW (Event Tracing for Windows) 라이브러리
+    target_link_libraries(${target} PRIVATE
+        advapi32    # ETW 프로바이더 등록용
+        tdh         # 트레이스 데이터 헬퍼
+    )
 endfunction()
 
 # Windows 특화 컴파일 정의 설정
@@ -300,6 +366,9 @@ function(set_windows_definitions target)
 
         # 성능 최적화 관련
         LIBETUDE_WINDOWS_OPTIMIZATION=1
+
+        # 오류 처리 시스템 관련
+        LIBETUDE_WINDOWS_ERROR_HANDLING=1
     )
 
     # Debug 모드에서만 활성화할 정의
@@ -377,6 +446,7 @@ function(generate_windows_headers)
 #define LIBETUDE_WINDOWS_DIRECTSOUND_SUPPORT 1
 #define LIBETUDE_WINDOWS_ETW_SUPPORT 1
 #define LIBETUDE_WINDOWS_LARGE_PAGES_SUPPORT 1
+#define LIBETUDE_WINDOWS_ERROR_HANDLING_SUPPORT 1
 
 #endif /* LIBETUDE_WINDOWS_CONFIG_H */
 ")
@@ -445,4 +515,182 @@ function(configure_windows_install target)
     )
 
     message(STATUS "Windows 설치 설정 완료")
+endfunction()
+# find_pa
+ckage 지원을 위한 타겟 생성 함수
+function(libetude_create_imported_target)
+    if(NOT TARGET LibEtude::LibEtude)
+        message(STATUS "LibEtude 가져온 타겟 생성 중...")
+
+        # 라이브러리 타입 결정
+        if(EXISTS "${LIBETUDE_SHARED_LIBRARY}")
+            add_library(LibEtude::LibEtude SHARED IMPORTED)
+            set_target_properties(LibEtude::LibEtude PROPERTIES
+                IMPORTED_LOCATION "${LIBETUDE_SHARED_LIBRARY}"
+                IMPORTED_IMPLIB "${LIBETUDE_IMPORT_LIBRARY}"
+            )
+            message(STATUS "공유 라이브러리 타겟 생성: ${LIBETUDE_SHARED_LIBRARY}")
+        elseif(EXISTS "${LIBETUDE_STATIC_LIBRARY}")
+            add_library(LibEtude::LibEtude STATIC IMPORTED)
+            set_target_properties(LibEtude::LibEtude PROPERTIES
+                IMPORTED_LOCATION "${LIBETUDE_STATIC_LIBRARY}"
+            )
+            message(STATUS "정적 라이브러리 타겟 생성: ${LIBETUDE_STATIC_LIBRARY}")
+        else()
+            message(FATAL_ERROR "LibEtude 라이브러리를 찾을 수 없습니다.")
+        endif()
+
+        # 인터페이스 속성 설정
+        set_target_properties(LibEtude::LibEtude PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${LIBETUDE_INCLUDE_DIRS}"
+            INTERFACE_COMPILE_DEFINITIONS "${LIBETUDE_DEFINITIONS}"
+        )
+
+        # Windows 시스템 라이브러리 의존성 설정
+        if(WIN32)
+            set_target_properties(LibEtude::LibEtude PROPERTIES
+                INTERFACE_LINK_LIBRARIES "${LIBETUDE_WINDOWS_LIBRARIES}"
+            )
+        endif()
+
+        message(STATUS "LibEtude 가져온 타겟 생성 완료")
+    endif()
+endfunction()
+
+# Windows 특화 CMake 변수 설정
+function(set_windows_cmake_variables)
+    # 플랫폼 아키텍처 감지
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(LIBETUDE_ARCH "x64" PARENT_SCOPE)
+        set(LIBETUDE_ARCH_BITS 64 PARENT_SCOPE)
+    elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
+        set(LIBETUDE_ARCH "x86" PARENT_SCOPE)
+        set(LIBETUDE_ARCH_BITS 32 PARENT_SCOPE)
+    endif()
+
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64")
+        set(LIBETUDE_ARCH "ARM64" PARENT_SCOPE)
+        set(LIBETUDE_ARCH_BITS 64 PARENT_SCOPE)
+    endif()
+
+    # Windows 시스템 라이브러리 목록
+    set(LIBETUDE_WINDOWS_LIBRARIES
+        kernel32 user32 gdi32 ole32 oleaut32 uuid
+        advapi32 shell32 comdlg32 winspool
+        winmm dsound ksuser mmdevapi audioses avrt
+        ws2_32 iphlpapi crypt32 secur32 pdh
+        dbghelp psapi version imagehlp tdh
+        PARENT_SCOPE
+    )
+
+    # Windows 특화 컴파일 정의
+    set(LIBETUDE_DEFINITIONS
+        LIBETUDE_PLATFORM_WINDOWS=1
+        _WIN32_WINNT=0x0A00
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX
+        UNICODE
+        _UNICODE
+        PARENT_SCOPE
+    )
+endfunction()
+
+# Windows 특화 유틸리티 함수들
+function(libetude_add_windows_executable target_name)
+    add_executable(${target_name} ${ARGN})
+
+    # Windows 특화 설정 적용
+    configure_windows_build(${target_name})
+
+    # LibEtude 라이브러리 링크 (타겟이 존재하는 경우)
+    if(TARGET LibEtude::LibEtude)
+        target_link_libraries(${target_name} PRIVATE LibEtude::LibEtude)
+    endif()
+
+    message(STATUS "Windows 실행 파일 타겟 생성: ${target_name}")
+endfunction()
+
+function(libetude_add_windows_library target_name)
+    add_library(${target_name} ${ARGN})
+
+    # Windows 특화 설정 적용
+    configure_windows_build(${target_name})
+
+    message(STATUS "Windows 라이브러리 타겟 생성: ${target_name}")
+endfunction()
+
+# Windows 개발 환경 검증 함수
+function(validate_windows_development_environment)
+    message(STATUS "Windows 개발 환경 검증 중...")
+
+    # Visual Studio 버전 확인
+    if(MSVC)
+        if(MSVC_VERSION GREATER_EQUAL 1930)
+            message(STATUS "Visual Studio 2022 감지됨 (권장)")
+        elseif(MSVC_VERSION GREATER_EQUAL 1920)
+            message(STATUS "Visual Studio 2019 감지됨 (지원됨)")
+        else()
+            message(WARNING "Visual Studio 2019 이상을 권장합니다.")
+        endif()
+    endif()
+
+    # Windows SDK 버전 확인
+    if(CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION)
+        if(CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION VERSION_GREATER_EQUAL "10.0.19041")
+            message(STATUS "Windows SDK ${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION} (권장)")
+        else()
+            message(WARNING "Windows SDK 10.0.19041 이상을 권장합니다.")
+        endif()
+    endif()
+
+    # CMake 버전 확인
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
+        message(STATUS "CMake ${CMAKE_VERSION} (지원됨)")
+    else()
+        message(WARNING "CMake 3.16 이상을 권장합니다.")
+    endif()
+
+    message(STATUS "Windows 개발 환경 검증 완료")
+endfunction()
+
+# Windows 특화 테스트 설정
+function(configure_windows_testing)
+    if(BUILD_TESTING)
+        message(STATUS "Windows 테스트 환경 설정 중...")
+
+        # CTest 설정
+        include(CTest)
+
+        # Windows 특화 테스트 옵션
+        set(CTEST_CONFIGURATION_TYPE ${CMAKE_BUILD_TYPE})
+
+        # 테스트 실행 환경 설정
+        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+            set(CTEST_MEMORYCHECK_COMMAND_OPTIONS "--tool=memcheck --leak-check=full")
+        endif()
+
+        message(STATUS "Windows 테스트 환경 설정 완료")
+    endif()
+endfunction()
+
+# Windows 패키징 설정
+function(configure_windows_packaging)
+    message(STATUS "Windows 패키징 설정 중...")
+
+    # CPack 설정
+    set(CPACK_GENERATOR "NSIS;ZIP" PARENT_SCOPE)
+    set(CPACK_PACKAGE_NAME "LibEtude" PARENT_SCOPE)
+    set(CPACK_PACKAGE_VENDOR "LibEtude Project" PARENT_SCOPE)
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "AI Voice Synthesis Engine" PARENT_SCOPE)
+    set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION} PARENT_SCOPE)
+    set(CPACK_PACKAGE_INSTALL_DIRECTORY "LibEtude" PARENT_SCOPE)
+
+    # NSIS 특화 설정
+    set(CPACK_NSIS_DISPLAY_NAME "LibEtude ${PROJECT_VERSION}" PARENT_SCOPE)
+    set(CPACK_NSIS_HELP_LINK "https://github.com/libetude/libetude" PARENT_SCOPE)
+    set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/libetude/libetude" PARENT_SCOPE)
+    set(CPACK_NSIS_CONTACT "support@libetude.org" PARENT_SCOPE)
+    set(CPACK_NSIS_MODIFY_PATH ON PARENT_SCOPE)
+
+    message(STATUS "Windows 패키징 설정 완료")
 endfunction()

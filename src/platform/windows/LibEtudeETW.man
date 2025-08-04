@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<instrumentationManifest
+    xmlns="http://schemas.microsoft.com/win/2004/08/events"
+    xmlns:win="http://manifests.microsoft.com/win/2004/08/windows/events"
+    xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <instrumentation>
+    <events>
+      <provider name="LibEtude-Provider"
+                guid="{12345678-1234-5678-9ABC-123456789ABC}"
+                symbol="LIBETUDE_ETW_PROVIDER"
+                resourceFileName="libetude.dll"
+                messageFileName="libetude.dll">
+
+        <!-- 키워드 정의 -->
+        <keywords>
+          <keyword name="Performance" mask="0x1" />
+          <keyword name="Audio" mask="0x2" />
+          <keyword name="Memory" mask="0x4" />
+          <keyword name="Threading" mask="0x8" />
+          <keyword name="Error" mask="0x10" />
+          <keyword name="Initialization" mask="0x20" />
+        </keywords>
+
+        <!-- 레벨 정의 -->
+        <levels>
+          <level name="Critical" value="1" />
+          <level name="Error" value="2" />
+          <level name="Warning" value="3" />
+          <level name="Information" value="4" />
+          <level name="Verbose" value="5" />
+        </levels>
+
+        <!-- 템플릿 정의 -->
+        <templates>
+          <template tid="LibraryInitTemplate">
+            <data name="Version" inType="win:AnsiString" />
+          </template>
+
+          <template tid="PerformanceTemplate">
+            <data name="OperationName" inType="win:AnsiString" />
+            <data name="Duration" inType="win:Double" />
+            <data name="ThreadId" inType="win:UInt32" />
+            <data name="Timestamp" inType="win:UInt64" />
+          </template>
+
+          <template tid="ErrorTemplate">
+            <data name="ErrorCode" inType="win:UInt32" />
+            <data name="ErrorMessage" inType="win:AnsiString" />
+            <data name="FunctionName" inType="win:AnsiString" />
+            <data name="LineNumber" inType="win:UInt32" />
+            <data name="ThreadId" inType="win:UInt32" />
+          </template>
+
+          <template tid="MemoryTemplate">
+            <data name="Address" inType="win:Pointer" />
+            <data name="Size" inType="win:UInt64" />
+            <data name="AllocationType" inType="win:AnsiString" />
+            <data name="ThreadId" inType="win:UInt32" />
+          </template>
+
+          <template tid="AudioInitTemplate">
+            <data name="BackendName" inType="win:AnsiString" />
+            <data name="Success" inType="win:Boolean" />
+          </template>
+
+          <template tid="AudioRenderStartTemplate">
+            <data name="BufferSize" inType="win:UInt32" />
+            <data name="SampleRate" inType="win:UInt32" />
+          </template>
+
+          <template tid="AudioRenderEndTemplate">
+            <data name="SamplesRendered" inType="win:UInt32" />
+            <data name="LatencyMs" inType="win:Double" />
+          </template>
+
+          <template tid="ThreadTemplate">
+            <data name="ThreadId" inType="win:UInt32" />
+            <data name="ThreadName" inType="win:AnsiString" />
+          </template>
+
+          <template tid="ThreadDestroyTemplate">
+            <data name="ThreadId" inType="win:UInt32" />
+          </template>
+        </templates>
+
+        <!-- 이벤트 정의 -->
+        <events>
+          <!-- 라이브러리 생명주기 이벤트 -->
+          <event value="1"
+                 symbol="LibraryInit"
+                 level="win:Informational"
+                 keywords="Initialization"
+                 template="LibraryInitTemplate"
+                 message="$(string.LibEtude.LibraryInit)" />
+
+          <event value="2"
+                 symbol="LibraryShutdown"
+                 level="win:Informational"
+                 keywords="Initialization"
+                 message="$(string.LibEtude.LibraryShutdown)" />
+
+          <!-- 오디오 이벤트 -->
+          <event value="10"
+                 symbol="AudioInit"
+                 level="win:Informational"
+                 keywords="Audio"
+                 template="AudioInitTemplate"
+                 message="$(string.LibEtude.AudioInit)" />
+
+          <event value="11"
+                 symbol="AudioRenderStart"
+                 level="win:Verbose"
+                 keywords="Audio"
+                 template="AudioRenderStartTemplate"
+                 message="$(string.LibEtude.AudioRenderStart)" />
+
+          <event value="12"
+                 symbol="AudioRenderEnd"
+                 level="win:Verbose"
+                 keywords="Audio"
+                 template="AudioRenderEndTemplate"
+                 message="$(string.LibEtude.AudioRenderEnd)" />
+
+          <!-- 성능 이벤트 -->
+          <event value="20"
+                 symbol="PerformanceCounter"
+                 level="win:Informational"
+                 keywords="Performance"
+                 template="PerformanceTemplate"
+                 message="$(string.LibEtude.PerformanceCounter)" />
+
+          <!-- 메모리 이벤트 -->
+          <event value="30"
+                 symbol="MemoryAllocation"
+                 level="win:Verbose"
+                 keywords="Memory"
+                 template="MemoryTemplate"
+                 message="$(string.LibEtude.MemoryAllocation)" />
+
+          <event value="31"
+                 symbol="MemoryDeallocation"
+                 level="win:Verbose"
+                 keywords="Memory"
+                 template="MemoryTemplate"
+                 message="$(string.LibEtude.MemoryDeallocation)" />
+
+          <!-- 스레딩 이벤트 -->
+          <event value="40"
+                 symbol="ThreadCreated"
+                 level="win:Informational"
+                 keywords="Threading"
+                 template="ThreadTemplate"
+                 message="$(string.LibEtude.ThreadCreated)" />
+
+          <event value="41"
+                 symbol="ThreadDestroyed"
+                 level="win:Informational"
+                 keywords="Threading"
+                 template="ThreadDestroyTemplate"
+                 message="$(string.LibEtude.ThreadDestroyed)" />
+
+          <!-- 오류 이벤트 -->
+          <event value="50"
+                 symbol="ErrorOccurred"
+                 level="win:Error"
+                 keywords="Error"
+                 template="ErrorTemplate"
+                 message="$(string.LibEtude.ErrorOccurred)" />
+        </events>
+      </provider>
+    </events>
+  </instrumentation>
+
+  <!-- 메시지 문자열 정의 -->
+  <localization>
+    <resources culture="en-US">
+      <stringTable>
+        <string id="LibEtude.LibraryInit" value="LibEtude library initialized with version %1" />
+        <string id="LibEtude.LibraryShutdown" value="LibEtude library shutdown" />
+        <string id="LibEtude.AudioInit" value="Audio backend %1 initialization: %2" />
+        <string id="LibEtude.AudioRenderStart" value="Audio render started: Buffer=%1, SampleRate=%2" />
+        <string id="LibEtude.AudioRenderEnd" value="Audio render completed: Samples=%1, Latency=%2ms" />
+        <string id="LibEtude.PerformanceCounter" value="Operation %1 completed in %2ms (Thread=%3, Time=%4)" />
+        <string id="LibEtude.MemoryAllocation" value="Memory allocated: Address=%1, Size=%2, Type=%3 (Thread=%4)" />
+        <string id="LibEtude.MemoryDeallocation" value="Memory deallocated: Address=%1, Size=%2 (Thread=%3)" />
+        <string id="LibEtude.ThreadCreated" value="Thread created: ID=%1, Name=%2" />
+        <string id="LibEtude.ThreadDestroyed" value="Thread destroyed: ID=%1" />
+        <string id="LibEtude.ErrorOccurred" value="Error occurred: Code=%1, Message=%2, Function=%3, Line=%4 (Thread=%5)" />
+      </stringTable>
+    </resources>
+    <resources culture="ko-KR">
+      <stringTable>
+        <string id="LibEtude.LibraryInit" value="LibEtude 라이브러리가 버전 %1로 초기화되었습니다" />
+        <string id="LibEtude.LibraryShutdown" value="LibEtude 라이브러리가 종료되었습니다" />
+        <string id="LibEtude.AudioInit" value="오디오 백엔드 %1 초기화: %2" />
+        <string id="LibEtude.AudioRenderStart" value="오디오 렌더링 시작: 버퍼=%1, 샘플레이트=%2" />
+        <string id="LibEtude.AudioRenderEnd" value="오디오 렌더링 완료: 샘플=%1, 지연시간=%2ms" />
+        <string id="LibEtude.PerformanceCounter" value="작업 %1이 %2ms에 완료됨 (스레드=%3, 시간=%4)" />
+        <string id="LibEtude.MemoryAllocation" value="메모리 할당: 주소=%1, 크기=%2, 타입=%3 (스레드=%4)" />
+        <string id="LibEtude.MemoryDeallocation" value="메모리 해제: 주소=%1, 크기=%2 (스레드=%3)" />
+        <string id="LibEtude.ThreadCreated" value="스레드 생성: ID=%1, 이름=%2" />
+        <string id="LibEtude.ThreadDestroyed" value="스레드 소멸: ID=%1" />
+        <string id="LibEtude.ErrorOccurred" value="오류 발생: 코드=%1, 메시지=%2, 함수=%3, 라인=%4 (스레드=%5)" />
+      </stringTable>
+    </resources>
+  </localization>
+</instrumentationManifest>

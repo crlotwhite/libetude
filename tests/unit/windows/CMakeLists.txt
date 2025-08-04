@@ -1,42 +1,37 @@
-# Windows 플랫폼 테스트 CMake 설정
 cmake_minimum_required(VERSION 3.16)
-project(WindowsPlatformTest)
+project(WindowsLargePagesTest C)
+
+# C99 표준 설정
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # Windows에서만 빌드
-if(NOT WIN32)
-    return()
+if(WIN32)
+    # 헤더 파일 경로 설정
+    include_directories(../../../include)
+
+    # Large Page 테스트 실행 파일
+    add_executable(test_windows_large_pages
+        test_windows_large_pages.c
+        ../../../src/platform/windows/windows_large_pages.c
+    )
+
+    # Windows 라이브러리 링크
+    target_link_libraries(test_windows_large_pages kernel32 user32)
+
+    # 컴파일러 설정
+    if(MSVC)
+        target_compile_options(test_windows_large_pages PRIVATE /W3)
+        target_compile_definitions(test_windows_large_pages PRIVATE _WIN32 WIN32)
+    endif()
+
+    # 디버그 정보 포함
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        if(MSVC)
+            target_compile_options(test_windows_large_pages PRIVATE /Zi)
+        endif()
+    endif()
+
+else()
+    message(STATUS "This test is only for Windows platform")
 endif()
-
-# 간단한 Windows 플랫폼 테스트
-add_executable(windows_platform_simple_test
-    test_windows_platform_simple_en.c
-    ../../../src/platform/windows/windows_platform_minimal.c
-)
-
-target_include_directories(windows_platform_simple_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../include
-)
-
-target_link_libraries(windows_platform_simple_test PRIVATE
-    kernel32 user32 ole32 oleaut32 uuid
-)
-
-# WASAPI 간단한 테스트
-add_executable(wasapi_simple_test
-    test_wasapi_simple.c
-    ../../../src/platform/windows/windows_audio_wasapi.c
-    ../../../src/platform/windows/windows_platform_minimal.c
-)
-
-target_include_directories(wasapi_simple_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../include
-)
-
-target_link_libraries(wasapi_simple_test PRIVATE
-    kernel32 user32 ole32 oleaut32 uuid
-    dsound winmm ksuser avrt
-)
-
-# 테스트 등록
-add_test(NAME WindowsPlatformSimpleTest COMMAND windows_platform_simple_test)
-add_test(NAME WASAPISimpleTest COMMAND wasapi_simple_test)

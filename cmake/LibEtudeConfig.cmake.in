@@ -17,9 +17,35 @@ set(LIBETUDE_LIBRARY_DIRS "@CMAKE_INSTALL_PREFIX@/lib")
 # 라이브러리 파일
 if(WIN32)
     # Windows에서는 정적/동적 라이브러리 모두 지원
-    set(LIBETUDE_STATIC_LIBRARY "@CMAKE_INSTALL_PREFIX@/lib/libetude.lib")
-    set(LIBETUDE_SHARED_LIBRARY "@CMAKE_INSTALL_PREFIX@/lib/libetude.dll")
-    set(LIBETUDE_IMPORT_LIBRARY "@CMAKE_INSTALL_PREFIX@/lib/libetude.lib")
+    # 플랫폼별 라이브러리 경로 설정
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(LIBETUDE_ARCH "x64")
+    elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
+        set(LIBETUDE_ARCH "Win32")
+    endif()
+
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64")
+        set(LIBETUDE_ARCH "ARM64")
+    endif()
+
+    # 구성별 라이브러리 경로
+    set(LIBETUDE_STATIC_LIBRARY_RELEASE "@CMAKE_INSTALL_PREFIX@/lib/${LIBETUDE_ARCH}/Release/libetude.lib")
+    set(LIBETUDE_STATIC_LIBRARY_DEBUG "@CMAKE_INSTALL_PREFIX@/lib/${LIBETUDE_ARCH}/Debug/libetude.lib")
+    set(LIBETUDE_SHARED_LIBRARY_RELEASE "@CMAKE_INSTALL_PREFIX@/bin/${LIBETUDE_ARCH}/Release/libetude.dll")
+    set(LIBETUDE_SHARED_LIBRARY_DEBUG "@CMAKE_INSTALL_PREFIX@/bin/${LIBETUDE_ARCH}/Debug/libetude.dll")
+    set(LIBETUDE_IMPORT_LIBRARY_RELEASE "@CMAKE_INSTALL_PREFIX@/lib/${LIBETUDE_ARCH}/Release/libetude_import.lib")
+    set(LIBETUDE_IMPORT_LIBRARY_DEBUG "@CMAKE_INSTALL_PREFIX@/lib/${LIBETUDE_ARCH}/Debug/libetude_import.lib")
+
+    # 구성에 따른 라이브러리 선택
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(LIBETUDE_STATIC_LIBRARY ${LIBETUDE_STATIC_LIBRARY_DEBUG})
+        set(LIBETUDE_SHARED_LIBRARY ${LIBETUDE_SHARED_LIBRARY_DEBUG})
+        set(LIBETUDE_IMPORT_LIBRARY ${LIBETUDE_IMPORT_LIBRARY_DEBUG})
+    else()
+        set(LIBETUDE_STATIC_LIBRARY ${LIBETUDE_STATIC_LIBRARY_RELEASE})
+        set(LIBETUDE_SHARED_LIBRARY ${LIBETUDE_SHARED_LIBRARY_RELEASE})
+        set(LIBETUDE_IMPORT_LIBRARY ${LIBETUDE_IMPORT_LIBRARY_RELEASE})
+    endif()
 
     # 기본적으로 정적 라이브러리 사용
     set(LIBETUDE_LIBRARIES ${LIBETUDE_STATIC_LIBRARY})
@@ -173,6 +199,15 @@ if(WIN32)
     if(NOT CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION)
         message(STATUS "Windows SDK 버전을 자동으로 감지합니다.")
     endif()
+
+    # Windows 특화 CMake 모듈 포함
+    include("${CMAKE_CURRENT_LIST_DIR}/WindowsConfig.cmake")
+
+    # Windows 특화 변수 설정
+    set_windows_cmake_variables()
+
+    # Windows 개발 환경 검증
+    validate_windows_development_environment()
 endif()
 
 # 구성 요소별 라이브러리 설정
@@ -198,6 +233,11 @@ if("Development" IN_LIST LibEtude_FIND_COMPONENTS)
     endif()
 endif()
 
+# 가져온 타겟 생성
+if(WIN32)
+    libetude_create_imported_target()
+endif()
+
 # 정보 출력
 if(LIBETUDE_FOUND)
     message(STATUS "LibEtude ${LIBETUDE_VERSION} 발견")
@@ -207,6 +247,8 @@ if(LIBETUDE_FOUND)
 
     if(WIN32)
         message(STATUS "  Windows 라이브러리: ${LIBETUDE_WINDOWS_LIBRARIES}")
+        message(STATUS "  대상 아키텍처: ${LIBETUDE_ARCH}")
+        message(STATUS "  가져온 타겟: LibEtude::LibEtude")
     endif()
 endif()
 

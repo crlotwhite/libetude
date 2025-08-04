@@ -27,45 +27,62 @@
     <dependencies>
       <group targetFramework="native">
         <!-- Windows 시스템 라이브러리는 자동으로 링크됨 -->
+        <!-- Microsoft.Windows.CppWinRT는 선택적 의존성 -->
       </group>
     </dependencies>
+    <frameworkAssemblies>
+      <!-- .NET Framework 지원을 위한 어셈블리 참조 -->
+    </frameworkAssemblies>
   </metadata>
   <files>
     <!-- 헤더 파일 -->
     <file src="include\**\*.h" target="build\native\include\" />
 
-    <!-- 정적 라이브러리 (Release) -->
-    <file src="lib\Release\libetude.lib" target="build\native\lib\Release\" />
-    <file src="lib\Release\libetude.pdb" target="build\native\lib\Release\" />
+    <!-- x64 플랫폼 라이브러리 -->
+    <file src="lib\x64\Release\libetude.lib" target="build\native\lib\x64\Release\" />
+    <file src="lib\x64\Release\libetude.pdb" target="build\native\lib\x64\Release\" />
+    <file src="lib\x64\Debug\libetude.lib" target="build\native\lib\x64\Debug\" />
+    <file src="lib\x64\Debug\libetude.pdb" target="build\native\lib\x64\Debug\" />
 
-    <!-- 정적 라이브러리 (Debug) -->
-    <file src="lib\Debug\libetude.lib" target="build\native\lib\Debug\" />
-    <file src="lib\Debug\libetude.pdb" target="build\native\lib\Debug\" />
+    <!-- x64 동적 라이브러리 (선택적) -->
+    <file src="bin\x64\Release\libetude.dll" target="build\native\bin\x64\Release\" />
+    <file src="bin\x64\Debug\libetude.dll" target="build\native\bin\x64\Debug\" />
+    <file src="lib\x64\Release\libetude_import.lib" target="build\native\lib\x64\Release\" />
+    <file src="lib\x64\Debug\libetude_import.lib" target="build\native\lib\x64\Debug\" />
 
-    <!-- 동적 라이브러리 (Release) -->
-    <file src="bin\Release\libetude.dll" target="build\native\bin\Release\" />
-    <file src="lib\Release\libetude.lib" target="build\native\lib\Release\libetude_import.lib" />
+    <!-- Win32 플랫폼 라이브러리 -->
+    <file src="lib\Win32\Release\libetude.lib" target="build\native\lib\Win32\Release\" />
+    <file src="lib\Win32\Release\libetude.pdb" target="build\native\lib\Win32\Release\" />
+    <file src="lib\Win32\Debug\libetude.lib" target="build\native\lib\Win32\Debug\" />
+    <file src="lib\Win32\Debug\libetude.pdb" target="build\native\lib\Win32\Debug\" />
 
-    <!-- 동적 라이브러리 (Debug) -->
-    <file src="bin\Debug\libetude.dll" target="build\native\bin\Debug\" />
-    <file src="lib\Debug\libetude.lib" target="build\native\lib\Debug\libetude_import.lib" />
+    <!-- ARM64 플랫폼 라이브러리 -->
+    <file src="lib\ARM64\Release\libetude.lib" target="build\native\lib\ARM64\Release\" />
+    <file src="lib\ARM64\Release\libetude.pdb" target="build\native\lib\ARM64\Release\" />
+    <file src="lib\ARM64\Debug\libetude.lib" target="build\native\lib\ARM64\Debug\" />
+    <file src="lib\ARM64\Debug\libetude.pdb" target="build\native\lib\ARM64\Debug\" />
 
     <!-- CMake 설정 파일 -->
     <file src="cmake\LibEtudeConfig.cmake" target="build\native\cmake\" />
     <file src="cmake\WindowsConfig.cmake" target="build\native\cmake\" />
+    <file src="cmake\LibEtudeConfigVersion.cmake" target="build\native\cmake\" />
 
     <!-- MSBuild 타겟 파일 -->
     <file src="LibEtude.targets" target="build\native\" />
+    <file src="LibEtude.props" target="build\native\" />
+
+    <!-- 버전 정보 -->
+    <file src="version.xml" target="build\native\" />
 
     <!-- 도구 -->
-    <file src="tools\**\*" target="tools\" exclude="**\*.pdb;**\*.ilk" />
+    <file src="tools\**\*" target="tools\" exclude="**\*.pdb;**\*.ilk;**\*.exp" />
 
     <!-- 예제 -->
-    <file src="examples\**\*" target="examples\" exclude="**\build\**;**\*.exe;**\*.obj" />
+    <file src="examples\**\*" target="examples\" exclude="**\build\**;**\*.exe;**\*.obj;**\*.pdb" />
 
     <!-- 문서 -->
     <file src="README.md" target="docs\" />
     <file src="LICENSE" target="" />
-    <file src="docs\**\*" target="docs\" exclude="**\*.tmp" />
+    <file src="docs\**\*" target="docs\" exclude="**\*.tmp;**\*.log" />
   </files>
 </package>

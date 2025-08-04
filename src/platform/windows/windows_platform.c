@@ -88,8 +88,19 @@ ETResult et_windows_init(const ETWindowsPlatformConfig* config) {
         return ET_ERROR_ALREADY_INITIALIZED;
     }
 
+    /* 오류 처리 시스템 초기화 */
+    ETResult error_result = et_windows_error_init();
+    if (error_result != ET_SUCCESS) {
+        return error_result;
+    }
+
+    /* 기본 폴백 콜백 등록 */
+    et_windows_register_default_fallbacks();
+
     /* Windows 버전 확인 */
     if (!_check_windows_version()) {
+        ET_WINDOWS_REPORT_ERROR(ET_WINDOWS_ERROR_UNSUPPORTED_WINDOWS_VERSION, 0, S_OK,
+                               "Unsupported Windows version detected");
         return ET_ERROR_UNSUPPORTED_PLATFORM;
     }
 
@@ -103,6 +114,8 @@ ETResult et_windows_init(const ETWindowsPlatformConfig* config) {
     /* 필수 DLL 로드 */
     ETResult result = _load_required_dlls();
     if (result != ET_SUCCESS) {
+        ET_WINDOWS_REPORT_ERROR(ET_WINDOWS_ERROR_REQUIRED_DLL_NOT_FOUND, GetLastError(), S_OK,
+                               "Failed to load required Windows DLLs");
         return result;
     }
 
@@ -111,6 +124,8 @@ ETResult et_windows_init(const ETWindowsPlatformConfig* config) {
         HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
         if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {
             /* COM 초기화 실패 시 DirectSound로 폴백 */
+            ET_WINDOWS_REPORT_HRESULT_ERROR(ET_WINDOWS_ERROR_COM_INIT_FAILED, hr,
+                                          "COM initialization failed, falling back to DirectSound");
             g_windows_platform.config.audio.prefer_wasapi = false;
         }
     }
@@ -118,6 +133,8 @@ ETResult et_windows_init(const ETWindowsPlatformConfig* config) {
     /* 보안 기능 확인 */
     if (g_windows_platform.config.security.enforce_dep) {
         if (!et_windows_check_dep_compatibility()) {
+            ET_WINDOWS_REPORT_ERROR(ET_WINDOWS_ERROR_DEP_NOT_SUPPORTED, 0, S_OK,
+                                   "DEP compatibility check failed");
             return ET_ERROR_SECURITY_CHECK_FAILED;
         }
     }
@@ -125,15 +142,18 @@ ETResult et_windows_init(const ETWindowsPlatformConfig* config) {
     /* ASLR 호환성 확인 */
     if (g_windows_platform.config.security.require_aslr) {
         if (!et_windows_check_aslr_compatibility()) {
+            ET_WINDOWS_REPORT_ERROR(ET_WINDOWS_ERROR_ASLR_NOT_SUPPORTED, 0, S_OK,
+                                   "ASLR compatibility check failed");
             return ET_ERROR_SECURITY_CHECK_FAILED;
         }
     }
 
     /* UAC 권한 확인 */
     if (g_windows_platform.config.security.check_uac) {
-        ETUACLevel current_level = et_windows_check_uac_level();
-        if (current_level < g_windows_platform.config.security.minimum_uac_level) {
+        if (!et_windows_check_uac_permissions()) {
             /* UAC 권한이 부족하면 일부 기능 제한 */
+            ET_WINDOWS_REPORT_ERROR(ET_WINDOWS_ERROR_UAC_INSUFFICIENT_PRIVILEGES, 0, S_OK,
+                                   "Insufficient UAC privileges, disabling some features");
             g_windows_platform.config.performance.enable_large_pages = false;
             g_windows_platform.config.security.use_secure_allocator = false;
         }
@@ -144,6 +164,8 @@ ETResult et_windows_init(const ETWindowsPlatformConfig* config) {
         result = et_windows_register_etw_provider();
         if (result != ET_SUCCESS) {
             /* ETW 등록 실패는 치명적이지 않음 */
+            ET_WINDOWS_REPORT_ERROR(ET_WINDOWS_ERROR_ETW_PROVIDER_REGISTRATION_FAILED, 0, S_OK,
+                                   "ETW provider registration failed, disabling ETW logging");
             g_windows_platform.config.development.enable_etw_logging = false;
         }
     }
@@ -181,6 +203,9 @@ void et_windows_finalize(void) {
         /* ntdll.dll도 시스템 DLL이므로 해제하지 않음 */
         g_windows_platform.ntdll_handle = NULL;
     }
+
+    /* 오류 처리 시스템 정리 */
+    et_windows_error_finalize();
 
     /* 상태 초기화 */
     memset(&g_windows_platform, 0, sizeof(g_windows_platform));
