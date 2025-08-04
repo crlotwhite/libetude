@@ -1,0 +1,248 @@
+name: Build
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  # 빌드 병렬 처리를 위한 환경 변수
+  CMAKE_BUILD_PARALLEL_LEVEL: 4
+
+jobs:
+  build:
+    name: ${{ matrix.os }} - ${{ matrix.build_type }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        build_type: [Debug, Release]
+
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+
+    # Linux 의존성 설치
+    - name: Linux 의존성 설치
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          cmake \
+          build-essential \
+          pkg-config \
+          libasound2-dev \
+          libpulse-dev \
+          liblz4-dev \
+          libzstd-dev
+
+    # Windows 의존성 설정
+    - name: Windows MSVC 설정
+      if: runner.os == 'Windows'
+      uses: microsoft/setup-msbuild@v2
+
+    # macOS 의존성 설치
+    - name: macOS 의존성 설치
+      if: runner.os == 'macOS'
+      run: |
+        brew install cmake lz4 zstd
+
+    # CMake 구성
+    - name: CMake 구성
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+          -DLIBETUDE_BUILD_TESTS=ON \
+          -DLIBETUDE_BUILD_EXAMPLES=ON \
+          -DLIBETUDE_BUILD_TOOLS=ON \
+          -DLIBETUDE_BUILD_BINDINGS=ON \
+          -DLIBETUDE_ENABLE_SIMD=ON \
+          -DLIBETUDE_ENABLE_GPU=OFF
+
+    # 빌드 실행
+    - name: 빌드
+      run: |
+        cmake --build build --config ${{ matrix.build_type }} --parallel
+
+    # 테스트 실행
+    - name: 테스트 실행
+      run: |
+        cd build
+        ctest --output-on-failure --parallel 4 -C ${{ matrix.build_type }}
+
+    # 빌드 아티팩트 업로드 (Release 빌드만)
+    - name: 빌드 아티팩트 업로드
+      if: matrix.build_type == 'Release'
+      uses: actions/upload-artifact@v4
+      with:
+        name: libetude-${{ runner.os }}-${{ matrix.build_type }}
+        path: |
+          build/src/liblibetude*
+          build/bin/*
+          include/
+        retention-days: 7
+
+  # 코드 품질 검사 (Linux에서만 실행)
+  code-quality:
+    name: 코드 품질 검사
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+
+    - name: 의존성 설치
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          cmake \
+          build-essential \
+          pkg-config \
+          libasound2-dev \
+          libpulse-dev \
+          cppcheck \
+          clang-format
+
+    # 정적 분석
+    - name: Cppcheck 정적 분석
+      run: |
+        cppcheck --enable=all --error-exitcode=1 \
+          --suppress=missingIncludeSystem \
+          --suppress=unusedFunction \
+          --inline-suppr \
+          src/ include/
+
+    # 코드 포맷 검사
+    - name: 코드 포맷 검사
+      run: |
+        find src include -name "*.c" -o -name "*.h" -o -name "*.cpp" -o -name "*.hpp" | \
+        xargs clang-format --dry-run --Werror
+
+  # 메모리 검사 (Linux Debug 빌드)
+  memory-check:
+    name: 메모리 검사
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+
+    - name: 의존성 설치
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          cmake \
+          build-essential \
+          pkg-config \
+          libasound2-dev \
+          libpulse-dev \
+          valgrind
+
+    - name: Debug 빌드 구성
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DLIBETUDE_BUILD_TESTS=ON \
+          -DLIBETUDE_BUILD_EXAMPLES=ON \
+          -DLIBETUDE_ENABLE_SIMD=OFF \
+          -DLIBETUDE_ENABLE_GPU=OFF
+
+    - name: 빌드
+      run: |
+        cmake --build build --config Debug --parallel
+
+    - name: Valgrind 메모리 검사
+      run: |
+        cd build
+        # 기본 테스트만 실행 (시간 절약)
+        valgrind --tool=memcheck --leak-check=full --error-exitcode=1 \
+          ./tests/unit/test_memory
+        valgrind --tool=memcheck --leak-check=full --error-exitcode=1 \
+          ./tests/unit/test_api
+
+  # 성능 벤치마크 (Release 빌드)
+  benchmark:
+    name: 성능 벤치마크
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+
+    - name: 의존성 설치
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          cmake \
+          build-essential \
+          pkg-config \
+          libasound2-dev \
+          libpulse-dev
+
+    - name: Release 빌드 구성
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DLIBETUDE_BUILD_TESTS=ON \
+          -DLIBETUDE_BUILD_TOOLS=ON \
+          -DLIBETUDE_ENABLE_SIMD=ON \
+          -DLIBETUDE_ENABLE_GPU=OFF
+
+    - name: 빌드
+      run: |
+        cmake --build build --config Release --parallel
+
+    - name: 벤치마크 실행
+      run: |
+        cd build
+        # 성능 테스트 실행
+        if [ -f "./tests/performance/test_performance" ]; then
+          ./tests/performance/test_performance
+        fi
+        # 벤치마크 도구 실행
+        if [ -f "./bin/libetude_benchmarks" ]; then
+          ./bin/libetude_benchmarks --quick
+        fi
+
+  # 크로스 컴파일 테스트 (ARM64)
+  cross-compile:
+    name: ARM64 크로스 컴파일
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+
+    - name: ARM64 크로스 컴파일 도구 설치
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          cmake \
+          gcc-aarch64-linux-gnu \
+          g++-aarch64-linux-gnu
+
+    - name: ARM64 빌드 구성
+      run: |
+        cmake -B build-arm64 \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+          -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+          -DLIBETUDE_BUILD_TESTS=OFF \
+          -DLIBETUDE_BUILD_EXAMPLES=ON \
+          -DLIBETUDE_MINIMAL=ON
+
+    - name: ARM64 빌드
+      run: |
+        cmake --build build-arm64 --config Release --parallel
+
+    - name: ARM64 빌드 아티팩트 업로드
+      uses: actions/upload-artifact@v4
+      with:
+        name: libetude-linux-arm64
+        path: |
+          build-arm64/src/liblibetude*
+          build-arm64/bin/*
+        retention-days: 7
