@@ -439,6 +439,58 @@ int lef_finalize_model(LEFSerializationContext* ctx) {
  */
 int lef_verify_file_integrity(const char* filename) {
     if (!filename) return LEF_ERROR_INVALID_ARGUMENT;
+
+    FILE* file = fopen(filename, "rb");
+    if (!file) return LEF_ERROR_FILE_IO;
+
+    // 파일 크기 확인
+    fseek(file, 0, SEEK_END);
+    size_t file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    if (file_size < sizeof(LEFHeader)) {
+        fclose(file);
+        return LEF_ERROR_INVALID_FORMAT;
+    }
+
+    // 헤더 읽기
+    LEFHeader header;
+    if (fread(&header, sizeof(LEFHeader), 1, file) != 1) {
+        fclose(file);
+        return LEF_ERROR_FILE_IO;
+    }
+
+    // 파일 크기 검증
+    if (header.file_size != file_size) {
+        fclose(file);
+        return LEF_ERROR_CHECKSUM_MISMATCH;
+    }
+
+    // 전체 파일 데이터 읽기 (헤더 제외)
+    fseek(file, 0, SEEK_SET);
+    void* file_data = malloc(file_size);
+    if (!file_data) {
+        fclose(file);
+        return LEF_ERROR_OUT_OF_MEMORY;
+    }
+
+    if (fread(file_data, file_size, 1, file) != 1) {
+        free(file_data);
+        fclose(file);
+        return LEF_ERROR_FILE_IO;
+    }
+
+    // 전체 파일 체크섬 계산
+    uint32_t calculated_checksum = lef_calculate_crc32(file_data, file_size);
+
+    free(file_data);
+    fclose(file);
+
+    // 헤더에 저장된 model_hash와 비교 (model_hash를 전체 체크섬으로 가정)
+    if (calculated_checksum != header.model_hash) {
+        return LEF_ERROR_CHECKSUM_MISMATCH;
+    }
+
     return LEF_SUCCESS;
 }
 
