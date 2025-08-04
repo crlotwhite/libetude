@@ -82,6 +82,14 @@ if(LIBETUDE_BUILD_BINDINGS)
     )
 endif()
 
-# 예제 데이터 파일 복사
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/data/
-     DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/data/)
+# 예제 데이터 파일 복사 (디렉토리가 존재하는 경우에만)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/data AND IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data)
+    file(GLOB DATA_FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/*")
+    if(DATA_FILES)
+        file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/data/
+             DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/data/)
+    else()
+        # 빈 데이터 디렉토리 생성
+        file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/data)
+    endif()
+endif()

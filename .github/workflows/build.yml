@@ -50,8 +50,9 @@ jobs:
       run: |
         brew install cmake lz4 zstd
 
-    # CMake 구성
-    - name: CMake 구성
+    # CMake 구성 (Unix 계열)
+    - name: CMake 구성 (Unix)
+      if: runner.os != 'Windows'
       run: |
         cmake -B build \
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
@@ -62,13 +63,34 @@ jobs:
           -DLIBETUDE_ENABLE_SIMD=ON \
           -DLIBETUDE_ENABLE_GPU=OFF
 
+    # CMake 구성 (Windows)
+    - name: CMake 구성 (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        cmake -B build `
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
+          -DLIBETUDE_BUILD_TESTS=ON `
+          -DLIBETUDE_BUILD_EXAMPLES=ON `
+          -DLIBETUDE_BUILD_TOOLS=ON `
+          -DLIBETUDE_BUILD_BINDINGS=ON `
+          -DLIBETUDE_ENABLE_SIMD=ON `
+          -DLIBETUDE_ENABLE_GPU=OFF
+
     # 빌드 실행
     - name: 빌드
       run: |
         cmake --build build --config ${{ matrix.build_type }} --parallel
 
-    # 테스트 실행
-    - name: 테스트 실행
+    # 테스트 실행 (Unix 계열)
+    - name: 테스트 실행 (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        cd build
+        ctest --output-on-failure --parallel 4 -C ${{ matrix.build_type }}
+
+    # 테스트 실행 (Windows)
+    - name: 테스트 실행 (Windows)
+      if: runner.os == 'Windows'
       run: |
         cd build
         ctest --output-on-failure --parallel 4 -C ${{ matrix.build_type }}

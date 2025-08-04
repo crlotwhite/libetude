@@ -510,9 +510,17 @@ set_tests_properties(FastMathMinimalTest PROPERTIES
     LABELS "math;fast;legacy"
 )
 
-# 테스트 데이터 복사
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/data/
-     DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/data/)
+# 테스트 데이터 복사 (디렉토리가 존재하는 경우에만)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/data AND IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data)
+    file(GLOB DATA_FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/*")
+    if(DATA_FILES)
+        file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/data/
+             DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/data/)
+    else()
+        # 빈 데이터 디렉토리 생성
+        file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/data)
+    endif()
+endif()
 
 # 크로스 플랫폼 테스트 실행 타겟
 add_custom_target(run_all_tests
