@@ -89,6 +89,7 @@ if(LIBETUDE_ENABLE_SIMD)
         list(APPEND LIBETUDE_CORE_SOURCES
             core/kernels/simd/avx_kernels.c
         )
+        set_source_files_properties(core/kernels/simd/avx_kernels.c PROPERTIES COMPILE_FLAGS "-mavx")
     endif()
 
     if(HAVE_NEON)
@@ -96,7 +97,7 @@ if(LIBETUDE_ENABLE_SIMD)
             core/kernels/simd/neon_kernels.c
         )
     endif()
-    
+
     message(STATUS "SIMD support enabled. HAVE_SSE=${HAVE_SSE}, HAVE_AVX=${HAVE_AVX}, HAVE_NEON=${HAVE_NEON}")
 endif()
 
