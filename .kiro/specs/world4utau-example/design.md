@@ -47,20 +47,97 @@ graph TB
             K --> N[libetude Memory Pool]
             K --> O[libetude SIMD Kernels]
         end
+
+        subgraph "Graph Engine Integration"
+            P[DSP Block Diagram] --> Q[Graph Builder]
+            Q --> R[libetude Graph Engine]
+            R --> S[Optimized Execution]
+        end
     end
 
     subgraph "Output"
-        M --> P[WAV File Output]
-        M --> Q[Real-time Audio Stream]
+        M --> T[WAV File Output]
+        M --> U[Real-time Audio Stream]
+    end
+```
+
+### DSP 블록 다이어그램 기반 처리 파이프라인
+
+```mermaid
+graph LR
+    subgraph "Input Stage"
+        A[Audio Input] --> B[Pre-processing]
+        B --> C[Windowing]
+    end
+
+    subgraph "Analysis Stage"
+        C --> D[F0 Extraction Block]
+        C --> E[Spectrum Analysis Block]
+        C --> F[Aperiodicity Analysis Block]
+
+        D --> G[F0 Post-processing]
+        E --> H[Spectrum Post-processing]
+        F --> I[Aperiodicity Post-processing]
+    end
+
+    subgraph "Parameter Processing"
+        G --> J[Parameter Merger]
+        H --> J
+        I --> J
+        J --> K[UTAU Parameter Mapping]
+        K --> L[Parameter Cache]
+    end
+
+    subgraph "Synthesis Stage"
+        L --> M[Synthesis Preparation]
+        M --> N[Vocoder Block]
+        N --> O[Post-filtering]
+        O --> P[Audio Output]
+    end
+```
+
+### libetude 그래프 엔진 통합 아키텍처
+
+```mermaid
+graph TB
+    subgraph "Graph Definition Layer"
+        A[DSP Block Definition] --> B[Node Factory]
+        B --> C[Graph Builder]
+        C --> D[Graph Validator]
+    end
+
+    subgraph "libetude Graph Engine"
+        D --> E[Graph Optimizer]
+        E --> F[Execution Scheduler]
+        F --> G[Node Executor]
+        G --> H[Memory Manager]
+    end
+
+    subgraph "WORLD Node Types"
+        I[AudioInputNode]
+        J[F0ExtractionNode]
+        K[SpectrumAnalysisNode]
+        L[AperiodicityAnalysisNode]
+        M[ParameterMergeNode]
+        N[SynthesisNode]
+        O[AudioOutputNode]
+    end
+
+    subgraph "Execution Context"
+        P[Thread Pool]
+        Q[Memory Pool]
+        R[SIMD Context]
     end
 ```
 
 ### 레이어 구조
 
 1. **UTAU 호환 레이어**: 기존 UTAU 도구들과의 인터페이스
-2. **WORLD 알고리즘 레이어**: F0, 스펙트럼, 비주기성 분석/합성
-3. **libetude 통합 레이어**: 최적화된 DSP 및 메모리 관리
-4. **플랫폼 추상화 레이어**: 크로스 플랫폼 지원
+2. **DSP 블록 다이어그램 레이어**: 모듈화된 처리 블록 정의
+3. **그래프 엔진 레이어**: libetude 그래프 엔진 기반 실행
+4. **WORLD 알고리즘 레이어**: F0, 스펙트럼, 비주기성 분석/합성
+5. **libetude 통합 레이어**: 최적화된 DSP 및 메모리 관리
+6. **플랫폼 추상화 레이어**: 크로스 플랫폼 지원
 
 ## Components and Interfaces
 
@@ -210,7 +287,255 @@ void* world_memory_alloc(WorldMemoryManager* mgr, size_t size, int pool_type);
 void world_memory_free(WorldMemoryManager* mgr, void* ptr, int pool_type);
 ```
 
-### 4. 캐싱 시스템
+### 4. DSP 블록 다이어그램 시스템
+
+#### DSP 블록 정의
+
+```c
+// DSP 블록의 기본 인터페이스
+typedef struct {
+    char name[64];               // 블록 이름
+    int input_count;             // 입력 포트 수
+    int output_count;            // 출력 포트 수
+    void* block_data;            // 블록별 데이터
+
+    // 블록 처리 함수
+    ETResult (*process)(void* block_data,
+                       const float** inputs,
+                       float** outputs,
+                       int frame_count);
+
+    // 블록 초기화/해제
+    ETResult (*initialize)(void* block_data);
+    void (*cleanup)(void* block_data);
+} DSPBlock;
+
+// DSP 블록 팩토리
+typedef struct {
+    DSPBlock* (*create_f0_extraction_block)(const F0ExtractionConfig* config);
+    DSPBlock* (*create_spectrum_analysis_block)(const SpectrumConfig* config);
+    DSPBlock* (*create_aperiodicity_analysis_block)(const AperiodicityConfig* config);
+    DSPBlock* (*create_synthesis_block)(const SynthesisConfig* config);
+    DSPBlock* (*create_audio_io_block)(const AudioIOConfig* config);
+} DSPBlockFactory;
+
+// DSP 블록 연결 정보
+typedef struct {
+    int source_block_id;         // 소스 블록 ID
+    int source_port;             // 소스 포트 번호
+    int dest_block_id;           // 대상 블록 ID
+    int dest_port;               // 대상 포트 번호
+    int buffer_size;             // 연결 버퍼 크기
+} DSPConnection;
+
+// DSP 블록 다이어그램
+typedef struct {
+    DSPBlock* blocks;            // 블록 배열
+    int block_count;             // 블록 수
+    DSPConnection* connections;  // 연결 배열
+    int connection_count;        // 연결 수
+    ETMemoryPool* mem_pool;      // 메모리 풀
+} DSPBlockDiagram;
+```
+
+#### WORLD 전용 DSP 블록들
+
+```c
+// F0 추출 블록 데이터
+typedef struct {
+    WorldF0Extractor* extractor;
+    F0ExtractionConfig config;
+    float* input_buffer;
+    double* f0_output;
+    double* time_axis;
+} F0ExtractionBlockData;
+
+// 스펙트럼 분석 블록 데이터
+typedef struct {
+    WorldSpectrumAnalyzer* analyzer;
+    SpectrumConfig config;
+    float* input_buffer;
+    double* f0_input;
+    double** spectrum_output;
+} SpectrumAnalysisBlockData;
+
+// 비주기성 분석 블록 데이터
+typedef struct {
+    WorldAperiodicityAnalyzer* analyzer;
+    AperiodicityConfig config;
+    float* input_buffer;
+    double* f0_input;
+    double** aperiodicity_output;
+} AperiodicityAnalysisBlockData;
+
+// 합성 블록 데이터
+typedef struct {
+    WorldSynthesisEngine* engine;
+    SynthesisConfig config;
+    WorldParameters* input_params;
+    float* audio_output;
+} SynthesisBlockData;
+
+// WORLD DSP 블록 생성 함수들
+DSPBlock* create_world_f0_extraction_block(const F0ExtractionConfig* config);
+DSPBlock* create_world_spectrum_analysis_block(const SpectrumConfig* config);
+DSPBlock* create_world_aperiodicity_analysis_block(const AperiodicityConfig* config);
+DSPBlock* create_world_synthesis_block(const SynthesisConfig* config);
+```
+
+### 5. libetude 그래프 엔진 통합
+
+#### 그래프 노드 정의
+
+```c
+// WORLD 처리를 위한 그래프 노드 타입
+typedef enum {
+    WORLD_NODE_AUDIO_INPUT,
+    WORLD_NODE_F0_EXTRACTION,
+    WORLD_NODE_SPECTRUM_ANALYSIS,
+    WORLD_NODE_APERIODICITY_ANALYSIS,
+    WORLD_NODE_PARAMETER_MERGE,
+    WORLD_NODE_UTAU_MAPPING,
+    WORLD_NODE_SYNTHESIS,
+    WORLD_NODE_AUDIO_OUTPUT
+} WorldNodeType;
+
+// WORLD 그래프 노드
+typedef struct {
+    ETGraphNode base;            // libetude 그래프 노드 베이스
+    WorldNodeType node_type;     // 노드 타입
+    DSPBlock* dsp_block;         // 연결된 DSP 블록
+    void* node_data;             // 노드별 데이터
+
+    // 노드 실행 함수
+    ETResult (*execute)(struct WorldGraphNode* node,
+                       ETGraphContext* context);
+} WorldGraphNode;
+
+// WORLD 그래프 빌더
+typedef struct {
+    ETGraphBuilder* base_builder; // libetude 그래프 빌더
+    DSPBlockDiagram* diagram;     // DSP 블록 다이어그램
+    WorldGraphNode* nodes;        // 그래프 노드 배열
+    int node_count;               // 노드 수
+    ETMemoryPool* mem_pool;       // 메모리 풀
+} WorldGraphBuilder;
+
+// 그래프 빌더 함수들
+WorldGraphBuilder* world_graph_builder_create(ETMemoryPool* pool);
+ETResult world_graph_add_dsp_block(WorldGraphBuilder* builder,
+                                  DSPBlock* block,
+                                  WorldNodeType type);
+ETResult world_graph_connect_nodes(WorldGraphBuilder* builder,
+                                  int source_node, int source_port,
+                                  int dest_node, int dest_port);
+ETGraph* world_graph_build(WorldGraphBuilder* builder);
+void world_graph_builder_destroy(WorldGraphBuilder* builder);
+```
+
+#### 그래프 실행 엔진
+
+```c
+// WORLD 그래프 실행 컨텍스트
+typedef struct {
+    ETGraphContext* base_context; // libetude 그래프 컨텍스트
+    WorldParameters* world_params; // WORLD 파라미터
+    UTAUParameters* utau_params;   // UTAU 파라미터
+
+    // 실행 상태
+    bool is_analysis_complete;
+    bool is_synthesis_complete;
+
+    // 성능 모니터링
+    double analysis_time;
+    double synthesis_time;
+    size_t memory_usage;
+} WorldGraphContext;
+
+// 그래프 실행 함수들
+WorldGraphContext* world_graph_context_create(const UTAUParameters* utau_params);
+ETResult world_graph_execute(ETGraph* graph, WorldGraphContext* context);
+ETResult world_graph_execute_async(ETGraph* graph, WorldGraphContext* context,
+                                  ETGraphCallback callback, void* user_data);
+void world_graph_context_destroy(WorldGraphContext* context);
+```
+
+#### 그래프 최적화
+
+```c
+// WORLD 그래프 최적화 옵션
+typedef struct {
+    bool enable_node_fusion;      // 노드 융합 최적화
+    bool enable_memory_reuse;     // 메모리 재사용 최적화
+    bool enable_simd_optimization; // SIMD 최적화
+    bool enable_parallel_execution; // 병렬 실행 최적화
+    int max_thread_count;         // 최대 스레드 수
+} WorldGraphOptimizationOptions;
+
+// 그래프 최적화 함수들
+ETResult world_graph_optimize(ETGraph* graph,
+                             const WorldGraphOptimizationOptions* options);
+ETResult world_graph_analyze_dependencies(ETGraph* graph);
+ETResult world_graph_schedule_parallel_execution(ETGraph* graph, int thread_count);
+```
+
+### 6. 통합 WORLD 처리 파이프라인
+
+#### 파이프라인 매니저
+
+```c
+// WORLD 처리 파이프라인
+typedef struct {
+    DSPBlockDiagram* block_diagram;  // DSP 블록 다이어그램
+    ETGraph* execution_graph;        // 실행 그래프
+    WorldGraphContext* context;      // 실행 컨텍스트
+
+    // 설정
+    WorldPipelineConfig config;
+
+    // 상태 관리
+    bool is_initialized;
+    bool is_running;
+
+    // 성능 모니터링
+    ETProfiler* profiler;
+} WorldPipeline;
+
+// 파이프라인 설정
+typedef struct {
+    // 오디오 설정
+    int sample_rate;
+    int frame_size;
+    int buffer_size;
+
+    // WORLD 알고리즘 설정
+    F0ExtractionConfig f0_config;
+    SpectrumConfig spectrum_config;
+    AperiodicityConfig aperiodicity_config;
+    SynthesisConfig synthesis_config;
+
+    // 그래프 최적화 설정
+    WorldGraphOptimizationOptions optimization;
+
+    // 메모리 관리 설정
+    size_t memory_pool_size;
+    bool enable_caching;
+} WorldPipelineConfig;
+
+// 파이프라인 생성 및 관리
+WorldPipeline* world_pipeline_create(const WorldPipelineConfig* config);
+ETResult world_pipeline_initialize(WorldPipeline* pipeline);
+ETResult world_pipeline_process(WorldPipeline* pipeline,
+                               const UTAUParameters* utau_params,
+                               float* output_audio, int* output_length);
+ETResult world_pipeline_process_streaming(WorldPipeline* pipeline,
+                                         const UTAUParameters* utau_params,
+                                         AudioStreamCallback callback,
+                                         void* user_data);
+void world_pipeline_destroy(WorldPipeline* pipeline);
+```
+
+### 7. 캐싱 시스템
 
 #### 분석 결과 캐싱
 ```c

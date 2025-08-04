@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!-- LibEtude NuGet 패키지 속성 파일 -->
+
+  <PropertyGroup>
+    <LibEtudePackageRoot>$(MSBuildThisFileDirectory)</LibEtudePackageRoot>
+    <LibEtudeIncludePath>$(LibEtudePackageRoot)include</LibEtudeIncludePath>
+    <LibEtudeVersion>1.0.0</LibEtudeVersion>
+  </PropertyGroup>
+
+  <!-- 플랫폼별 라이브러리 경로 설정 -->
+  <PropertyGroup Condition="'$(Platform)' == 'x64'">
+    <LibEtudeLibPath>$(LibEtudePackageRoot)lib\x64\$(Configuration)</LibEtudeLibPath>
+    <LibEtudeBinPath>$(LibEtudePackageRoot)bin\x64\$(Configuration)</LibEtudeBinPath>
+    <LibEtudeArch>x64</LibEtudeArch>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Platform)' == 'Win32'">
+    <LibEtudeLibPath>$(LibEtudePackageRoot)lib\Win32\$(Configuration)</LibEtudeLibPath>
+    <LibEtudeBinPath>$(LibEtudePackageRoot)bin\Win32\$(Configuration)</LibEtudeBinPath>
+    <LibEtudeArch>x86</LibEtudeArch>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Platform)' == 'ARM64'">
+    <LibEtudeLibPath>$(LibEtudePackageRoot)lib\ARM64\$(Configuration)</LibEtudeLibPath>
+    <LibEtudeBinPath>$(LibEtudePackageRoot)bin\ARM64\$(Configuration)</LibEtudeBinPath>
+    <LibEtudeArch>arm64</LibEtudeArch>
+  </PropertyGroup>
+
+  <!-- 기본 전처리기 정의 -->
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(LibEtudeIncludePath);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>LIBETUDE_PLATFORM_WINDOWS=1;_WIN32_WINNT=0x0A00;WIN32_LEAN_AND_MEAN;NOMINMAX;UNICODE;_UNICODE;LIBETUDE_ARCH_$(LibEtudeArch.ToUpper())=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <!-- 사용자 정의 속성 기본값 -->
+  <PropertyGroup>
+    <LibEtudeUseDynamicLibrary Condition="'$(LibEtudeUseDynamicLibrary)' == ''">false</LibEtudeUseDynamicLibrary>
+    <LibEtudeEnableSIMD Condition="'$(LibEtudeEnableSIMD)' == ''">true</LibEtudeEnableSIMD>
+    <LibEtudeEnableGPU Condition="'$(LibEtudeEnableGPU)' == ''">false</LibEtudeEnableGPU>
+    <LibEtudeMinimal Condition="'$(LibEtudeMinimal)' == ''">false</LibEtudeMinimal>
+    <LibEtudeEnableETW Condition="'$(LibEtudeEnableETW)' == ''">true</LibEtudeEnableETW>
+    <LibEtudeEnableLargePages Condition="'$(LibEtudeEnableLargePages)' == ''">false</LibEtudeEnableLargePages>
+  </PropertyGroup>
+
+  <!-- 기능별 전처리기 정의 -->
+  <ItemDefinitionGroup Condition="'$(LibEtudeEnableSIMD)' == 'true'">
+    <ClCompile>
+      <PreprocessorDefinitions>LIBETUDE_ENABLE_SIMD=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(LibEtudeEnableGPU)' == 'true'">
+    <ClCompile>
+      <PreprocessorDefinitions>LIBETUDE_ENABLE_GPU=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(LibEtudeMinimal)' == 'true'">
+    <ClCompile>
+      <PreprocessorDefinitions>LIBETUDE_MINIMAL=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(LibEtudeEnableETW)' == 'true'">
+    <ClCompile>
+      <PreprocessorDefinitions>LIBETUDE_ENABLE_ETW=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(LibEtudeEnableLargePages)' == 'true'">
+    <ClCompile>
+      <PreprocessorDefinitions>LIBETUDE_ENABLE_LARGE_PAGES=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <!-- 동적 라이브러리 사용 시 설정 -->
+  <ItemDefinitionGroup Condition="'$(LibEtudeUseDynamicLibrary)' == 'true'">
+    <ClCompile>
+      <PreprocessorDefinitions>LIBETUDE_DLL=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <!-- 빌드 메시지 -->
+  <Target Name="LibEtudeShowConfig" BeforeTargets="PrepareForBuild">
+    <Message Text="LibEtude 구성:" Importance="normal" />
+    <Message Text="  버전: $(LibEtudeVersion)" Importance="normal" />
+    <Message Text="  플랫폼: $(Platform) ($(LibEtudeArch))" Importance="normal" />
+    <Message Text="  구성: $(Configuration)" Importance="normal" />
+    <Message Text="  동적 라이브러리: $(LibEtudeUseDynamicLibrary)" Importance="normal" />
+    <Message Text="  SIMD 최적화: $(LibEtudeEnableSIMD)" Importance="normal" />
+    <Message Text="  GPU 가속: $(LibEtudeEnableGPU)" Importance="normal" />
+    <Message Text="  최소 빌드: $(LibEtudeMinimal)" Importance="normal" />
+    <Message Text="  ETW 로깅: $(LibEtudeEnableETW)" Importance="normal" />
+    <Message Text="  Large Pages: $(LibEtudeEnableLargePages)" Importance="normal" />
+  </Target>
+
+</Project>

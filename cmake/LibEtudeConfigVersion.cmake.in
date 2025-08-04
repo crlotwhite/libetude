@@ -1,0 +1,31 @@
+# LibEtude CMake 버전 설정 파일
+# Copyright (c) 2025 LibEtude Project
+
+set(PACKAGE_VERSION "@PROJECT_VERSION@")
+
+# 버전 호환성 확인
+if(PACKAGE_VERSION VERSION_LESS PACKAGE_FIND_VERSION)
+    set(PACKAGE_VERSION_COMPATIBLE FALSE)
+else()
+    # 메이저 버전이 같으면 호환 가능
+    if("@PROJECT_VERSION_MAJOR@" STREQUAL "@PACKAGE_FIND_VERSION_MAJOR@")
+        set(PACKAGE_VERSION_COMPATIBLE TRUE)
+    else()
+        set(PACKAGE_VERSION_COMPATIBLE FALSE)
+    endif()
+
+    # 정확한 버전 매치 확인
+    if(PACKAGE_VERSION VERSION_EQUAL PACKAGE_FIND_VERSION)
+        set(PACKAGE_VERSION_EXACT TRUE)
+    endif()
+endif()
+
+# 버전 호환성 정책
+# - 메이저 버전이 다르면 호환되지 않음
+# - 마이너 버전이 높으면 호환됨 (하위 호환성)
+# - 패치 버전은 항상 호환됨
+
+if(PACKAGE_FIND_VERSION_MAJOR AND NOT "@PROJECT_VERSION_MAJOR@" STREQUAL "${PACKAGE_FIND_VERSION_MAJOR}")
+    set(PACKAGE_VERSION_COMPATIBLE FALSE)
+    set(PACKAGE_VERSION_UNSUITABLE TRUE)
+endif()

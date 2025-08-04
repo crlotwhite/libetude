@@ -104,6 +104,13 @@ if(WIN32)
     list(APPEND LIBETUDE_CORE_SOURCES
         platform/windows/windows_audio.c
         platform/windows/windows_utils.c
+        platform/windows/windows_platform.c
+        platform/windows/windows_audio_wasapi_simple.c
+        platform/windows/windows_audio_directsound_simple.c
+        platform/windows/windows_audio_wasapi.c
+        platform/windows/windows_audio_directsound.c
+        platform/windows/windows_audio_fallback.c
+        platform/windows/windows_security.c
     )
 elseif(APPLE)
     list(APPEND LIBETUDE_CORE_SOURCES
@@ -161,9 +168,9 @@ endif()
 
 # 링크 라이브러리
 if(WIN32)
-    target_link_libraries(libetude_static PRIVATE winmm dsound psapi)
+    target_link_libraries(libetude_static PRIVATE winmm dsound psapi ole32 oleaut32 uuid kernel32 user32)
     if(NOT LIBETUDE_MINIMAL)
-        target_link_libraries(libetude_shared PRIVATE winmm dsound psapi)
+        target_link_libraries(libetude_shared PRIVATE winmm dsound psapi ole32 oleaut32 uuid kernel32 user32)
     endif()
 elseif(APPLE)
     target_link_libraries(libetude_static PRIVATE "-framework AudioToolbox" "-framework CoreAudio" dl)

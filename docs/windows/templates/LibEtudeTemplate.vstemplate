@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<VSTemplate Version="3.0.0" Type="Project" xmlns="http://schemas.microsoft.com/developer/vstemplate/2005" xmlns:sdk="http://schemas.microsoft.com/developer/vstemplate-sdkextension/2010">
+  <TemplateData>
+    <Name>LibEtude Windows Application</Name>
+    <Description>LibEtude를 사용하는 Windows 애플리케이션 프로젝트 템플릿</Description>
+    <Icon>LibEtudeIcon.ico</Icon>
+    <ProjectType>VC</ProjectType>
+    <RequiredFrameworkVersion>2.0</RequiredFrameworkVersion>
+    <SortOrder>1000</SortOrder>
+    <TemplateID>LibEtude.Windows.Application</TemplateID>
+    <CreateNewFolder>true</CreateNewFolder>
+    <DefaultName>LibEtudeApp</DefaultName>
+    <ProvideDefaultName>true</ProvideDefaultName>
+    <LocationField>Enabled</LocationField>
+    <EnableLocationBrowseButton>true</EnableLocationBrowseButton>
+  </TemplateData>
+  <TemplateContent>
+    <Project File="LibEtudeApp.vcxproj" ReplaceParameters="true">
+      <ProjectItem ReplaceParameters="true" TargetFileName="main.cpp">main.cpp</ProjectItem>
+      <ProjectItem ReplaceParameters="true" TargetFileName="CMakeLists.txt">CMakeLists.txt</ProjectItem>
+      <ProjectItem ReplaceParameters="true" TargetFileName="README.md">README.md</ProjectItem>
+      <ProjectItem ReplaceParameters="false" TargetFileName="vcpkg.json">vcpkg.json</ProjectItem>
+    </Project>
+  </TemplateContent>
+  <WizardExtension>
+    <Assembly>NuGet.VisualStudio.Interop, Version=1.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</Assembly>
+    <FullClassName>NuGet.VisualStudio.TemplateWizard</FullClassName>
+  </WizardExtension>
+  <WizardData>
+    <packages repository="extension" repositoryId="LibEtude.Windows.Template">
+      <package id="LibEtude" version="1.0.0" skipAssemblyReferences="true" />
+    </packages>
+  </WizardData>
+</VSTemplate>

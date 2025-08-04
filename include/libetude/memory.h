@@ -12,7 +12,13 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+
+#ifndef _WIN32
 #include <pthread.h>
+#else
+/* Windows에서는 Windows 스레딩 API 사용 */
+#include <windows.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -91,7 +97,11 @@ typedef struct {
     void* device_context;           // GPU 컨텍스트
 
     // 스레드 안전성
-    pthread_mutex_t mutex;          // 뮤텍스
+#ifndef _WIN32
+    pthread_mutex_t mutex;          // 뮤텍스 (Unix/Linux)
+#else
+    CRITICAL_SECTION mutex;         // 크리티컬 섹션 (Windows)
+#endif
     bool thread_safe;               // 스레드 안전성 활성화 여부
 
     // 메모리 누수 감지

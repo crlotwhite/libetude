@@ -1,4 +1,6 @@
 # LibEtude 테스트 CMake 설정
+cmake_minimum_required(VERSION 3.16)
+project(LibEtudeTests C CXX)
 
 # Unity 테스트 프레임워크 추가
 include(FetchContent)
@@ -201,8 +203,139 @@ create_unity_test(plugin_test "unit/test_plugin.c")
 # 플러그인 의존성 관리 테스트
 create_unity_test(plugin_dependency_test "unit/test_plugin_dependency.c")
 
+# Windows 플랫폼 테스트 (Windows에서만 빌드)
+if(WIN32)
+    add_executable(windows_platform_test unit/windows/test_windows_platform.c)
+    target_link_libraries(windows_platform_test libetude_static)
+    target_include_directories(windows_platform_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+
+    # 간단한 Windows 플랫폼 테스트
+    add_executable(windows_platform_simple_test unit/windows/test_windows_platform_simple.c)
+    target_link_libraries(windows_platform_simple_test libetude_static)
+    target_include_directories(windows_platform_simple_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+
+    # WASAPI 디바이스 열거 테스트
+    add_executable(wasapi_device_enumeration_test unit/windows/test_wasapi_device_enumeration_simple.c)
+    target_link_libraries(wasapi_device_enumeration_test libetude_static)
+    target_include_directories(wasapi_device_enumeration_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+
+    # DirectSound 폴백 메커니즘 테스트
+    add_executable(directsound_fallback_test unit/windows/test_directsound_fallback.c)
+    target_link_libraries(directsound_fallback_test libetude_static)
+    target_include_directories(directsound_fallback_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+
+    # Windows 보안 기능 테스트 (DEP/ASLR)
+    add_executable(windows_security_dep_aslr_test unit/windows/test_windows_security_dep_aslr_en.c)
+    target_link_libraries(windows_security_dep_aslr_test libetude_static)
+    target_include_directories(windows_security_dep_aslr_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+
+    # Windows 보안 기능 테스트 (UAC)
+    add_executable(windows_security_uac_test unit/windows/test_windows_security_uac.c)
+    target_link_libraries(windows_security_uac_test libetude_static)
+    target_include_directories(windows_security_uac_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+
+    # Windows 빌드 시스템 통합 테스트 (작업 9.3)
+    add_executable(windows_build_system_integration_test unit/windows/test_windows_build_system_integration.c)
+    target_include_directories(windows_build_system_integration_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+    # Windows 시스템 라이브러리만 링크 (libetude 의존성 없음)
+    target_link_libraries(windows_build_system_integration_test PRIVATE
+        kernel32 user32 ole32 oleaut32 uuid winmm dsound mmdevapi
+    )
+
+    # Windows 배포 검증 테스트 (작업 9.3)
+    add_executable(windows_deployment_validation_test unit/windows/test_windows_deployment_validation.c)
+    target_include_directories(windows_deployment_validation_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+    # Windows 시스템 라이브러리만 링크 (libetude 의존성 없음)
+    target_link_libraries(windows_deployment_validation_test PRIVATE
+        kernel32 user32 ole32 oleaut32 uuid winmm dsound mmdevapi shlwapi
+    )
+endif()
+
 # 오디오 효과 플러그인 테스트
 create_unity_test(audio_effects_test "unit/test_audio_effects.c")
+
+# UTAU 파라미터 파싱 테스트 (world4utau 예제용)
+# 이 테스트는 world4utau 예제 소스를 직접 포함합니다
+add_executable(utau_parameter_parsing_test
+    unit/test_utau_parameter_parsing.c
+    ../examples/world4utau/src/utau_interface.c
+)
+target_link_libraries(utau_parameter_parsing_test
+    libetude_static
+)
+target_include_directories(utau_parameter_parsing_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../examples/world4utau/include
+)
+# pthread 라이브러리 링크 (Unix 계열)
+if(NOT WIN32)
+    target_link_libraries(utau_parameter_parsing_test pthread m)
+endif()
+
+# F0 추출 테스트 (world4utau 예제용)
+# 이 테스트는 world4utau 예제 소스를 직접 포함합니다
+add_executable(f0_extraction_test
+    unit/test_f0_extraction.c
+    ../examples/world4utau/src/world_engine.c
+    ../examples/world4utau/src/utau_interface.c
+)
+target_link_libraries(f0_extraction_test
+    libetude_static
+)
+target_include_directories(f0_extraction_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../examples/world4utau/include
+)
+# pthread 라이브러리 링크 (Unix 계열)
+if(NOT WIN32)
+    target_link_libraries(f0_extraction_test pthread m)
+endif()
+
+# 스펙트럼 분석 테스트 (world4utau 예제용)
+# 이 테스트는 world4utau 예제 소스를 직접 포함합니다
+add_executable(spectrum_analysis_test
+    unit/test_spectrum_analysis.c
+    ../examples/world4utau/src/world_engine.c
+    ../examples/world4utau/src/utau_interface.c
+)
+target_link_libraries(spectrum_analysis_test
+    libetude_static
+)
+target_include_directories(spectrum_analysis_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../examples/world4utau/include
+)
+# pthread 라이브러리 링크 (Unix 계열)
+if(NOT WIN32)
+    target_link_libraries(spectrum_analysis_test pthread m)
+endif()
 
 # 통합 테스트 (16번 작업)
 create_unity_test(integration_pipeline_test "integration/test_pipeline.c")
@@ -262,6 +395,85 @@ add_test(NAME PluginDependencyTest COMMAND plugin_dependency_test)
 
 # 오디오 효과 플러그인 테스트
 add_test(NAME AudioEffectsTest COMMAND audio_effects_test)
+
+# Windows 플랫폼 테스트 등록 (Windows에서만)
+if(WIN32)
+    add_test(NAME WindowsPlatformTest COMMAND windows_platform_test)
+    add_test(NAME WindowsPlatformSimpleTest COMMAND windows_platform_simple_test)
+    add_test(NAME WASAPIDeviceEnumerationTest COMMAND wasapi_device_enumeration_test)
+    add_test(NAME DirectSoundFallbackTest COMMAND directsound_fallback_test)
+    add_test(NAME WindowsSecurityDEPASLRTest COMMAND windows_security_dep_aslr_test)
+    add_test(NAME WindowsSecurityUACTest COMMAND windows_security_uac_test)
+
+    # Windows 빌드 시스템 및 배포 테스트 등록 (작업 9.3)
+    add_test(NAME WindowsBuildSystemIntegrationTest COMMAND windows_build_system_integration_test)
+    add_test(NAME WindowsDeploymentValidationTest COMMAND windows_deployment_validation_test)
+
+    # 빌드 시스템 테스트 속성 설정
+    set_tests_properties(WindowsBuildSystemIntegrationTest PROPERTIES
+        TIMEOUT 600
+        LABELS "windows;build;integration;msvc;mingw;cmake;deployment;core;libetude"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+
+    set_tests_properties(WindowsDeploymentValidationTest PROPERTIES
+        TIMEOUT 600
+        LABELS "windows;deployment;nuget;cmake;package;validation;core;libetude"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+endif()
+
+# UTAU 파라미터 파싱 테스트
+add_test(NAME UTAUParameterParsingTest COMMAND utau_parameter_parsing_test)
+
+# F0 추출 테스트
+add_test(NAME F0ExtractionTest COMMAND f0_extraction_test)
+
+# 스펙트럼 분석 테스트
+add_test(NAME SpectrumAnalysisTest COMMAND spectrum_analysis_test)
+
+# 음성 파라미터 제어 테스트 (world4utau 예제용)
+# 이 테스트는 우리가 구현한 함수들만 테스트합니다
+add_executable(voice_parameter_control_test
+    unit/test_voice_parameter_control.c
+)
+target_link_libraries(voice_parameter_control_test
+    libetude_static
+)
+target_include_directories(voice_parameter_control_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../examples/world4utau/include
+)
+# pthread 라이브러리 링크 (Unix 계열)
+if(NOT WIN32)
+    target_link_libraries(voice_parameter_control_test pthread m)
+endif()
+
+# 음성 파라미터 제어 테스트 등록
+add_test(NAME VoiceParameterControlTest COMMAND voice_parameter_control_test)
+
+# WORLD4UTAU 에러 처리 테스트 (world4utau 예제용)
+# 이 테스트는 world4utau 예제의 에러 처리 시스템을 테스트합니다
+add_executable(world_error_handling_test
+    unit/test_world_error_handling.c
+    ../examples/world4utau/src/world_error.c
+)
+target_link_libraries(world_error_handling_test
+    libetude_static
+)
+target_include_directories(world_error_handling_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../examples/world4utau/include
+)
+# pthread 라이브러리 링크 (Unix 계열)
+if(NOT WIN32)
+    target_link_libraries(world_error_handling_test pthread m)
+endif()
+
+# WORLD4UTAU 에러 처리 테스트 등록
+add_test(NAME WorldErrorHandlingTest COMMAND world_error_handling_test)
 
 # 통합 테스트 등록 (16번 작업)
 add_test(NAME IntegrationPipelineTest COMMAND integration_pipeline_test)
@@ -436,6 +648,41 @@ set_tests_properties(PluginDependencyTest PROPERTIES
 set_tests_properties(AudioEffectsTest PROPERTIES
     TIMEOUT 180
     LABELS "audio;effects;plugin;reverb;equalizer;pipeline;realtime;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# UTAU 파라미터 파싱 테스트 속성 설정
+set_tests_properties(UTAUParameterParsingTest PROPERTIES
+    TIMEOUT 120
+    LABELS "utau;parameter;parsing;world4utau;example;validation;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# F0 추출 테스트 속성 설정
+set_tests_properties(F0ExtractionTest PROPERTIES
+    TIMEOUT 300
+    LABELS "f0;extraction;world;dio;harvest;world4utau;example;accuracy;performance;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# 스펙트럼 분석 테스트 속성 설정
+set_tests_properties(SpectrumAnalysisTest PROPERTIES
+    TIMEOUT 300
+    LABELS "spectrum;analysis;world;cheaptrick;world4utau;example;accuracy;performance;simd;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# 음성 파라미터 제어 테스트 속성 설정
+set_tests_properties(VoiceParameterControlTest PROPERTIES
+    TIMEOUT 300
+    LABELS "voice;parameter;control;pitch;volume;modulation;timing;world4utau;example;utau;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# WORLD4UTAU 에러 처리 테스트 속성 설정
+set_tests_properties(WorldErrorHandlingTest PROPERTIES
+    TIMEOUT 180
+    LABELS "world4utau;error;logging;callback;filtering;stress;example;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 

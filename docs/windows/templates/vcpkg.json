@@ -1,0 +1,48 @@
+{
+    "name": "$safeprojectname$",
+    "version": "1.0.0",
+    "description": "LibEtude Windows Application using AI voice synthesis engine",
+    "homepage": "https://github.com/crlotwhite/libetude",
+    "documentation": "https://github.com/crlotwhite/libetude/docs/windows/",
+    "dependencies": [
+        {
+            "name": "libetude",
+            "version>=": "1.0.0",
+            "features": [
+                "windows-optimization",
+                "wasapi-backend",
+                "simd-acceleration"
+            ]
+        }
+    ],
+    "features": {
+        "debug": {
+            "description": "Enable debug features and logging",
+            "dependencies": [
+                {
+                    "name": "libetude",
+                    "features": ["debug-logging", "etw-tracing"]
+                }
+            ]
+        },
+        "performance": {
+            "description": "Enable performance optimizations",
+            "dependencies": [
+                {
+                    "name": "libetude",
+                    "features": ["large-pages", "thread-pool", "avx-optimization"]
+                }
+            ]
+        },
+        "audio": {
+            "description": "Enhanced audio features",
+            "dependencies": [
+                {
+                    "name": "libetude",
+                    "features": ["wasapi-exclusive", "directsound-fallback"]
+                }
+            ]
+        }
+    },
+    "builtin-baseline": "2024-01-01"
+}
