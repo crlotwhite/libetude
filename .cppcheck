@@ -1,0 +1,38 @@
+# cppcheck 설정 파일
+# Include 경로 설정
+-I include
+-I include/libetude
+
+# 제외할 검사 항목
+--suppress=missingInclude
+--suppress=missingIncludeSystem
+--suppress=unusedFunction
+--suppress=staticFunction
+--suppress=variableScope
+--suppress=toomanyconfigs
+--suppress=normalCheckLevelMaxBranches
+--suppress=unmatchedSuppression
+--suppress=knownConditionTrueFalse
+--suppress=unreadVariable
+--suppress=constParameterCallback
+--suppress=constVariablePointer
+--suppress=constParameterPointer
+--suppress=duplicateBreak
+--suppress=redundantCondition
+--suppress=redundantInitialization
+--suppress=invalidPrintfArgType_uint
+
+# 플랫폼 정의
+-D__linux__
+-D__GNUC__
+-DLIBETUDE_PLATFORM_LINUX
+
+# 검사할 확장자
+--file-filter=*.c
+--file-filter=*.h
+
+# 에러 형식
+--template=gcc
+
+# 중요한 오류만 확인
+--enable=warning,error,portability

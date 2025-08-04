@@ -552,6 +552,11 @@ PluginError plugin_chain_add(PluginChain* chain, PluginInstance* plugin) {
         bool* new_bypass_flags = (bool*)realloc(chain->bypass_flags,
                                                new_capacity * sizeof(bool));
         if (!new_bypass_flags) {
+            // new_plugins는 이미 할당되었으므로 해제해야 함
+            // 하지만 chain->plugins는 여전히 유효하므로 새로 할당된 것만 해제
+            if (new_plugins != chain->plugins) {
+                free(new_plugins);
+            }
             return ET_ERROR_OUT_OF_MEMORY;
         }
 

@@ -61,7 +61,7 @@ void destroy_dependency_graph(DependencyGraph* graph) {
 /**
  * 의존성 해결 (스텁)
  */
-int resolve_dependencies(DependencyGraph* graph, DependencyResult** results, int* result_count) {
+int resolve_dependencies(const DependencyGraph* graph, DependencyResult** results, int* result_count) {
     if (!graph || !results || !result_count) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -75,7 +75,7 @@ int resolve_dependencies(DependencyGraph* graph, DependencyResult** results, int
 /**
  * 순환 의존성 검사 (스텁)
  */
-bool check_circular_dependency(DependencyGraph* graph) {
+bool check_circular_dependency(const DependencyGraph* graph) {
     if (!graph) return false;
 
     // 스텁 구현 - 순환 의존성 없음
@@ -85,7 +85,7 @@ bool check_circular_dependency(DependencyGraph* graph) {
 /**
  * 의존성 노드 추가 (스텁)
  */
-int add_dependency_node(DependencyGraph* graph, PluginInstance* plugin) {
+int add_dependency_node(const DependencyGraph* graph, const PluginInstance* plugin) {
     if (!graph || !plugin) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -97,7 +97,7 @@ int add_dependency_node(DependencyGraph* graph, PluginInstance* plugin) {
 /**
  * 의존성 관계 추가 (스텁)
  */
-int add_dependency_relationship(DependencyGraph* graph, const char* plugin_name, const char* dependency_name) {
+int add_dependency_relationship(const DependencyGraph* graph, const char* plugin_name, const char* dependency_name) {
     if (!graph || !plugin_name || !dependency_name) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }
@@ -109,7 +109,7 @@ int add_dependency_relationship(DependencyGraph* graph, const char* plugin_name,
 /**
  * 토폴로지 정렬 (스텁)
  */
-int topological_sort(DependencyGraph* graph, PluginInstance*** sorted_plugins, int* count) {
+int topological_sort(const DependencyGraph* graph, PluginInstance*** sorted_plugins, int* count) {
     if (!graph || !sorted_plugins || !count) {
         return LIBETUDE_ERROR_INVALID_ARGUMENT;
     }

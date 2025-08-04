@@ -652,8 +652,11 @@ ETResult et_embedded_run_diagnostics(ETEmbeddedContext* ctx) {
     printf("CPU Diagnostics:\n");
     uint32_t current_freq = get_current_cpu_frequency();
     printf("  Current CPU frequency: %u MHz\n", current_freq);
-    if (current_freq > ctx->config.constraints.max_cpu_freq_mhz) {
+    // current_freq가 0이 아니고 최대 주파수를 초과하는 경우에만 경고
+    if (current_freq != 0 && current_freq > ctx->config.constraints.max_cpu_freq_mhz) {
         printf("  WARNING: CPU frequency exceeds limit!\n");
+    } else if (current_freq == 0) {
+        printf("  WARNING: Could not read CPU frequency\n");
     } else {
         printf("  CPU frequency: OK\n");
     }

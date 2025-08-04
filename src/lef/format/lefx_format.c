@@ -730,10 +730,12 @@ int lef_create_sparse_diff(const float* base_data,
     header[0] = (uint32_t)significant_count;
     header[1] = (uint32_t)data_size;
 
-    // 스파스 데이터 작성
+    // 스파스 데이터 작성 (void* 포인터를 통해 안전한 캐스팅)
     uint8_t* data_ptr = sparse_buffer + sizeof(uint32_t) * 2;
-    uint32_t* indices = (uint32_t*)data_ptr;
-    float* values = (float*)(data_ptr + significant_count * sizeof(uint32_t));
+    void* indices_ptr = data_ptr;
+    uint32_t* indices = (uint32_t*)indices_ptr;
+    void* values_ptr = data_ptr + significant_count * sizeof(uint32_t);
+    float* values = (float*)values_ptr;
 
     size_t sparse_idx = 0;
     for (size_t i = 0; i < data_size; i++) {
@@ -814,12 +816,15 @@ int lef_create_quantized_diff(const float* base_data,
         return LEF_ERROR_OUT_OF_MEMORY;
     }
 
-    // 헤더 작성
+    // 헤더 작성 (void* 포인터를 통해 안전한 캐스팅)
     uint8_t* ptr = quantized_buffer;
-    *(float*)ptr = scale; ptr += sizeof(float);
-    *(float*)ptr = min_diff; ptr += sizeof(float);
+    void* float_ptr = ptr;
+    *(float*)float_ptr = scale; ptr += sizeof(float);
+    float_ptr = ptr;
+    *(float*)float_ptr = min_diff; ptr += sizeof(float);
     *(uint8_t*)ptr = (uint8_t)quantization_bits; ptr += sizeof(uint8_t);
-    *(uint32_t*)ptr = (uint32_t)data_size; ptr += sizeof(uint32_t);
+    void* uint32_ptr = ptr;
+    *(uint32_t*)uint32_ptr = (uint32_t)data_size; ptr += sizeof(uint32_t);
 
     // 양자화 및 패킹
     for (size_t i = 0; i < data_size; i++) {

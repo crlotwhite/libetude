@@ -456,13 +456,13 @@ size_t rt_check_memory_corruption(RTAllocator* allocator);
 #ifdef ET_DEBUG_MEMORY
 #define et_alloc_debug(pool, size) et_alloc_from_pool_debug(pool, size, __FILE__, __LINE__, __FUNCTION__)
 #define et_free_debug(pool, ptr) et_free_to_pool_debug(pool, ptr, __FILE__, __LINE__, __FUNCTION__)
-#define rt_alloc_debug(allocator, size) rt_alloc_debug(allocator, size, __FILE__, __LINE__, __FUNCTION__)
-#define rt_free_debug(allocator, ptr) rt_free_debug(allocator, ptr, __FILE__, __LINE__, __FUNCTION__)
+#define rt_alloc_debug(allocator, size) rt_alloc_debug_impl(allocator, size, __FILE__, __LINE__, __FUNCTION__)
+#define rt_free_debug(allocator, ptr) rt_free_debug_impl(allocator, ptr, __FILE__, __LINE__, __FUNCTION__)
 
 void* et_alloc_from_pool_debug(ETMemoryPool* pool, size_t size, const char* file, int line, const char* function);
 void et_free_to_pool_debug(ETMemoryPool* pool, void* ptr, const char* file, int line, const char* function);
-void* rt_alloc_debug(RTAllocator* allocator, size_t size, const char* file, int line, const char* function);
-void rt_free_debug(RTAllocator* allocator, void* ptr, const char* file, int line, const char* function);
+void* rt_alloc_debug_impl(RTAllocator* allocator, size_t size, const char* file, int line, const char* function);
+void rt_free_debug_impl(RTAllocator* allocator, void* ptr, const char* file, int line, const char* function);
 #else
 #define et_alloc_debug(pool, size) et_alloc_from_pool(pool, size)
 #define et_free_debug(pool, ptr) et_free_to_pool(pool, ptr)

@@ -164,6 +164,10 @@ static void* worker_thread_func(void* arg) {
             uint64_t end_time = get_current_time_us();
             task->status = ET_TASK_STATUS_COMPLETED;
 
+            // 실행 시간 기록 (프로파일링용)
+            uint64_t execution_time = end_time - start_time;
+            (void)execution_time; // 현재는 사용하지 않지만 추후 확장용으로 유지
+
             // 통계 업데이트
             pthread_mutex_lock(&scheduler->scheduler_mutex);
             scheduler->total_tasks_completed++;
@@ -345,7 +349,7 @@ bool et_cancel_task(ETTaskScheduler* scheduler, uint32_t task_id) {
 }
 
 // 작업 상태 조회 (간단한 형태)
-ETTaskStatus et_get_task_status(ETTaskScheduler* scheduler, uint32_t task_id) {
+ETTaskStatus et_get_task_status(const ETTaskScheduler* scheduler, uint32_t task_id) {
     if (!scheduler || task_id == 0) {
         return ET_TASK_STATUS_CANCELLED;
     }

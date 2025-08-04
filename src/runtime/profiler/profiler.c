@@ -185,7 +185,7 @@ ETResult rt_end_profile(Profiler* profiler, const char* name) {
     pthread_mutex_lock(&impl->mutex);
 
     // 활성 프로파일 찾기
-    ActiveProfile* active = find_active_profile(impl, name);
+    const ActiveProfile* active = find_active_profile(impl, name);
     if (!active) {
         pthread_mutex_unlock(&impl->mutex);
         return ET_ERROR_NOT_FOUND;

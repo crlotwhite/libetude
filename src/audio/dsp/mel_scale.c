@@ -265,19 +265,19 @@ ETMelFilterbank* et_mel_create_filterbank(const ETMelFilterbankConfig* config) {
 
     mel_fb->memory_size = total_size;
 
-    // 메모리 포인터 설정
-    char* ptr = (char*)mel_fb->aligned_memory;
+    // 메모리 포인터 설정 (void* 사용하여 캐스팅 안전성 확보)
+    void* ptr = mel_fb->aligned_memory;
     mel_fb->filters = (float*)ptr;
-    ptr += config->n_mels * n_freq_bins * sizeof(float);
+    ptr = (char*)ptr + config->n_mels * n_freq_bins * sizeof(float);
 
     mel_fb->pseudo_inverse = (float*)ptr;
-    ptr += n_freq_bins * config->n_mels * sizeof(float);
+    ptr = (char*)ptr + n_freq_bins * config->n_mels * sizeof(float);
 
     mel_fb->mel_points = (float*)ptr;
-    ptr += (config->n_mels + 2) * sizeof(float);
+    ptr = (char*)ptr + (config->n_mels + 2) * sizeof(float);
 
     mel_fb->hz_points = (float*)ptr;
-    ptr += (config->n_mels + 2) * sizeof(float);
+    ptr = (char*)ptr + (config->n_mels + 2) * sizeof(float);
 
     mel_fb->fft_bin_indices = (int*)ptr;
 
@@ -688,7 +688,7 @@ void et_mel_sparse_matvec_simd(const float* sparse_filters, const int* indices,
     }
 }
 
-void et_mel_batch_transform_simd(ETMelFilterbank* mel_fb, const float* spectrogram,
+void et_mel_batch_transform_simd(const ETMelFilterbank* mel_fb, const float* spectrogram,
                                 float* mel_spec, int time_frames, int n_freq_bins, int n_mels) {
     if (mel_fb->sparse_filters.data) {
         // 희소 행렬 사용
