@@ -57,31 +57,47 @@ if(LIBETUDE_ENABLE_SIMD)
     include(CheckCSourceCompiles)
 
     # SSE 지원 확인
+    set(CMAKE_REQUIRED_FLAGS "-msse")
     check_c_source_compiles("
         #include <xmmintrin.h>
         int main() { __m128 a = _mm_setzero_ps(); return 0; }
     " HAVE_SSE)
 
     # AVX 지원 확인
+    set(CMAKE_REQUIRED_FLAGS "-mavx")
     check_c_source_compiles("
         #include <immintrin.h>
         int main() { __m256 a = _mm256_setzero_ps(); return 0; }
     " HAVE_AVX)
 
     # NEON 지원 확인 (ARM)
-    check_c_source_compiles("
-        #include <arm_neon.h>
-        int main() { float32x4_t a = vdupq_n_f32(0.0f); return 0; }
-    " HAVE_NEON)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|aarch64")
+        set(CMAKE_REQUIRED_FLAGS "")
+        check_c_source_compiles("
+            #include <arm_neon.h>
+            int main() { float32x4_t a = vdupq_n_f32(0.0f); return 0; }
+        " HAVE_NEON)
+    endif()
+    
+    # x86/x64에서는 기본적으로 SSE 지원한다고 가정
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i386|i686")
+        set(HAVE_SSE TRUE)
+    endif()
+    
+    # CMAKE_REQUIRED_FLAGS 초기화
+    set(CMAKE_REQUIRED_FLAGS "")
 
     if(HAVE_SSE)
         add_definitions(-DLIBETUDE_HAVE_SSE)
+        message(STATUS "SSE support enabled")
     endif()
     if(HAVE_AVX)
         add_definitions(-DLIBETUDE_HAVE_AVX)
+        message(STATUS "AVX support enabled")
     endif()
     if(HAVE_NEON)
         add_definitions(-DLIBETUDE_HAVE_NEON)
+        message(STATUS "NEON support enabled")
     endif()
 endif()
 

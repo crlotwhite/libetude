@@ -59,7 +59,7 @@ ETResult linux_setup_alsa_device(snd_pcm_t* pcm_handle,
     // 기본 파라미터 설정
     err = snd_pcm_hw_params_any(pcm_handle, *hw_params);
     if (err < 0) {
-        et_set_error(ET_ERROR_HARDWARE, linux_alsa_error_string(err), __FILE__, __LINE__, __func__);
+        et_set_error(ET_ERROR_HARDWARE, __FILE__, __LINE__, __func__, "%s", linux_alsa_error_string(err));
         snd_pcm_hw_params_free(*hw_params);
         return ET_ERROR_HARDWARE;
     }
@@ -67,7 +67,7 @@ ETResult linux_setup_alsa_device(snd_pcm_t* pcm_handle,
     // 접근 방식 설정 (인터리브드)
     err = snd_pcm_hw_params_set_access(pcm_handle, *hw_params, SND_PCM_ACCESS_RW_INTERLEAVED);
     if (err < 0) {
-        et_set_error(ET_ERROR_HARDWARE, linux_alsa_error_string(err), __FILE__, __LINE__, __func__);
+        et_set_error(ET_ERROR_HARDWARE, __FILE__, __LINE__, __func__, "%s", linux_alsa_error_string(err));
         snd_pcm_hw_params_free(*hw_params);
         return ET_ERROR_HARDWARE;
     }
@@ -75,7 +75,7 @@ ETResult linux_setup_alsa_device(snd_pcm_t* pcm_handle,
     // 포맷 설정 (32비트 float)
     err = snd_pcm_hw_params_set_format(pcm_handle, *hw_params, SND_PCM_FORMAT_FLOAT);
     if (err < 0) {
-        et_set_error(ET_ERROR_HARDWARE, linux_alsa_error_string(err), __FILE__, __LINE__, __func__);
+        et_set_error(ET_ERROR_HARDWARE, __FILE__, __LINE__, __func__, "%s", linux_alsa_error_string(err));
         snd_pcm_hw_params_free(*hw_params);
         return ET_ERROR_HARDWARE;
     }
@@ -83,7 +83,7 @@ ETResult linux_setup_alsa_device(snd_pcm_t* pcm_handle,
     // 채널 수 설정
     err = snd_pcm_hw_params_set_channels(pcm_handle, *hw_params, format->num_channels);
     if (err < 0) {
-        et_set_error(ET_ERROR_HARDWARE, linux_alsa_error_string(err), __FILE__, __LINE__, __func__);
+        et_set_error(ET_ERROR_HARDWARE, __FILE__, __LINE__, __func__, "%s", linux_alsa_error_string(err));
         snd_pcm_hw_params_free(*hw_params);
         return ET_ERROR_HARDWARE;
     }
@@ -92,7 +92,7 @@ ETResult linux_setup_alsa_device(snd_pcm_t* pcm_handle,
     unsigned int rate = format->sample_rate;
     err = snd_pcm_hw_params_set_rate_near(pcm_handle, *hw_params, &rate, 0);
     if (err < 0) {
-        et_set_error(ET_ERROR_HARDWARE, linux_alsa_error_string(err), __FILE__, __LINE__, __func__);
+        et_set_error(ET_ERROR_HARDWARE, __FILE__, __LINE__, __func__, "%s", linux_alsa_error_string(err));
         snd_pcm_hw_params_free(*hw_params);
         return ET_ERROR_HARDWARE;
     }
@@ -101,7 +101,7 @@ ETResult linux_setup_alsa_device(snd_pcm_t* pcm_handle,
     snd_pcm_uframes_t buffer_size = format->buffer_size;
     err = snd_pcm_hw_params_set_buffer_size_near(pcm_handle, *hw_params, &buffer_size);
     if (err < 0) {
-        et_set_error(ET_ERROR_HARDWARE, linux_alsa_error_string(err), __FILE__, __LINE__, __func__);
+        et_set_error(ET_ERROR_HARDWARE, __FILE__, __LINE__, __func__, "%s", linux_alsa_error_string(err));
         snd_pcm_hw_params_free(*hw_params);
         return ET_ERROR_HARDWARE;
     }
@@ -110,7 +110,7 @@ ETResult linux_setup_alsa_device(snd_pcm_t* pcm_handle,
     snd_pcm_uframes_t period_size = buffer_size / 4;
     err = snd_pcm_hw_params_set_period_size_near(pcm_handle, *hw_params, &period_size, 0);
     if (err < 0) {
-        et_set_error(ET_ERROR_HARDWARE, linux_alsa_error_string(err), __FILE__, __LINE__, __func__);
+        et_set_error(ET_ERROR_HARDWARE, __FILE__, __LINE__, __func__, "%s", linux_alsa_error_string(err));
         snd_pcm_hw_params_free(*hw_params);
         return ET_ERROR_HARDWARE;
     }
@@ -118,7 +118,7 @@ ETResult linux_setup_alsa_device(snd_pcm_t* pcm_handle,
     // 파라미터 적용
     err = snd_pcm_hw_params(pcm_handle, *hw_params);
     if (err < 0) {
-        et_set_error(ET_ERROR_HARDWARE, linux_alsa_error_string(err), __FILE__, __LINE__, __func__);
+        et_set_error(ET_ERROR_HARDWARE, __FILE__, __LINE__, __func__, "%s", linux_alsa_error_string(err));
         snd_pcm_hw_params_free(*hw_params);
         return ET_ERROR_HARDWARE;
     }
@@ -250,7 +250,7 @@ ETResult linux_alsa_recover_xrun(snd_pcm_t* pcm_handle, int err) {
         // 언더런/오버런 복구
         err = snd_pcm_prepare(pcm_handle);
         if (err < 0) {
-            et_set_error(ET_ERROR_HARDWARE, "Cannot recover from underrun", __FILE__, __LINE__, __func__);
+            et_set_error(ET_ERROR_HARDWARE, __FILE__, __LINE__, __func__, "Cannot recover from underrun");
             return ET_ERROR_HARDWARE;
         }
     } else if (err == -ESTRPIPE) {
@@ -262,7 +262,7 @@ ETResult linux_alsa_recover_xrun(snd_pcm_t* pcm_handle, int err) {
         if (err < 0) {
             err = snd_pcm_prepare(pcm_handle);
             if (err < 0) {
-                et_set_error(ET_ERROR_HARDWARE, "Cannot recover from suspend", __FILE__, __LINE__, __func__);
+                et_set_error(ET_ERROR_HARDWARE, __FILE__, __LINE__, __func__, "Cannot recover from suspend");
                 return ET_ERROR_HARDWARE;
             }
         }

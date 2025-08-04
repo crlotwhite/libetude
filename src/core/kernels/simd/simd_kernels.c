@@ -796,7 +796,7 @@ float simd_bfloat16_adaptive_threshold(const float* input, size_t size, float qu
     }
 
     // 절댓값의 히스토그램을 사용한 분위수 계산
-    const int HISTOGRAM_BINS = 1000;
+    #define HISTOGRAM_BINS 1000
     float histogram[HISTOGRAM_BINS] = {0};
 
     // 최댓값 찾기

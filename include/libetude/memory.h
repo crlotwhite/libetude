@@ -13,8 +13,14 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
-#ifndef LIBETUDE_PLATFORM_WINDOWS
+
+#ifdef LIBETUDE_PLATFORM_WINDOWS
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+typedef CRITICAL_SECTION et_mutex_t;
+#else
 #include <pthread.h>
+typedef pthread_mutex_t et_mutex_t;
 #endif
 
 #ifdef __cplusplus
@@ -94,7 +100,7 @@ typedef struct {
     void* device_context;           // GPU 컨텍스트
 
     // 스레드 안전성
-    pthread_mutex_t mutex;          // 뮤텍스
+    et_mutex_t mutex;               // 뮤텍스
     bool thread_safe;               // 스레드 안전성 활성화 여부
 
     // 메모리 누수 감지

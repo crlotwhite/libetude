@@ -13,10 +13,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
+
+#ifndef LIBETUDE_PLATFORM_WINDOWS
 #include <unistd.h>
 #include <pthread.h>
-#include <time.h>
 #include <dirent.h>
+#else
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 #ifdef ANDROID_PLATFORM
 #include <android/log.h>

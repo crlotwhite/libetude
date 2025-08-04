@@ -43,7 +43,7 @@ void windows_audio_init(void) {
     }
 
     if (!g_directsound_initialized) {
-        et_set_error(ET_ERROR_HARDWARE, "Failed to initialize DirectSound", __FILE__, __LINE__, __func__);
+        et_set_error(ET_ERROR_HARDWARE, __FILE__, __LINE__, __func__, "Failed to initialize DirectSound");
     }
 }
 
@@ -119,7 +119,7 @@ ETResult windows_create_directsound_buffer(const ETAudioFormat* format,
     HRESULT hr = IDirectSound8_CreateSoundBuffer(g_direct_sound, &buffer_desc, &temp_buffer, NULL);
 
     if (FAILED(hr)) {
-        et_set_error(ET_ERROR_HARDWARE, "Failed to create DirectSound buffer", __FILE__, __LINE__, __func__);
+        et_set_error(ET_ERROR_HARDWARE, __FILE__, __LINE__, __func__, "Failed to create DirectSound buffer");
         return ET_ERROR_HARDWARE;
     }
 
@@ -128,7 +128,7 @@ ETResult windows_create_directsound_buffer(const ETAudioFormat* format,
     IDirectSoundBuffer_Release(temp_buffer);
 
     if (FAILED(hr)) {
-        et_set_error(ET_ERROR_HARDWARE, "Failed to query DirectSound8 interface", __FILE__, __LINE__, __func__);
+        et_set_error(ET_ERROR_HARDWARE, __FILE__, __LINE__, __func__, "Failed to query DirectSound8 interface");
         return ET_ERROR_HARDWARE;
     }
 

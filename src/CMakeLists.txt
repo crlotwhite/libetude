@@ -73,10 +73,12 @@ set(LIBETUDE_CORE_SOURCES
 
 # SIMD 커널 소스 (조건부 컴파일)
 if(LIBETUDE_ENABLE_SIMD)
+    # 기본 SIMD 커널은 항상 포함 (fallback 구현 포함)
     list(APPEND LIBETUDE_CORE_SOURCES
         core/kernels/simd/simd_kernels.c
     )
 
+    # 플랫폼별 최적화 커널들
     if(HAVE_SSE)
         list(APPEND LIBETUDE_CORE_SOURCES
             core/kernels/simd/sse_kernels.c
@@ -94,6 +96,8 @@ if(LIBETUDE_ENABLE_SIMD)
             core/kernels/simd/neon_kernels.c
         )
     endif()
+    
+    message(STATUS "SIMD support enabled. HAVE_SSE=${HAVE_SSE}, HAVE_AVX=${HAVE_AVX}, HAVE_NEON=${HAVE_NEON}")
 endif()
 
 # GPU 커널 소스 (조건부 컴파일)

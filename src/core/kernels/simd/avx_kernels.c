@@ -854,8 +854,7 @@ void register_avx_kernels(void) {
     kernel_registry_register(&kernel_info);
 #endif
 }
-//
- ============================================================================
+// ============================================================================
 // AVX BF16 양자화 최적화 커널
 // ============================================================================
 
@@ -1131,13 +1130,7 @@ void avx_float32_to_bfloat16(const float* input, uint16_t* output, size_t size) 
     }
 }
 
-void avx_bfloat16_to_float32(const uint16_t* input, float* output, size_t size) {
-    for (size_t i = 0; i < size; i++) {
-        union { float f; uint32_t i; } converter;
-        converter.i = ((uint32_t)input[i]) << 16;
-        output[i] = converter.f;
-    }
-}
+
 
 void avx_bfloat16_vector_add(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size) {
     for (size_t i = 0; i < size; i++) {
