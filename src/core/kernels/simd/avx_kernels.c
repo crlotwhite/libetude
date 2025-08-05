@@ -1182,5 +1182,3 @@ void avx_bfloat16_gemm(const uint16_t* a, const uint16_t* b, uint16_t* c,
 }
 
 #endif // LIBETUDE_HAVE_AVX2
-
-#endif // LIBETUDE_HAVE_AVX
