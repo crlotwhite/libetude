@@ -48,7 +48,7 @@ elseif(UNIX)
 endif()
 
 # 하드웨어 최적화 옵션
-option(LIBETUDE_ENABLE_SIMD "Enable SIMD optimizations" ON)
+option(LIBETUDE_ENABLE_SIMD "Enable SIMD optimizations" OFF)
 option(LIBETUDE_ENABLE_GPU "Enable GPU acceleration" ON)
 option(LIBETUDE_MINIMAL "Build minimal version for embedded systems" OFF)
 
