@@ -54,51 +54,51 @@ create_unity_test(api_test "unit/test_api.c")
 # 독립적인 테스트들 (libetude 의존성 없음)
 
 # Unity 기본 테스트
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../simple_unity_test.c)
-    add_executable(simple_unity_test ../simple_unity_test.c)
-    target_link_libraries(simple_unity_test unity)
-    target_include_directories(simple_unity_test PRIVATE
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../test_unity_simple.c)
+    add_executable(test_unity_simple ../test_unity_simple.c)
+    target_link_libraries(test_unity_simple unity)
+    target_include_directories(test_unity_simple PRIVATE
         ${unity_SOURCE_DIR}/src
     )
-    target_compile_definitions(simple_unity_test PRIVATE
+    target_compile_definitions(test_unity_simple PRIVATE
         UNITY_INCLUDE_DOUBLE
         UNITY_INCLUDE_FLOAT
     )
 endif()
 
 # 수학 함수 테스트
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../math_simple_test.c)
-    add_executable(math_simple_test ../math_simple_test.c)
-    target_link_libraries(math_simple_test unity)
-    target_include_directories(math_simple_test PRIVATE
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../test_math_simple.c)
+    add_executable(test_math_simple ../test_math_simple.c)
+    target_link_libraries(test_math_simple unity)
+    target_include_directories(test_math_simple PRIVATE
         ${unity_SOURCE_DIR}/src
     )
-    target_compile_definitions(math_simple_test PRIVATE
+    target_compile_definitions(test_math_simple PRIVATE
         UNITY_INCLUDE_DOUBLE
         UNITY_INCLUDE_FLOAT
     )
 
     # 윈도우에서 수학 라이브러리 링크
     if(NOT WIN32)
-        target_link_libraries(math_simple_test m)
+        target_link_libraries(test_math_simple m)
     endif()
 endif()
 
 # 고속 수학 함수 테스트
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../fast_math_minimal_test.c)
-    add_executable(fast_math_minimal_test ../fast_math_minimal_test.c)
-    target_link_libraries(fast_math_minimal_test unity)
-    target_include_directories(fast_math_minimal_test PRIVATE
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../test_fast_math_minimal.c)
+    add_executable(test_fast_math_minimal ../test_fast_math_minimal.c)
+    target_link_libraries(test_fast_math_minimal unity)
+    target_include_directories(test_fast_math_minimal PRIVATE
         ${unity_SOURCE_DIR}/src
     )
-    target_compile_definitions(fast_math_minimal_test PRIVATE
+    target_compile_definitions(test_fast_math_minimal PRIVATE
         UNITY_INCLUDE_DOUBLE
         UNITY_INCLUDE_FLOAT
     )
 
     # 윈도우에서 수학 라이브러리 링크
     if(NOT WIN32)
-        target_link_libraries(fast_math_minimal_test m)
+        target_link_libraries(test_fast_math_minimal m)
     endif()
 endif()
 
@@ -285,14 +285,14 @@ add_test(NAME IntegrationPerformanceTest COMMAND integration_performance_test)
 add_test(NAME IntegrationPlatformTest COMMAND integration_platform_test)
 
 # 테스트 등록 (새로운 독립적인 테스트들)
-if(TARGET simple_unity_test)
-    add_test(NAME UnityBasicTest COMMAND simple_unity_test)
+if(TARGET test_unity_simple)
+    add_test(NAME UnityBasicTest COMMAND test_unity_simple)
 endif()
-if(TARGET math_simple_test)
-    add_test(NAME MathFunctionsTest COMMAND math_simple_test)
+if(TARGET test_math_simple)
+    add_test(NAME MathFunctionsTest COMMAND test_math_simple)
 endif()
-if(TARGET fast_math_minimal_test)
-    add_test(NAME FastMathTest COMMAND fast_math_minimal_test)
+if(TARGET test_fast_math_minimal)
+    add_test(NAME FastMathTest COMMAND test_fast_math_minimal)
 endif()
 # SIMD 수학 함수 테스트는 SIMD 활성화 시에만 등록
 if(LIBETUDE_ENABLE_SIMD)
@@ -475,7 +475,7 @@ set_tests_properties(IntegrationPlatformTest PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-if(TARGET simple_unity_test)
+if(TARGET test_unity_simple)
     set_tests_properties(UnityBasicTest PROPERTIES
         TIMEOUT 30
         LABELS "unity;basic;standalone"
@@ -483,7 +483,7 @@ if(TARGET simple_unity_test)
     )
 endif()
 
-if(TARGET math_simple_test)
+if(TARGET test_math_simple)
     set_tests_properties(MathFunctionsTest PROPERTIES
         TIMEOUT 30
         LABELS "math;functions;standalone"
@@ -491,7 +491,7 @@ if(TARGET math_simple_test)
     )
 endif()
 
-if(TARGET fast_math_minimal_test)
+if(TARGET test_fast_math_minimal)
     set_tests_properties(FastMathTest PROPERTIES
         TIMEOUT 30
         LABELS "math;fast;standalone"
@@ -539,7 +539,7 @@ endif()
 # 크로스 플랫폼 테스트 실행 타겟
 add_custom_target(run_all_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS tensor_test simple_unity_test math_simple_test fast_math_minimal_test
+    DEPENDS tensor_test test_unity_simple test_math_simple test_fast_math_minimal
     COMMENT "모든 독립적인 테스트 실행"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
@@ -555,43 +555,43 @@ add_custom_target(run_tensor_test
 # 특정 라벨별 테스트 실행 타겟
 add_custom_target(run_unity_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L "unity"
-    DEPENDS simple_unity_test
+    DEPENDS test_unity_simple
     COMMENT "Unity 프레임워크 테스트 실행"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 add_custom_target(run_math_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L "math"
-    DEPENDS math_simple_test fast_math_minimal_test
+    DEPENDS test_math_simple test_fast_math_minimal
     COMMENT "수학 함수 테스트 실행"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 add_custom_target(run_standalone_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L "standalone"
-    DEPENDS simple_unity_test math_simple_test fast_math_minimal_test
+    DEPENDS test_unity_simple test_math_simple test_fast_math_minimal
     COMMENT "독립적인 테스트만 실행"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 # 개별 테스트 실행 타겟
 add_custom_target(run_unity_basic
-    COMMAND simple_unity_test
-    DEPENDS simple_unity_test
+    COMMAND test_unity_simple
+    DEPENDS test_unity_simple
     COMMENT "Unity 기본 테스트 실행"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 add_custom_target(run_math_functions
-    COMMAND math_simple_test
-    DEPENDS math_simple_test
+    COMMAND test_math_simple
+    DEPENDS test_math_simple
     COMMENT "수학 함수 테스트 실행"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 add_custom_target(run_fast_math
-    COMMAND fast_math_minimal_test
-    DEPENDS fast_math_minimal_test
+    COMMAND test_fast_math_minimal
+    DEPENDS test_fast_math_minimal
     COMMENT "고속 수학 함수 테스트 실행"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
@@ -671,11 +671,11 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT MSVC)
         # 독립적인 테스트들에 커버리지 적용
         target_compile_options(tensor_test PRIVATE --coverage)
         target_link_options(tensor_test PRIVATE --coverage)
-        target_compile_options(simple_unity_test PRIVATE --coverage)
-        target_link_options(simple_unity_test PRIVATE --coverage)
-        target_compile_options(math_simple_test PRIVATE --coverage)
-        target_link_options(math_simple_test PRIVATE --coverage)
-        target_compile_options(fast_math_minimal_test PRIVATE --coverage)
-        target_link_options(fast_math_minimal_test PRIVATE --coverage)
+        target_compile_options(test_unity_simple PRIVATE --coverage)
+        target_link_options(test_unity_simple PRIVATE --coverage)
+        target_compile_options(test_math_simple PRIVATE --coverage)
+        target_link_options(test_math_simple PRIVATE --coverage)
+        target_compile_options(test_fast_math_minimal PRIVATE --coverage)
+        target_link_options(test_fast_math_minimal PRIVATE --coverage)
     endif()
 endif()
