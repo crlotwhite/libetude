@@ -1,3 +1,4 @@
+if(LIBETUDE_BUILD_EXAMPLES)
 # LibEtude 예제 CMake 설정
 
 # 기본 TTS 예제
@@ -69,6 +70,11 @@ elseif(APPLE)
 elseif(UNIX)
     target_link_libraries(desktop_optimization_example asound pthread m)
     target_link_libraries(embedded_optimization_example pthread m)
+    target_link_libraries(streaming_example pthread)
+    if(LIBETUDE_BUILD_BINDINGS)
+        target_link_libraries(cpp_example pthread)
+    endif()
+    target_link_libraries(plugin_example pthread)
 endif()
 
 # 예제 설치

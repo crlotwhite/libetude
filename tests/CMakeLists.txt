@@ -16,10 +16,19 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 # Unity 테스트 러너 생성 함수
 function(create_unity_test test_name test_sources)
     add_executable(${test_name} ${test_sources})
-    target_link_libraries(${test_name}
-        unity
-        libetude_static
-    )
+    if(NOT WIN32)
+        target_link_libraries(${test_name}
+            unity
+            libetude_static
+            pthread
+            m
+        )
+    else()
+        target_link_libraries(${test_name}
+            unity
+            libetude_static
+        )
+    endif()
     target_include_directories(${test_name} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -188,6 +197,10 @@ create_unity_test(vocoder_test "unit/test_vocoder.c")
 
 # 데스크톱 최적화 테스트
 create_unity_test(desktop_optimization_test "unit/test_desktop_optimization.c")
+target_link_libraries(desktop_optimization_test libetude_static pthread m)
+if(NOT WIN32)
+    target_link_libraries(desktop_optimization_test pthread m)
+endif()
 
 # 모바일 최적화 테스트
 create_unity_test(mobile_optimization_test "unit/test_mobile_optimization.c")

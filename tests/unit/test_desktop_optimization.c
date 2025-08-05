@@ -10,6 +10,8 @@
 #include <string.h>
 #include <assert.h>
 #include <unistd.h>
+#include <pthread.h>
+#include <sched.h>
 
 #include "libetude/desktop_optimization.h"
 #include "libetude/hardware.h"

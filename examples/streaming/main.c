@@ -252,7 +252,7 @@ static void* synthesis_thread_func(void* arg) {
 
         // 프로파일링 시작
         if (ctx->profiler) {
-            et_profiler_start_profile(ctx->profiler, "streaming_synthesis");
+            rt_start_profile(ctx->profiler, "streaming_synthesis");
         }
 
         // 스트리밍 음성 합성 시작
@@ -278,7 +278,7 @@ static void* synthesis_thread_func(void* arg) {
 
         // 프로파일링 종료
         if (ctx->profiler) {
-            et_profiler_end_profile(ctx->profiler, "streaming_synthesis");
+            rt_end_profile(ctx->profiler, "streaming_synthesis");
         }
 
         // 통계 업데이트
@@ -286,7 +286,10 @@ static void* synthesis_thread_func(void* arg) {
         ctx->stats.total_synthesis_time += synthesis_time;
 
         if (ctx->perf_analyzer) {
-            et_performance_analyzer_record_inference(ctx->perf_analyzer, synthesis_time);
+            et_start_profiling(ctx->perf_analyzer);
+            // 실제로는 et_start_profiling/et_stop_profiling 등으로 측정
+            // 필요시 et_analyze_cache_performance 등 사용
+        }
         }
 
         printf("음성 합성 완료 (%.2f ms)\n", synthesis_time);
@@ -562,13 +565,13 @@ static int init_streaming_context(StreamingContext* ctx, const char* model_path)
     }
 
     // 성능 분석기 초기화
-    ctx->perf_analyzer = et_performance_analyzer_create();
+    ctx->perf_analyzer = et_create_performance_analyzer();
     if (!ctx->perf_analyzer) {
         fprintf(stderr, "경고: 성능 분석기 초기화 실패\n");
     }
 
     // 프로파일러 초기화
-    ctx->profiler = et_profiler_create(2000);
+    ctx->profiler = rt_create_profiler(2000);
     if (!ctx->profiler) {
         fprintf(stderr, "경고: 프로파일러 초기화 실패\n");
     }

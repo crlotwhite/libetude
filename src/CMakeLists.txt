@@ -132,6 +132,7 @@ elseif(UNIX)
 endif()
 
 # 정적 라이브러리 생성
+find_package(Threads REQUIRED)
 add_library(libetude_static STATIC ${LIBETUDE_CORE_SOURCES})
 target_include_directories(libetude_static PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -187,7 +188,7 @@ elseif(APPLE)
         target_link_libraries(libetude_shared PRIVATE "-framework AudioToolbox" "-framework CoreAudio" dl)
     endif()
 elseif(UNIX)
-    target_link_libraries(libetude_static PRIVATE asound pthread m dl uuid)
+    target_link_libraries(libetude_static PUBLIC asound Threads::Threads m dl uuid)
     if(NOT LIBETUDE_MINIMAL)
         target_link_libraries(libetude_shared PRIVATE asound pthread m dl uuid)
     endif()
