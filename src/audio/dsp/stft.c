@@ -8,6 +8,7 @@
  * SIMD 최적화, 윈도우 함수 최적화, 병렬 처리를 지원합니다.
  */
 
+#include "libetude/config.h"
 #include "libetude/stft.h"
 #include "libetude/fast_math.h"
 #include "libetude/simd_kernels.h"
@@ -162,7 +163,11 @@ ETSTFTConfig et_stft_default_config(int fft_size, int hop_size, ETWindowType win
     config.win_length = fft_size;
     config.window_type = window_type;
     config.mode = ET_STFT_MODE_NORMAL;
+#if LIBETUDE_SIMD_ENABLED
     config.enable_simd = true;
+#else
+    config.enable_simd = false;
+#endif
     config.enable_parallel = true;
     config.num_threads = 4;
     return config;

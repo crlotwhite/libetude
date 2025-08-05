@@ -14,6 +14,13 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#ifdef __linux__
+#define _GNU_SOURCE
+#include <sched.h>
+#include <pthread.h>
+#include <unistd.h>
+#endif
 #include <math.h>
 #include <time.h>
 #include <unistd.h>

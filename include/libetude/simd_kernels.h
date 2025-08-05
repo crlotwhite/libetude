@@ -17,8 +17,14 @@
 extern "C" {
 #endif
 
+// SIMD가 비활성화된 경우 모든 함수를 no-op으로 정의하거나 fallback 구현 제공
+#if !LIBETUDE_SIMD_ENABLED
+#warning "SIMD support is disabled. Using fallback implementations."
+#endif
+
+#if LIBETUDE_SIMD_ENABLED
 // ============================================================================
-// 고수준 SIMD 인터페이스 함수
+// 고수준 SIMD 인터페이스 함수 (SIMD 활성화시에만 사용 가능)
 // ============================================================================
 
 /**
@@ -518,6 +524,11 @@ LIBETUDE_API bool et_has_avx_support(void);
  * @brief NEON 지원 여부 확인
  */
 LIBETUDE_API bool et_has_neon_support(void);
+
+#else  // !LIBETUDE_SIMD_ENABLED
+// SIMD가 비활성화된 경우, SIMD 함수들을 사용할 수 없음
+// 이는 컴파일 타임에 오류를 발생시켜 SIMD 함수 사용을 방지함
+#endif // LIBETUDE_SIMD_ENABLED
 
 #ifdef __cplusplus
 }

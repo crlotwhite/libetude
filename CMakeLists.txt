@@ -48,9 +48,18 @@ elseif(UNIX)
 endif()
 
 # 하드웨어 최적화 옵션
-option(LIBETUDE_ENABLE_SIMD "Enable SIMD optimizations" OFF)
+option(LIBETUDE_ENABLE_SIMD "Enable SIMD optimizations" ON)
 option(LIBETUDE_ENABLE_GPU "Enable GPU acceleration" ON)
 option(LIBETUDE_MINIMAL "Build minimal version for embedded systems" OFF)
+
+# SIMD 전역 설정 정의
+if(LIBETUDE_ENABLE_SIMD)
+    add_definitions(-DLIBETUDE_SIMD_ENABLED=1)
+    message(STATUS "Global SIMD support enabled")
+else()
+    add_definitions(-DLIBETUDE_SIMD_ENABLED=0)
+    message(STATUS "Global SIMD support disabled")
+endif()
 
 # SIMD 지원 감지
 if(LIBETUDE_ENABLE_SIMD)

@@ -102,25 +102,31 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../test_fast_math_minimal.c)
     endif()
 endif()
 
-# SIMD 벡터화된 수학 함수 테스트
-add_executable(test_simd_math_functions unit/test_simd_math_functions.c)
-target_link_libraries(test_simd_math_functions
-    unity
-    libetude_static
-)
-target_include_directories(test_simd_math_functions PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${unity_SOURCE_DIR}/src
-)
-target_compile_definitions(test_simd_math_functions PRIVATE
-    UNITY_INCLUDE_DOUBLE
-    UNITY_INCLUDE_FLOAT
-)
+# SIMD 벡터화된 수학 함수 테스트 (SIMD 활성화 시에만 빌드)
+if(LIBETUDE_ENABLE_SIMD)
+    add_executable(test_simd_math_functions unit/test_simd_math_functions.c)
+    target_link_libraries(test_simd_math_functions
+        unity
+        libetude_static
+    )
+    target_include_directories(test_simd_math_functions PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${unity_SOURCE_DIR}/src
+    )
+    target_compile_definitions(test_simd_math_functions PRIVATE
+        UNITY_INCLUDE_DOUBLE
+        UNITY_INCLUDE_FLOAT
+    )
 
-# 윈도우에서 수학 라이브러리 링크
+    # 윈도우에서 수학 라이브러리 링크
+    if(NOT WIN32)
+        target_link_libraries(test_simd_math_functions m pthread)
+    endif()
+endif()
+
+# 윈도우에서 수학 라이브러리 링크 (기존 테스트용)
 if(NOT WIN32)
-    target_link_libraries(test_simd_math_functions m pthread)
     target_link_libraries(tensor_test m pthread)
 endif()
 
@@ -165,14 +171,17 @@ endif()
 
 # 개별 테스트 실행 파일들 (독립적으로 실행 가능)
 create_unity_test(fast_math_test "unit/test_fast_math.c")
-create_unity_test(simd_kernels_test "unit/test_simd_kernels.c")
-create_unity_test(kernels_test "unit/test_kernels.c")
+# SIMD 커널 테스트는 SIMD 활성화 시에만 빌드
+if(LIBETUDE_ENABLE_SIMD)
+    create_unity_test(simd_kernels_test "unit/test_simd_kernels.c")
+    create_unity_test(kernels_test "unit/test_kernels.c")
+    create_unity_test(quantization_test "unit/test_quantization.c")
+endif()
 create_unity_test(memory_test "unit/test_memory.c")
 create_unity_test(memory_optimization_test "unit/test_memory_optimization.c")
 create_unity_test(memory_allocator_test "unit/test_memory_allocator.c")
 create_unity_test(hardware_test "unit/test_hardware.c")
 create_unity_test(kernel_registry_test "unit/test_kernel_registry.c")
-create_unity_test(quantization_test "unit/test_quantization.c")
 create_unity_test(graph_test "unit/test_graph.c")
 create_unity_test(lef_format_test "unit/test_lef_format.c")
 create_unity_test(lefx_format_test "unit/test_lefx_format.c")
@@ -228,14 +237,17 @@ include(CTest)
 
 # 테스트 등록
 add_test(NAME TensorTest COMMAND tensor_test)
-add_test(NAME SIMDKernelsTest COMMAND simd_kernels_test)
-add_test(NAME KernelsTest COMMAND kernels_test)
+# SIMD 테스트는 SIMD 활성화 시에만 등록
+if(LIBETUDE_ENABLE_SIMD)
+    add_test(NAME SIMDKernelsTest COMMAND simd_kernels_test)
+    add_test(NAME KernelsTest COMMAND kernels_test)
+    add_test(NAME QuantizationTest COMMAND quantization_test)
+endif()
 add_test(NAME MemoryTest COMMAND memory_test)
 add_test(NAME MemoryOptimizationTest COMMAND memory_optimization_test)
 add_test(NAME MemoryAllocatorTest COMMAND memory_allocator_test)
 add_test(NAME HardwareTest COMMAND hardware_test)
 add_test(NAME KernelRegistryTest COMMAND kernel_registry_test)
-add_test(NAME QuantizationTest COMMAND quantization_test)
 add_test(NAME GraphTest COMMAND graph_test)
 add_test(NAME LEFFormatTest COMMAND lef_format_test)
 add_test(NAME LEFXFormatTest COMMAND lefx_format_test)
@@ -292,7 +304,10 @@ endif()
 if(TARGET test_fast_math_minimal)
     add_test(NAME FastMathTest COMMAND test_fast_math_minimal)
 endif()
-add_test(NAME SIMDMathFunctionsTest COMMAND test_simd_math_functions)
+# SIMD 수학 함수 테스트는 SIMD 활성화 시에만 등록
+if(LIBETUDE_ENABLE_SIMD)
+    add_test(NAME SIMDMathFunctionsTest COMMAND test_simd_math_functions)
+endif()
 
 # 레거시 테스트 등록 (호환성을 위해 유지)
 add_test(NAME SimpleUnityTest COMMAND simple_unity_test)
@@ -501,11 +516,14 @@ if(TARGET test_fast_math_minimal)
     )
 endif()
 
-set_tests_properties(SIMDMathFunctionsTest PROPERTIES
-    TIMEOUT 60
-    LABELS "math;simd;vectorized"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-)
+# SIMD 테스트 속성은 SIMD 활성화 시에만 설정
+if(LIBETUDE_ENABLE_SIMD)
+    set_tests_properties(SIMDMathFunctionsTest PROPERTIES
+        TIMEOUT 60
+        LABELS "math;simd;vectorized"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+endif()
 
 # 레거시 테스트 속성 설정
 set_tests_properties(SimpleUnityTest PROPERTIES

@@ -10,9 +10,13 @@
 #include "libetude/config.h"
 #include "libetude/types.h"
 #include "libetude/kernel_registry.h"
+#include "libetude/simd_kernels.h"
 #include <string.h>
 #include <math.h>
+#include <stdio.h>
 
+#if LIBETUDE_SIMD_ENABLED
+// SIMD가 활성화된 경우의 구현
 // ============================================================================
 // 외부 커널 함수 선언
 // ============================================================================
@@ -1007,3 +1011,179 @@ bool simd_bfloat16_voice_tuning(const float* input, size_t size, bool is_frequen
 
     return true;
 }
+
+#else
+// SIMD가 비활성화된 경우의 fallback 구현
+// ============================================================================
+
+// Fallback 벡터 연산 구현
+static void fallback_vector_add(const float* a, const float* b, float* result, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        result[i] = a[i] + b[i];
+    }
+}
+
+static void fallback_vector_mul(const float* a, const float* b, float* result, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        result[i] = a[i] * b[i];
+    }
+}
+
+static void fallback_vector_scale(const float* input, float scale, float* result, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        result[i] = input[i] * scale;
+    }
+}
+
+static float fallback_vector_dot(const float* a, const float* b, size_t size) {
+    float result = 0.0f;
+    for (size_t i = 0; i < size; i++) {
+        result += a[i] * b[i];
+    }
+    return result;
+}
+
+static void fallback_relu(const float* input, float* output, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        output[i] = (input[i] > 0.0f) ? input[i] : 0.0f;
+    }
+}
+
+static void fallback_sigmoid(const float* input, float* output, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        output[i] = 1.0f / (1.0f + expf(-input[i]));
+    }
+}
+
+static void fallback_tanh(const float* input, float* output, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        output[i] = tanhf(input[i]);
+    }
+}
+
+// ============================================================================
+// 공통 인터페이스 함수들
+// ============================================================================
+
+LibEtudeErrorCode simd_kernels_init(void) {
+    // SIMD가 비활성화된 경우 초기화 작업 최소화
+    return LIBETUDE_SUCCESS;
+}
+
+void simd_kernels_finalize(void) {
+    // SIMD가 비활성화된 경우 정리 작업 없음
+}
+
+uint32_t simd_kernels_get_features(void) {
+    return LIBETUDE_SIMD_NONE;
+}
+
+void simd_kernels_print_info(void) {
+    printf("SIMD support is disabled. Using fallback implementations.\n");
+}
+
+// ============================================================================
+// 고수준 인터페이스 함수들 (fallback 구현 사용)
+// ============================================================================
+
+void simd_vector_add_optimal(const float* a, const float* b, float* result, size_t size) {
+    fallback_vector_add(a, b, result, size);
+}
+
+void simd_vector_mul_optimal(const float* a, const float* b, float* result, size_t size) {
+    fallback_vector_mul(a, b, result, size);
+}
+
+void simd_vector_scale_optimal(const float* input, float scale, float* result, size_t size) {
+    fallback_vector_scale(input, scale, result, size);
+}
+
+float simd_vector_dot_optimal(const float* a, const float* b, size_t size) {
+    return fallback_vector_dot(a, b, size);
+}
+
+void simd_relu_optimal(const float* input, float* output, size_t size) {
+    fallback_relu(input, output, size);
+}
+
+void simd_sigmoid_optimal(const float* input, float* output, size_t size) {
+    fallback_sigmoid(input, output, size);
+}
+
+void simd_tanh_optimal(const float* input, float* output, size_t size) {
+    fallback_tanh(input, output, size);
+}
+
+// ============================================================================
+// BF16 변환 함수들 (fallback 구현)
+// ============================================================================
+
+void simd_float32_to_bfloat16_optimal(const float* input, uint16_t* output, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        union { float f; uint32_t i; } u = { .f = input[i] };
+        output[i] = (uint16_t)(u.i >> 16);
+    }
+}
+
+void simd_bfloat16_to_float32_optimal(const uint16_t* input, float* output, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        union { float f; uint32_t i; } u = { .i = ((uint32_t)input[i]) << 16 };
+        output[i] = u.f;
+    }
+}
+
+void simd_bfloat16_vector_add_optimal(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size) {
+    float temp_a, temp_b, temp_result;
+    for (size_t i = 0; i < size; i++) {
+        simd_bfloat16_to_float32_optimal(&a[i], &temp_a, 1);
+        simd_bfloat16_to_float32_optimal(&b[i], &temp_b, 1);
+        temp_result = temp_a + temp_b;
+        simd_float32_to_bfloat16_optimal(&temp_result, &result[i], 1);
+    }
+}
+
+void simd_bfloat16_vector_mul_optimal(const uint16_t* a, const uint16_t* b, uint16_t* result, size_t size) {
+    float temp_a, temp_b, temp_result;
+    for (size_t i = 0; i < size; i++) {
+        simd_bfloat16_to_float32_optimal(&a[i], &temp_a, 1);
+        simd_bfloat16_to_float32_optimal(&b[i], &temp_b, 1);
+        temp_result = temp_a * temp_b;
+        simd_float32_to_bfloat16_optimal(&temp_result, &result[i], 1);
+    }
+}
+
+bool simd_bfloat16_voice_tuning(const float* input, size_t size, bool is_frequency_domain,
+                               float* scale_factor, float* bias_factor) {
+    if (!input || size == 0 || !scale_factor || !bias_factor) {
+        return false;
+    }
+
+    // 기본값 설정
+    *scale_factor = 1.0f;
+    *bias_factor = 0.0f;
+
+    // 통계 계산
+    float mean = 0.0f;
+    float min_val = input[0];
+    float max_val = input[0];
+
+    // 평균 계산
+    for (size_t i = 0; i < size; i++) {
+        mean += input[i];
+        if (input[i] < min_val) min_val = input[i];
+        if (input[i] > max_val) max_val = input[i];
+    }
+    mean /= (float)size;
+
+    // 시간 도메인: 신호의 동적 범위 보존
+    float abs_max = fmaxf(fabsf(min_val), fabsf(max_val));
+    if (abs_max > 0.0f) {
+        float bf16_safe_range = 65504.0f; // BF16의 안전한 최댓값
+        *scale_factor = bf16_safe_range / (abs_max * 1.1f); // 10% 여유
+        *bias_factor = 0.0f;
+    }
+
+    return true;
+}
+
+#endif // LIBETUDE_SIMD_ENABLED

@@ -7,6 +7,7 @@
  * SIMD 최적화된 Mel 스케일 변환과 필터뱅크, 캐싱 최적화를 제공합니다.
  */
 
+#include "libetude/config.h"
 #include "libetude/mel_scale.h"
 #include "libetude/simd_kernels.h"
 #include "libetude/fast_math.h"
@@ -203,7 +204,11 @@ ETMelFilterbankConfig et_mel_default_config(int n_fft, int n_mels, int sample_ra
     config.fmin = (fmin > 0.0f) ? fmin : 0.0f;
     config.fmax = (fmax > 0.0f) ? fmax : sample_rate / 2.0f;
     config.scale_type = ET_MEL_SCALE_HTK;
+#if LIBETUDE_SIMD_ENABLED
     config.enable_simd = true;
+#else
+    config.enable_simd = false;
+#endif
     config.enable_caching = true;
     config.normalize = true;
 
@@ -300,10 +305,12 @@ ETMelFilterbank* et_mel_create_filterbank(const ETMelFilterbankConfig* config) {
         return NULL;
     }
 
-    // 희소 행렬 최적화
+    // 희소 행렬 최적화 (SIMD가 전역적으로 활성화된 경우에만)
+#if LIBETUDE_SIMD_ENABLED
     if (config->enable_simd) {
         create_sparse_filterbank(mel_fb);
     }
+#endif
 
     // 정규화
     if (config->normalize) {
@@ -380,11 +387,13 @@ ETResult et_mel_spectrogram_to_mel(ETMelFilterbank* mel_fb, const float* spectro
     int n_freq_bins = mel_fb->config.n_fft / 2 + 1;
     int n_mels = mel_fb->config.n_mels;
 
+#if LIBETUDE_SIMD_ENABLED
     if (mel_fb->config.enable_simd && mel_fb->sparse_filters.data) {
         // SIMD 최적화된 희소 행렬 변환
         et_mel_batch_transform_simd(mel_fb, spectrogram, mel_spec,
                                    time_frames, n_freq_bins, n_mels);
     } else {
+#endif
         // 일반 행렬 곱셈
         for (int t = 0; t < time_frames; t++) {
             const float* spectrum = spectrogram + t * n_freq_bins;
@@ -392,7 +401,9 @@ ETResult et_mel_spectrogram_to_mel(ETMelFilterbank* mel_fb, const float* spectro
 
             et_mel_matvec_simd(mel_fb->filters, spectrum, mel_frame, n_mels, n_freq_bins);
         }
+#if LIBETUDE_SIMD_ENABLED
     }
+#endif
 
     uint64_t end_time = et_get_time_us();
     mel_fb->stats.forward_time_ms = (end_time - start_time) / 1000.0f;
@@ -445,6 +456,7 @@ ETResult et_mel_spectrum_to_mel_frame(ETMelFilterbank* mel_fb, const float* spec
     int n_freq_bins = mel_fb->config.n_fft / 2 + 1;
     int n_mels = mel_fb->config.n_mels;
 
+#if LIBETUDE_SIMD_ENABLED
     if (mel_fb->config.enable_simd && mel_fb->sparse_filters.data) {
         et_mel_sparse_matvec_simd(mel_fb->sparse_filters.data,
                                  mel_fb->sparse_filters.indices,
@@ -453,6 +465,10 @@ ETResult et_mel_spectrum_to_mel_frame(ETMelFilterbank* mel_fb, const float* spec
     } else {
         et_mel_matvec_simd(mel_fb->filters, spectrum, mel_frame, n_mels, n_freq_bins);
     }
+#else
+    // SIMD가 비활성화된 경우 fallback 구현 사용
+    et_mel_matvec_simd(mel_fb->filters, spectrum, mel_frame, n_mels, n_freq_bins);
+#endif
 
     return ET_SUCCESS;
 }

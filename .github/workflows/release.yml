@@ -43,7 +43,8 @@ jobs:
                 -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
                 -DLIBETUDE_BUILD_TESTS=ON \
                 -DLIBETUDE_BUILD_EXAMPLES=OFF \
-                -DLIBETUDE_BUILD_TOOLS=ON
+                -DLIBETUDE_BUILD_TOOLS=ON \
+                -DLIBETUDE_ENABLE_SIMD=OFF
         else
           cmake -B build -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
                 -DLIBETUDE_BUILD_TESTS=ON \
@@ -92,7 +93,8 @@ jobs:
                 -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE `
                 -DLIBETUDE_BUILD_TESTS=ON `
                 -DLIBETUDE_BUILD_EXAMPLES=OFF `
-                -DLIBETUDE_BUILD_TOOLS=ON
+                -DLIBETUDE_BUILD_TOOLS=ON `
+                -DLIBETUDE_ENABLE_SIMD=OFF
         } else {
           cmake -B build -G "Visual Studio 17 2022" -A x64 `
                 -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE `
@@ -139,13 +141,15 @@ jobs:
                 -DCMAKE_OSX_ARCHITECTURES=arm64 \
                 -DLIBETUDE_BUILD_TESTS=ON \
                 -DLIBETUDE_BUILD_EXAMPLES=OFF \
-                -DLIBETUDE_BUILD_TOOLS=ON
+                -DLIBETUDE_BUILD_TOOLS=ON \
+                -DLIBETUDE_ENABLE_SIMD=OFF
         else
           cmake -B build -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
                 -DCMAKE_OSX_ARCHITECTURES=x86_64 \
                 -DLIBETUDE_BUILD_TESTS=ON \
                 -DLIBETUDE_BUILD_EXAMPLES=OFF \
-                -DLIBETUDE_BUILD_TOOLS=ON
+                -DLIBETUDE_BUILD_TOOLS=ON \
+                -DLIBETUDE_ENABLE_SIMD=OFF
         fi
 
     - name: Build
@@ -191,7 +195,8 @@ jobs:
               -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
               -DLIBETUDE_MINIMAL=ON \
               -DLIBETUDE_BUILD_TESTS=OFF \
-              -DLIBETUDE_BUILD_EXAMPLES=OFF
+              -DLIBETUDE_BUILD_EXAMPLES=OFF \
+              -DLIBETUDE_ENABLE_SIMD=OFF
 
     - name: Build
       run: cmake --build build-android-${{ matrix.abi }} --config $BUILD_TYPE --parallel $(nproc)
@@ -226,7 +231,8 @@ jobs:
               -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
               -DLIBETUDE_MINIMAL=ON \
               -DLIBETUDE_BUILD_TESTS=OFF \
-              -DLIBETUDE_BUILD_EXAMPLES=OFF
+              -DLIBETUDE_BUILD_EXAMPLES=OFF \
+              -DLIBETUDE_ENABLE_SIMD=OFF
 
     - name: Build
       run: cmake --build build-ios-${{ matrix.platform }} --config $BUILD_TYPE --parallel $(sysctl -n hw.ncpu)

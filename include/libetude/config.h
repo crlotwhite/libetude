@@ -160,40 +160,45 @@
 // 기능 감지 매크로
 // ============================================================================
 
-// SIMD 지원 감지
-#if defined(__SSE__)
+// 글로벌 SIMD 활성화 상태 (CMake에서 설정됨)
+#ifndef LIBETUDE_SIMD_ENABLED
+    #define LIBETUDE_SIMD_ENABLED 0
+#endif
+
+// SIMD 지원 감지 (LIBETUDE_SIMD_ENABLED가 활성화된 경우에만)
+#if LIBETUDE_SIMD_ENABLED && defined(__SSE__)
     #define LIBETUDE_HAVE_SSE 1
 #endif
 
-#if defined(__SSE2__)
+#if LIBETUDE_SIMD_ENABLED && defined(__SSE2__)
     #define LIBETUDE_HAVE_SSE2 1
 #endif
 
-#if defined(__SSE3__)
+#if LIBETUDE_SIMD_ENABLED && defined(__SSE3__)
     #define LIBETUDE_HAVE_SSE3 1
 #endif
 
-#if defined(__SSSE3__)
+#if LIBETUDE_SIMD_ENABLED && defined(__SSSE3__)
     #define LIBETUDE_HAVE_SSSE3 1
 #endif
 
-#if defined(__SSE4_1__)
+#if LIBETUDE_SIMD_ENABLED && defined(__SSE4_1__)
     #define LIBETUDE_HAVE_SSE4_1 1
 #endif
 
-#if defined(__SSE4_2__)
+#if LIBETUDE_SIMD_ENABLED && defined(__SSE4_2__)
     #define LIBETUDE_HAVE_SSE4_2 1
 #endif
 
-#if defined(__AVX__)
+#if LIBETUDE_SIMD_ENABLED && defined(__AVX__)
     #define LIBETUDE_HAVE_AVX 1
 #endif
 
-#if defined(__AVX2__)
+#if LIBETUDE_SIMD_ENABLED && defined(__AVX2__)
     #define LIBETUDE_HAVE_AVX2 1
 #endif
 
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#if LIBETUDE_SIMD_ENABLED && (defined(__ARM_NEON) || defined(__ARM_NEON__))
     #define LIBETUDE_HAVE_NEON 1
 #endif
 

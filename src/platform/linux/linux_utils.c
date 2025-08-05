@@ -9,6 +9,12 @@
 
 #ifdef __linux__
 
+#define _GNU_SOURCE
+#include <sched.h>
+#include <pthread.h>
+#include <unistd.h>
+#include <sys/sysinfo.h>
+
 #include <unistd.h>
 #include <sys/sysinfo.h>
 #include <sys/utsname.h>

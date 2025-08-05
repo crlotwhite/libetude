@@ -138,7 +138,7 @@ target_include_directories(libetude_static PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 # Ensure -mavx2 is applied to avx_kernels.c for libetude_static
-if(HAVE_AVX2)
+if(LIBETUDE_ENABLE_SIMD AND HAVE_AVX2)
     target_compile_options(libetude_static PRIVATE $<$<COMPILE_LANGUAGE:C>:-mavx2>)
 endif()
 
@@ -150,7 +150,7 @@ if(NOT LIBETUDE_MINIMAL)
     )
     target_compile_definitions(libetude_shared PRIVATE LIBETUDE_EXPORTS)
     # Ensure -mavx2 is applied to avx_kernels.c for libetude_shared
-    if(HAVE_AVX2)
+    if(LIBETUDE_ENABLE_SIMD AND HAVE_AVX2)
         target_compile_options(libetude_shared PRIVATE $<$<COMPILE_LANGUAGE:C>:-mavx2>)
     endif()
     # 라이브러리 이름 설정

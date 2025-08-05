@@ -1350,7 +1350,19 @@ ETTensor* et_adaptive_quantize_to_bfloat16(const ETTensor* input, ETTensor* outp
         // SIMD 최적화 버전 사용 (가능한 경우)
         if (fabsf(scale_factor - 1.0f) < 1e-6f && fabsf(bias_factor) < 1e-6f) {
             // 스케일링이 필요없는 경우 직접 변환
+#if defined(LIBETUDE_ENABLE_SIMD) && LIBETUDE_ENABLE_SIMD
             simd_float32_to_bfloat16_optimal(input_data, output_data, input->size);
+#else
+            // Fallback implementation
+            for (size_t i = 0; i < input->size; i++) {
+                union {
+                    float f;
+                    uint32_t i;
+                } u;
+                u.f = input_data[i];
+                output_data[i] = (uint16_t)(u.i >> 16);
+            }
+#endif
         } else {
             // 스케일링이 필요한 경우 - 하지만 너무 극단적인 스케일링은 피함
             float safe_scale = scale_factor;
