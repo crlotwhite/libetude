@@ -92,12 +92,12 @@ if(LIBETUDE_ENABLE_SIMD)
             int main() { float32x4_t a = vdupq_n_f32(0.0f); return 0; }
         " HAVE_NEON)
     endif()
-    
+
     # x86/x64에서는 기본적으로 SSE 지원한다고 가정
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i386|i686")
         set(HAVE_SSE TRUE)
     endif()
-    
+
     # CMAKE_REQUIRED_FLAGS 초기화
     set(CMAKE_REQUIRED_FLAGS "")
 
@@ -108,6 +108,8 @@ if(LIBETUDE_ENABLE_SIMD)
     if(HAVE_AVX)
         add_definitions(-DLIBETUDE_HAVE_AVX)
         message(STATUS "AVX support enabled")
+        # AVX를 사용하는 소스 파일에 컴파일러 옵션 추가
+        set_source_files_properties(src/core/kernels/simd/avx_kernels.c PROPERTIES COMPILE_FLAGS "-mavx")
     endif()
     if(HAVE_AVX2)
         add_definitions(-DLIBETUDE_HAVE_AVX2)
@@ -116,6 +118,8 @@ if(LIBETUDE_ENABLE_SIMD)
     if(HAVE_FMA)
         add_definitions(-DLIBETUDE_HAVE_FMA)
         message(STATUS "FMA support enabled")
+        # FMA를 사용하는 소스 파일에 컴파일러 옵션 추가
+        set_source_files_properties(src/core/kernels/simd/avx_kernels.c PROPERTIES COMPILE_FLAGS "-mfma")
     endif()
     if(HAVE_NEON)
         add_definitions(-DLIBETUDE_HAVE_NEON)
