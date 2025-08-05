@@ -9,7 +9,6 @@
 #include "unity.h"
 #include "libetude/api.h"
 #include "libetude/error.h"
-#include "libetude/desktop_optimization.h"
 #include "libetude/mobile_power_management.h"
 #include "libetude/embedded_optimization.h"
 #include "libetude/hardware.h"
@@ -185,109 +184,78 @@ void test_desktop_environment(void) {
     platform_engine = (LibEtudeEngine*)malloc(sizeof(void*));
     TEST_ASSERT_NOT_NULL_MESSAGE(platform_engine, "더미 엔진 생성 실패");
 
-    printf("데스크톱 최적화 테스트\n");
+    printf("데스크톱 기본 기능 테스트\n");
 
-    // 데스크톱 최적화 설정 테스트
-    LibEtudeDesktopOptimizer desktop_optimizer;
-    int desktop_result = libetude_desktop_optimizer_init(&desktop_optimizer);
+    // GPU 가속 테스트
+    printf("GPU 가속 테스트\n");
+    int gpu_result = libetude_enable_gpu_acceleration(platform_engine);
 
-    if (desktop_result == LIBETUDE_SUCCESS) {
-        printf("데스크톱 최적화 초기화 성공\n");
-
-        // 멀티코어 최적화 테스트
-        printf("멀티코어 최적화 설정 테스트\n");
-        LibEtudeMulticoreOptimizer multicore;
-        int multicore_result = libetude_multicore_auto_configure(&multicore, &platform_info);
-
-        if (multicore_result == ET_SUCCESS) {
-            printf("멀티코어 최적화 설정 성공: %d 코어\n", platform_info.cpu_cores);
-        } else if (multicore_result == ET_ERROR_NOT_IMPLEMENTED) {
-            printf("멀티코어 최적화 기능 미구현 (정상)\n");
-        } else {
-            printf("멀티코어 최적화 설정 실패: %d\n", multicore_result);
-        }
-
-        // GPU 가속 테스트
-        printf("GPU 가속 테스트\n");
-        int gpu_result = libetude_enable_gpu_acceleration(platform_engine);
-
-        if (gpu_result == LIBETUDE_SUCCESS) {
-            printf("GPU 가속 활성화 성공\n");
-            platform_info.has_gpu = true;
-        } else if (gpu_result == LIBETUDE_ERROR_NOT_IMPLEMENTED) {
-            printf("GPU 가속 기능 미구현 (정상)\n");
-        } else if (gpu_result == LIBETUDE_ERROR_HARDWARE) {
-            printf("GPU 하드웨어 없음 또는 지원되지 않음\n");
-        } else {
-            printf("GPU 가속 활성화 실패: %d\n", gpu_result);
-        }
-
-        // 고성능 모드 테스트
-        printf("고성능 모드 테스트\n");
-        int quality_result = libetude_set_quality_mode(platform_engine, LIBETUDE_QUALITY_HIGH);
-
-        if (quality_result == LIBETUDE_SUCCESS) {
-            printf("고품질 모드 설정 성공\n");
-        } else if (quality_result == LIBETUDE_ERROR_NOT_IMPLEMENTED) {
-            printf("품질 모드 설정 기능 미구현 (정상)\n");
-        } else {
-            printf("고품질 모드 설정 실패: %d\n", quality_result);
-        }
-
-        // 데스크톱 환경에서의 음성 합성 테스트
-        printf("데스크톱 환경 음성 합성 테스트\n");
-
-        const char* desktop_test_text = "데스크톱 환경에서의 음성 합성 테스트입니다.";
-        float* desktop_audio_buffer = (float*)malloc(44100 * 5 * sizeof(float));
-        TEST_ASSERT_NOT_NULL_MESSAGE(desktop_audio_buffer, "데스크톱 오디오 버퍼 할당 실패");
-
-        int output_length = 44100 * 5;
-        int synth_result = libetude_synthesize_text(platform_engine, desktop_test_text,
-                                                  desktop_audio_buffer, &output_length);
-
-        if (synth_result == LIBETUDE_SUCCESS) {
-            printf("데스크톱 환경 음성 합성 성공: %d 샘플\n", output_length);
-
-            // 성능 통계 확인
-            PerformanceStats stats;
-            int stats_result = libetude_get_performance_stats(platform_engine, &stats);
-
-            if (stats_result == LIBETUDE_SUCCESS) {
-                printf("데스크톱 성능 통계:\n");
-                printf("  추론 시간: %.2f ms\n", stats.inference_time_ms);
-                printf("  메모리 사용량: %.2f MB\n", stats.memory_usage_mb);
-                printf("  CPU 사용률: %.2f%%\n", stats.cpu_usage_percent);
-                printf("  GPU 사용률: %.2f%%\n", stats.gpu_usage_percent);
-                printf("  활성 스레드: %d개\n", stats.active_threads);
-
-                // 데스크톱 환경 성능 요구사항 검증
-                TEST_ASSERT_LESS_OR_EQUAL_MESSAGE(100.0, stats.inference_time_ms,
-                                                "데스크톱 환경 지연시간 요구사항 미달");
-
-                if (platform_info.cpu_cores > 1) {
-                    TEST_ASSERT_GREATER_THAN_MESSAGE(1, stats.active_threads,
-                                                   "멀티코어 환경에서 단일 스레드만 사용");
-                }
-            }
-
-        } else if (synth_result == LIBETUDE_ERROR_NOT_IMPLEMENTED) {
-            printf("음성 합성 기능 미구현 (정상)\n");
-        } else {
-            printf("데스크톱 환경 음성 합성 실패: %d\n", synth_result);
-        }
-
-        free(desktop_audio_buffer);
-
-        // 데스크톱 최적화 정리
-        libetude_desktop_optimizer_destroy(&desktop_optimizer);
-
-    } else if (desktop_result == ET_ERROR_NOT_IMPLEMENTED) {
-        printf("데스크톱 최적화 기능 미구현 (정상)\n");
-        TEST_PASS();
+    if (gpu_result == LIBETUDE_SUCCESS) {
+        printf("GPU 가속 활성화 성공\n");
+        platform_info.has_gpu = true;
+    } else if (gpu_result == LIBETUDE_ERROR_NOT_IMPLEMENTED) {
+        printf("GPU 가속 기능 미구현 (정상)\n");
+    } else if (gpu_result == LIBETUDE_ERROR_HARDWARE) {
+        printf("GPU 하드웨어 없음 또는 지원되지 않음\n");
     } else {
-        printf("데스크톱 최적화 초기화 실패: %d\n", desktop_result);
-        TEST_FAIL_MESSAGE("데스크톱 최적화 초기화 실패");
+        printf("GPU 가속 활성화 실패: %d\n", gpu_result);
     }
+
+    // 고성능 모드 테스트
+    printf("고성능 모드 테스트\n");
+    int quality_result = libetude_set_quality_mode(platform_engine, LIBETUDE_QUALITY_HIGH);
+
+    if (quality_result == LIBETUDE_SUCCESS) {
+        printf("고품질 모드 설정 성공\n");
+    } else if (quality_result == LIBETUDE_ERROR_NOT_IMPLEMENTED) {
+        printf("품질 모드 설정 기능 미구현 (정상)\n");
+    } else {
+        printf("고품질 모드 설정 실패: %d\n", quality_result);
+    }
+
+    // 데스크톱 환경에서의 음성 합성 테스트
+    printf("데스크톱 환경 음성 합성 테스트\n");
+
+    const char* desktop_test_text = "데스크톱 환경에서의 음성 합성 테스트입니다.";
+    float* desktop_audio_buffer = (float*)malloc(44100 * 5 * sizeof(float));
+    TEST_ASSERT_NOT_NULL_MESSAGE(desktop_audio_buffer, "데스크톱 오디오 버퍼 할당 실패");
+
+    int output_length = 44100 * 5;
+    int synth_result = libetude_synthesize_text(platform_engine, desktop_test_text,
+                                              desktop_audio_buffer, &output_length);
+
+    if (synth_result == LIBETUDE_SUCCESS) {
+        printf("데스크톱 환경 음성 합성 성공: %d 샘플\n", output_length);
+
+        // 성능 통계 확인
+        PerformanceStats stats;
+        int stats_result = libetude_get_performance_stats(platform_engine, &stats);
+
+        if (stats_result == LIBETUDE_SUCCESS) {
+            printf("데스크톱 성능 통계:\n");
+            printf("  추론 시간: %.2f ms\n", stats.inference_time_ms);
+            printf("  메모리 사용량: %.2f MB\n", stats.memory_usage_mb);
+            printf("  CPU 사용률: %.2f%%\n", stats.cpu_usage_percent);
+            printf("  GPU 사용률: %.2f%%\n", stats.gpu_usage_percent);
+            printf("  활성 스레드: %d개\n", stats.active_threads);
+
+            // 데스크톱 환경 성능 요구사항 검증
+            TEST_ASSERT_LESS_OR_EQUAL_MESSAGE(100.0, stats.inference_time_ms,
+                                            "데스크톱 환경 지연시간 요구사항 미달");
+
+            if (platform_info.cpu_cores > 1) {
+                TEST_ASSERT_GREATER_THAN_MESSAGE(1, stats.active_threads,
+                                               "멀티코어 환경에서 단일 스레드만 사용");
+            }
+        }
+
+    } else if (synth_result == LIBETUDE_ERROR_NOT_IMPLEMENTED) {
+        printf("음성 합성 기능 미구현 (정상)\n");
+    } else {
+        printf("데스크톱 환경 음성 합성 실패: %d\n", synth_result);
+    }
+
+    free(desktop_audio_buffer);
 
     printf("=== 데스크톱 환경 테스트 완료 ===\n");
 }

@@ -42,15 +42,6 @@ target_include_directories(plugin_example PRIVATE
 # 플러그인 의존성 관리 예제
 add_subdirectory(plugin_dependency)
 
-# 데스크톱 최적화 예제
-add_executable(desktop_optimization_example
-    desktop_optimization/main.c
-)
-target_link_libraries(desktop_optimization_example libetude_static)
-target_include_directories(desktop_optimization_example PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
 # 임베디드 최적화 예제
 add_executable(embedded_optimization_example
     embedded_optimization/main.c
@@ -62,13 +53,10 @@ target_include_directories(embedded_optimization_example PRIVATE
 
 # 플랫폼별 링크 라이브러리 추가
 if(WIN32)
-    target_link_libraries(desktop_optimization_example winmm dsound psapi)
     target_link_libraries(embedded_optimization_example winmm psapi)
 elseif(APPLE)
-    target_link_libraries(desktop_optimization_example "-framework AudioToolbox" "-framework CoreAudio")
     target_link_libraries(embedded_optimization_example "-framework AudioToolbox" "-framework CoreAudio")
 elseif(UNIX)
-    target_link_libraries(desktop_optimization_example asound pthread m)
     target_link_libraries(embedded_optimization_example pthread m)
     target_link_libraries(streaming_example pthread)
     if(LIBETUDE_BUILD_BINDINGS)
@@ -78,7 +66,7 @@ elseif(UNIX)
 endif()
 
 # 예제 설치
-install(TARGETS basic_tts streaming_example plugin_example desktop_optimization_example embedded_optimization_example
+install(TARGETS basic_tts streaming_example plugin_example embedded_optimization_example
     RUNTIME DESTINATION bin/examples
 )
 

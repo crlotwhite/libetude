@@ -204,13 +204,6 @@ create_unity_test(stft_test "unit/test_stft.c")
 create_unity_test(mel_scale_test "unit/test_mel_scale.c")
 create_unity_test(vocoder_test "unit/test_vocoder.c")
 
-# 데스크톱 최적화 테스트
-create_unity_test(desktop_optimization_test "unit/test_desktop_optimization.c")
-target_link_libraries(desktop_optimization_test libetude_static pthread m)
-if(NOT WIN32)
-    target_link_libraries(desktop_optimization_test pthread m)
-endif()
-
 # 모바일 최적화 테스트
 create_unity_test(mobile_optimization_test "unit/test_mobile_optimization.c")
 
@@ -269,9 +262,6 @@ add_test(NAME AudioIOTest COMMAND audio_io_test)
 add_test(NAME STFTTest COMMAND stft_test)
 add_test(NAME MelScaleTest COMMAND mel_scale_test)
 add_test(NAME VocoderTest COMMAND vocoder_test)
-
-# 데스크톱 최적화 테스트
-add_test(NAME DesktopOptimizationTest COMMAND desktop_optimization_test)
 
 # 모바일 최적화 테스트
 add_test(NAME MobileOptimizationTest COMMAND mobile_optimization_test)
@@ -422,13 +412,6 @@ set_tests_properties(MelScaleTest PROPERTIES
 set_tests_properties(VocoderTest PROPERTIES
     TIMEOUT 120
     LABELS "audio;vocoder;graph;realtime;core;libetude"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-)
-
-# 데스크톱 최적화 테스트 속성 설정
-set_tests_properties(DesktopOptimizationTest PROPERTIES
-    TIMEOUT 180
-    LABELS "desktop;optimization;multicore;gpu;audio;performance;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 

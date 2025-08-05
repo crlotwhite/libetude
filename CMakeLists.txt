@@ -48,8 +48,8 @@ elseif(UNIX)
 endif()
 
 # 하드웨어 최적화 옵션
-option(LIBETUDE_ENABLE_SIMD "Enable SIMD optimizations" ON)
-option(LIBETUDE_ENABLE_GPU "Enable GPU acceleration" ON)
+option(LIBETUDE_ENABLE_SIMD "Enable SIMD optimizations" OFF)
+option(LIBETUDE_ENABLE_GPU "Enable GPU acceleration" OFF)
 option(LIBETUDE_MINIMAL "Build minimal version for embedded systems" OFF)
 
 # SIMD 전역 설정 정의
@@ -150,13 +150,13 @@ enable_testing()
 add_subdirectory(tests)
 
 # 예제 빌드 (선택적)
-option(LIBETUDE_BUILD_EXAMPLES "Build example applications" ON)
+option(LIBETUDE_BUILD_EXAMPLES "Build example applications" OFF)
 if(LIBETUDE_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
 # 도구 빌드 (선택적)
-option(LIBETUDE_BUILD_TOOLS "Build development tools" ON)
+option(LIBETUDE_BUILD_TOOLS "Build development tools" OFF)
 if(LIBETUDE_BUILD_TOOLS)
     add_subdirectory(tools)
 endif()

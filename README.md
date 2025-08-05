@@ -155,7 +155,6 @@ cd build && ./bin/libetude_benchmarks
 - `examples/basic_tts/`: 기본 텍스트-음성 변환
 - `examples/streaming/`: 스트리밍 합성
 - `examples/plugins/`: 플러그인 사용법
-- `examples/desktop_optimization/`: 데스크톱 최적화
 - `examples/embedded_optimization/`: 임베디드 최적화
 
 ## 기여하기
