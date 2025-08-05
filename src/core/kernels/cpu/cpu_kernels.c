@@ -257,7 +257,7 @@ void register_cpu_kernels(void) {
     memset(&kernel_info, 0, sizeof(KernelInfo));
     kernel_info.name = "vector_add_cpu";
     kernel_info.kernel_func = (void*)cpu_vector_add;
-    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.simd_features = LIBETUDE_SIMD_CPU;
     kernel_info.optimal_size = 0; // 모든 크기에 적합
     kernel_info.performance_score = 1.0f; // 기본 점수
     kernel_registry_register(&kernel_info);
@@ -266,7 +266,7 @@ void register_cpu_kernels(void) {
     memset(&kernel_info, 0, sizeof(KernelInfo));
     kernel_info.name = "vector_mul_cpu";
     kernel_info.kernel_func = (void*)cpu_vector_mul;
-    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.simd_features = LIBETUDE_SIMD_CPU;
     kernel_info.optimal_size = 0;
     kernel_info.performance_score = 1.0f;
     kernel_registry_register(&kernel_info);
@@ -275,7 +275,7 @@ void register_cpu_kernels(void) {
     memset(&kernel_info, 0, sizeof(KernelInfo));
     kernel_info.name = "vector_scale_cpu";
     kernel_info.kernel_func = (void*)cpu_vector_scale;
-    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.simd_features = LIBETUDE_SIMD_CPU;
     kernel_info.optimal_size = 0;
     kernel_info.performance_score = 1.0f;
     kernel_registry_register(&kernel_info);
@@ -284,7 +284,7 @@ void register_cpu_kernels(void) {
     memset(&kernel_info, 0, sizeof(KernelInfo));
     kernel_info.name = "matmul_cpu";
     kernel_info.kernel_func = (void*)cpu_matrix_mul;
-    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.simd_features = LIBETUDE_SIMD_CPU;
     kernel_info.optimal_size = 0;
     kernel_info.performance_score = 1.0f;
     kernel_registry_register(&kernel_info);
@@ -292,7 +292,7 @@ void register_cpu_kernels(void) {
     memset(&kernel_info, 0, sizeof(KernelInfo));
     kernel_info.name = "matmul_vector_cpu";
     kernel_info.kernel_func = (void*)cpu_matrix_vector_mul;
-    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.simd_features = LIBETUDE_SIMD_CPU;
     kernel_info.optimal_size = 0;
     kernel_info.performance_score = 1.0f;
     kernel_registry_register(&kernel_info);
@@ -301,7 +301,7 @@ void register_cpu_kernels(void) {
     memset(&kernel_info, 0, sizeof(KernelInfo));
     kernel_info.name = "activation_relu_cpu";
     kernel_info.kernel_func = (void*)cpu_relu;
-    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.simd_features = LIBETUDE_SIMD_CPU;
     kernel_info.optimal_size = 0;
     kernel_info.performance_score = 1.0f;
     kernel_registry_register(&kernel_info);
@@ -309,7 +309,7 @@ void register_cpu_kernels(void) {
     memset(&kernel_info, 0, sizeof(KernelInfo));
     kernel_info.name = "activation_sigmoid_cpu";
     kernel_info.kernel_func = (void*)cpu_sigmoid;
-    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.simd_features = LIBETUDE_SIMD_CPU;
     kernel_info.optimal_size = 0;
     kernel_info.performance_score = 1.0f;
     kernel_registry_register(&kernel_info);
@@ -317,7 +317,7 @@ void register_cpu_kernels(void) {
     memset(&kernel_info, 0, sizeof(KernelInfo));
     kernel_info.name = "activation_tanh_cpu";
     kernel_info.kernel_func = (void*)cpu_tanh;
-    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.simd_features = LIBETUDE_SIMD_CPU;
     kernel_info.optimal_size = 0;
     kernel_info.performance_score = 1.0f;
     kernel_registry_register(&kernel_info);
@@ -325,7 +325,7 @@ void register_cpu_kernels(void) {
     memset(&kernel_info, 0, sizeof(KernelInfo));
     kernel_info.name = "activation_gelu_cpu";
     kernel_info.kernel_func = (void*)cpu_gelu;
-    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.simd_features = LIBETUDE_SIMD_CPU;
     kernel_info.optimal_size = 0;
     kernel_info.performance_score = 1.0f;
     kernel_registry_register(&kernel_info);
@@ -334,7 +334,7 @@ void register_cpu_kernels(void) {
     memset(&kernel_info, 0, sizeof(KernelInfo));
     kernel_info.name = "softmax_cpu";
     kernel_info.kernel_func = (void*)cpu_softmax;
-    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.simd_features = LIBETUDE_SIMD_CPU;
     kernel_info.optimal_size = 0;
     kernel_info.performance_score = 1.0f;
     kernel_registry_register(&kernel_info);
@@ -343,7 +343,7 @@ void register_cpu_kernels(void) {
     memset(&kernel_info, 0, sizeof(KernelInfo));
     kernel_info.name = "hann_window_cpu";
     kernel_info.kernel_func = (void*)cpu_apply_hann_window;
-    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.simd_features = LIBETUDE_SIMD_CPU;
     kernel_info.optimal_size = 0;
     kernel_info.performance_score = 1.0f;
     kernel_registry_register(&kernel_info);
@@ -351,7 +351,7 @@ void register_cpu_kernels(void) {
     memset(&kernel_info, 0, sizeof(KernelInfo));
     kernel_info.name = "mel_filterbank_cpu";
     kernel_info.kernel_func = (void*)cpu_apply_mel_filterbank;
-    kernel_info.simd_features = LIBETUDE_SIMD_NONE;
+    kernel_info.simd_features = LIBETUDE_SIMD_CPU;
     kernel_info.optimal_size = 0;
     kernel_info.performance_score = 1.0f;
     kernel_registry_register(&kernel_info);

@@ -109,15 +109,16 @@ typedef enum {
  */
 typedef enum {
     LIBETUDE_SIMD_NONE = 0,        /**< SIMD 지원 없음 */
-    LIBETUDE_SIMD_SSE = 1 << 0,    /**< SSE 지원 */
-    LIBETUDE_SIMD_SSE2 = 1 << 1,   /**< SSE2 지원 */
-    LIBETUDE_SIMD_SSE3 = 1 << 2,   /**< SSE3 지원 */
-    LIBETUDE_SIMD_SSSE3 = 1 << 3,  /**< SSSE3 지원 */
-    LIBETUDE_SIMD_SSE4_1 = 1 << 4, /**< SSE4.1 지원 */
-    LIBETUDE_SIMD_SSE4_2 = 1 << 5, /**< SSE4.2 지원 */
-    LIBETUDE_SIMD_AVX = 1 << 6,    /**< AVX 지원 */
-    LIBETUDE_SIMD_AVX2 = 1 << 7,   /**< AVX2 지원 */
-    LIBETUDE_SIMD_NEON = 1 << 8    /**< ARM NEON 지원 */
+    LIBETUDE_SIMD_CPU = 1 << 0,    /**< 기본 CPU 지원 */
+    LIBETUDE_SIMD_SSE = 1 << 1,    /**< SSE 지원 */
+    LIBETUDE_SIMD_SSE2 = 1 << 2,   /**< SSE2 지원 */
+    LIBETUDE_SIMD_SSE3 = 1 << 3,   /**< SSE3 지원 */
+    LIBETUDE_SIMD_SSSE3 = 1 << 4,  /**< SSSE3 지원 */
+    LIBETUDE_SIMD_SSE4_1 = 1 << 5, /**< SSE4.1 지원 */
+    LIBETUDE_SIMD_SSE4_2 = 1 << 6, /**< SSE4.2 지원 */
+    LIBETUDE_SIMD_AVX = 1 << 7,    /**< AVX 지원 */
+    LIBETUDE_SIMD_AVX2 = 1 << 8,   /**< AVX2 지원 */
+    LIBETUDE_SIMD_NEON = 1 << 9    /**< ARM NEON 지원 */
 } LibEtudeSIMDFeatures;
 
 // ============================================================================

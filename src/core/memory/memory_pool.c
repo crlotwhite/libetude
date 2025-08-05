@@ -134,7 +134,9 @@ ETMemoryPool* et_create_memory_pool_with_options(size_t size, const ETMemoryPool
         size_t num_blocks = aligned_size / options->block_size;
         et_init_fixed_pool(pool, options->block_size, num_blocks);
     } else {
-        et_init_dynamic_pool(pool, options->min_block_size);
+        // 동적 풀의 경우 min_block_size 설정
+        size_t min_block_size = options->min_block_size > 0 ? options->min_block_size : ET_MIN_BLOCK_SIZE;
+        et_init_dynamic_pool(pool, min_block_size);
     }
 
     return pool;
@@ -199,7 +201,9 @@ ETMemoryPool* et_create_memory_pool_from_buffer(void* base, size_t size, const E
         size_t num_blocks = size / options->block_size;
         et_init_fixed_pool(pool, options->block_size, num_blocks);
     } else {
-        et_init_dynamic_pool(pool, options->min_block_size);
+        // 동적 풀의 경우 min_block_size 설정
+        size_t min_block_size = options->min_block_size > 0 ? options->min_block_size : ET_MIN_BLOCK_SIZE;
+        et_init_dynamic_pool(pool, min_block_size);
     }
 
     return pool;

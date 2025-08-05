@@ -185,7 +185,7 @@ LIBETUDE_API LibEtudeErrorCode kernel_registry_init(void) {
     g_kernel_registry.capacity = MAX_KERNELS;
 
     // 하드웨어 기능 감지 (간단한 버전)
-    g_kernel_registry.hardware_features = LIBETUDE_SIMD_NONE;
+    g_kernel_registry.hardware_features = LIBETUDE_SIMD_CPU; // 기본 CPU 기능은 항상 지원
 
 #ifdef LIBETUDE_HAVE_SSE2
     g_kernel_registry.hardware_features |= LIBETUDE_SIMD_SSE2;
@@ -198,6 +198,9 @@ LIBETUDE_API LibEtudeErrorCode kernel_registry_init(void) {
 #ifdef LIBETUDE_HAVE_NEON
     g_kernel_registry.hardware_features |= LIBETUDE_SIMD_NEON;
 #endif
+
+    // 초기화 플래그를 먼저 설정 (커널 등록 함수들이 확인하기 때문)
+    g_kernel_registry.initialized = true;
 
     // 기본 CPU 커널 등록
     register_cpu_kernels();
@@ -220,8 +223,6 @@ LIBETUDE_API LibEtudeErrorCode kernel_registry_init(void) {
         register_neon_kernels();
     }
 #endif
-
-    g_kernel_registry.initialized = true;
     return LIBETUDE_SUCCESS;
 }
 
@@ -287,7 +288,7 @@ LIBETUDE_API LibEtudeErrorCode kernel_registry_register(const KernelInfo* kernel
  * @brief 최적의 커널을 선택합니다
  */
 LIBETUDE_API void* kernel_registry_select_optimal(const char* kernel_name, size_t data_size) {
-    if (!g_kernel_registry.initialized || !kernel_name) {
+    if (!g_kernel_registry.initialized || !kernel_name || data_size == 0) {
         return NULL;
     }
 
@@ -361,7 +362,8 @@ LIBETUDE_API LibEtudeErrorCode kernel_registry_run_benchmarks(void) {
 
         // 현재 하드웨어에서 지원하는 커널만 벤치마크
         if ((kernel->simd_features & g_kernel_registry.hardware_features) == 0 &&
-            kernel->simd_features != LIBETUDE_SIMD_NONE) {
+            kernel->simd_features != LIBETUDE_SIMD_NONE &&
+            kernel->simd_features != LIBETUDE_SIMD_CPU) {
             continue;
         }
 
