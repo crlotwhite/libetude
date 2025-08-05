@@ -127,7 +127,7 @@ static inline __m256 avx_fast_exp(__m256 x) {
 
     // 다항식 계산: 1 + x + x²/2 + x³/6 + x⁴/24
     __m256 result = c1;
-#ifdef LIBETUDE_HAVE_AVX2
+#ifdef LIBETUDE_HAVE_FMA
     result = _mm256_fmadd_ps(c2, x, result);
     result = _mm256_fmadd_ps(c3, x2, result);
     result = _mm256_fmadd_ps(c4, x3, result);
@@ -160,7 +160,7 @@ static inline __m256 avx_fast_tanh(__m256 x) {
     __m256 numerator = _mm256_mul_ps(x, _mm256_add_ps(c27, x2));
 
     // 분모: 27 + 9*x²
-#ifdef LIBETUDE_HAVE_AVX2
+#ifdef LIBETUDE_HAVE_FMA
     __m256 denominator = _mm256_fmadd_ps(c9, x2, c27);
 #else
     __m256 denominator = _mm256_add_ps(c27, _mm256_mul_ps(c9, x2));
@@ -430,7 +430,7 @@ void avx_batch_norm(const float* input, float* output, size_t size,
         __m256 vnormalized = _mm256_mul_ps(_mm256_sub_ps(vinput, vmean), vinv_std);
 
         // gamma * normalized + beta
-#ifdef LIBETUDE_HAVE_AVX2
+#ifdef LIBETUDE_HAVE_FMA
         __m256 vresult = _mm256_fmadd_ps(vgamma, vnormalized, vbeta);
 #else
         __m256 vresult = _mm256_add_ps(_mm256_mul_ps(vgamma, vnormalized), vbeta);
@@ -481,8 +481,8 @@ float avx_vector_dot(const float* a, const float* b, size_t size) {
         __m256 va3 = _mm256_loadu_ps(a + i + 24);
         __m256 vb3 = _mm256_loadu_ps(b + i + 24);
 
-#ifdef LIBETUDE_HAVE_AVX2
-        // FMA 명령어 사용 (AVX2)
+#ifdef LIBETUDE_HAVE_FMA
+        // FMA 명령어 사용
         vsum0 = _mm256_fmadd_ps(va0, vb0, vsum0);
         vsum1 = _mm256_fmadd_ps(va1, vb1, vsum1);
         vsum2 = _mm256_fmadd_ps(va2, vb2, vsum2);
@@ -500,7 +500,7 @@ float avx_vector_dot(const float* a, const float* b, size_t size) {
     for (; i + 7 < size; i += 8) {
         __m256 va = _mm256_loadu_ps(a + i);
         __m256 vb = _mm256_loadu_ps(b + i);
-#ifdef LIBETUDE_HAVE_AVX2
+#ifdef LIBETUDE_HAVE_FMA
         vsum0 = _mm256_fmadd_ps(va, vb, vsum0);
 #else
         vsum0 = _mm256_add_ps(vsum0, _mm256_mul_ps(va, vb));
@@ -561,7 +561,7 @@ void avx_gemm(const float* a, const float* b, float* c,
             for (; j + 7 < n; j += 8) {
                 __m256 vb = _mm256_loadu_ps(&b[l * n + j]);
                 __m256 vc = _mm256_loadu_ps(&c[i * n + j]);
-#ifdef LIBETUDE_HAVE_AVX2
+#ifdef LIBETUDE_HAVE_FMA
                 __m256 vresult = _mm256_fmadd_ps(va, vb, vc); // FMA 사용
 #else
                 __m256 vmul = _mm256_mul_ps(va, vb);
@@ -681,8 +681,8 @@ void avx_gemm_blocked(const float* a, const float* b, float* c,
                                         __m256 vc = _mm256_loadu_ps(&c[(i + ii + iii) * n + (j + jj + jjj)]);
 
                                         // 계산 및 저장
-#ifdef LIBETUDE_HAVE_AVX2
-                                        // FMA 명령어 사용 (AVX2)
+#ifdef LIBETUDE_HAVE_FMA
+                                        // FMA 명령어 사용
                                         vc = _mm256_fmadd_ps(va, vb, vc);
 #else
                                         // 기본 AVX 명령어 사용

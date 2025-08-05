@@ -77,6 +77,13 @@ if(LIBETUDE_ENABLE_SIMD)
         int main() { __m256i a = _mm256_add_epi32(_mm256_setzero_si256(), _mm256_setzero_si256()); return 0; }
     " HAVE_AVX2)
 
+    # FMA 지원 확인
+    set(CMAKE_REQUIRED_FLAGS "-mfma")
+    check_c_source_compiles("
+        #include <immintrin.h>
+        int main() { __m256 a = _mm256_setzero_ps(); __m256 b = _mm256_setzero_ps(); __m256 c = _mm256_setzero_ps(); __m256 result = _mm256_fmadd_ps(a, b, c); return 0; }
+    " HAVE_FMA)
+
     # NEON 지원 확인 (ARM)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|aarch64")
         set(CMAKE_REQUIRED_FLAGS "")
@@ -105,6 +112,10 @@ if(LIBETUDE_ENABLE_SIMD)
     if(HAVE_AVX2)
         add_definitions(-DLIBETUDE_HAVE_AVX2)
         message(STATUS "AVX2 support enabled")
+    endif()
+    if(HAVE_FMA)
+        add_definitions(-DLIBETUDE_HAVE_FMA)
+        message(STATUS "FMA support enabled")
     endif()
     if(HAVE_NEON)
         add_definitions(-DLIBETUDE_HAVE_NEON)
