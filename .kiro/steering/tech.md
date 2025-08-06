@@ -12,8 +12,9 @@
 ## Build System
 
 - **CMake**: Cross-platform build system for all targets
+- **Windows 컴파일러**: MSBuild (MSVC) 권장, MinGW-GCC 대안 지원
 - **Platform Support**:
-  - Desktop: Windows, macOS, Linux
+  - Desktop: Windows (MSVC/MinGW), macOS, Linux
   - Mobile: Android, iOS
   - Embedded: Various ARM platforms
 
@@ -39,6 +40,40 @@ cmake --install build
 ```
 
 ### Platform-Specific Builds
+
+#### Windows 빌드 환경 선택
+
+**권장: MSBuild (Visual Studio) - 최고 성능**
+```cmd
+# Visual Studio 2019/2022 사용 (권장)
+cmake -B build -G "Visual Studio 16 2019" -A x64 -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --parallel
+
+# 또는 Ninja 사용 (더 빠른 빌드)
+cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+```
+
+**대안: MinGW-GCC - 크로스 플랫폼 일관성**
+```bash
+# MSYS2 환경에서
+cmake -B build -G "Ninja" -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+```
+
+**Windows 컴파일러 선택 가이드:**
+- **MSBuild (MSVC) 사용 시기:**
+  - 최고 성능이 필요한 상용 배포
+  - Windows 전용 최적화 활용
+  - Visual Studio 디버깅 도구 사용
+  - Intel C++ Compiler 연동 필요
+- **MinGW-GCC 사용 시기:**
+  - 크로스 플랫폼 개발팀
+  - 오픈소스 배포 우선
+  - CI/CD 자동화
+  - 런타임 의존성 최소화
+
+#### 기타 플랫폼
 
 ```bash
 # Android build
@@ -72,4 +107,24 @@ cd build && ./bin/libetude_benchmarks
 
 # Memory usage analysis
 ./bin/libetude_memcheck --model=<model_path>
+```
+
+## Windows 빌드 최적화 팁
+
+### SIMD 최적화 활성화
+```cmd
+# SIMD 최적화 활성화 (성능 향상)
+cmake -B build -DLIBETUDE_ENABLE_SIMD=ON -DCMAKE_BUILD_TYPE=Release
+```
+
+### Intel C++ Compiler 사용 (MSVC 환경)
+```cmd
+# Intel oneAPI 설치 후
+cmake -B build -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icx -DCMAKE_BUILD_TYPE=Release
+```
+
+### 정적 링킹 (MinGW 환경)
+```bash
+# 런타임 의존성 최소화
+cmake -B build -DCMAKE_C_FLAGS="-static-libgcc" -DCMAKE_CXX_FLAGS="-static-libgcc -static-libstdc++" -DCMAKE_BUILD_TYPE=Release
 ```
