@@ -2,9 +2,9 @@ name: Build
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, feature/* ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, develop, feature/* ]
 
 env:
   # 빌드 병렬 처리를 위한 환경 변수
