@@ -70,6 +70,7 @@ set(LIBETUDE_CORE_SOURCES
     platform/system_common.c
 
     # 플랫폼별 구현
+    platform/platform_core.c
     platform/platform_utils.c
     platform/desktop_optimization.c
     platform/embedded_optimization.c

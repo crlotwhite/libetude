@@ -10,8 +10,12 @@
 #include "libetude/platform/common.h"
 #include "libetude/platform/audio.h"
 
-// Linux 오디오 인터페이스 가져오기 함수 선언
+// Linux 인터페이스 선언
 extern const ETAudioInterface* et_get_linux_audio_interface(void);
+
+extern ETSystemInterface* et_get_linux_system_interface(void);
+extern ETResult et_linux_system_initialize(void);
+extern void et_linux_system_cleanup(void);
 
 /**
  * @brief Linux 오디오 인터페이스 팩토리 함수
@@ -29,6 +33,31 @@ static const void* linux_audio_factory(const void* config) {
  */
 static void linux_audio_destructor(const void* interface) {
     (void)interface; // 정적 인터페이스이므로 해제할 것이 없음
+}
+
+/**
+ * @brief Linux 시스템 인터페이스 팩토리 함수
+ * @param config 설정 (사용하지 않음)
+ * @return Linux 시스템 인터페이스 포인터
+ */
+static const void* linux_system_factory(const void* config) {
+    (void)config; // 사용하지 않는 매개변수
+    
+    ETResult result = et_linux_system_initialize();
+    if (result != ET_SUCCESS) {
+        return NULL;
+    }
+    
+    return et_get_linux_system_interface();
+}
+
+/**
+ * @brief Linux 시스템 인터페이스 해제 함수
+ * @param interface 인터페이스 포인터 (사용하지 않음)
+ */
+static void linux_system_destructor(const void* interface) {
+    (void)interface; // 정적 인터페이스이므로 해제할 것이 없음
+    et_linux_system_cleanup();
 }
 
 /* Linux 플랫폼 인터페이스 등록 */
@@ -57,7 +86,7 @@ ETResult et_register_linux_interfaces(void) {
         ET_LOG_INFO("Linux ALSA 오디오 인터페이스 등록 완료");
     }
 
-    /* 시스템 인터페이스 등록 (스텁) */
+    /* 시스템 인터페이스 등록 */
     {
         ETInterfaceMetadata metadata = {
             .type = ET_INTERFACE_SYSTEM,
@@ -65,13 +94,18 @@ ETResult et_register_linux_interfaces(void) {
             .name = "Linux System Interface",
             .description = "Linux syscall based system interface",
             .platform = ET_PLATFORM_LINUX,
-            .size = sizeof(void*), /* 실제 구조체 크기로 변경 예정 */
-            .flags = 0
+            .size = sizeof(ETSystemInterface),
+            .flags = ET_INTERFACE_FLAG_THREAD_SAFE
         };
 
         result = et_register_interface_factory(ET_INTERFACE_SYSTEM, ET_PLATFORM_LINUX,
-                                              NULL, NULL, &metadata);
-        if (result != ET_SUCCESS) return result;
+                                              linux_system_factory, linux_system_destructor, &metadata);
+        if (result != ET_SUCCESS) {
+            ET_LOG_ERROR("Linux 시스템 인터페이스 등록 실패");
+            return result;
+        }
+
+        ET_LOG_INFO("Linux 시스템 인터페이스 등록 완료");
     }
 
     /* 스레딩 인터페이스 등록 (스텁) */

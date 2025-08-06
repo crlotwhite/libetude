@@ -48,6 +48,7 @@ typedef enum {
     ET_ERROR_QUANTIZATION = -19,             /**< 양자화 관련 오류 */
     ET_ERROR_GRAPH = -20,                    /**< 그래프 관련 오류 */
     ET_ERROR_KERNEL = -21,                   /**< 커널 관련 오류 */
+    ET_ERROR_PLATFORM_SPECIFIC = -22,       /**< 플랫폼 특화 오류 */
     ET_ERROR_UNKNOWN = -999                  /**< 알 수 없는 오류 */
 } LibEtudeErrorCode;
 

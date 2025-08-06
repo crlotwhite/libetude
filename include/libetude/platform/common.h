@@ -14,6 +14,7 @@
 #include "libetude/error.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,12 +51,25 @@ typedef enum {
  * @brief 하드웨어 기능 플래그
  */
 typedef enum {
-    ET_HW_FEATURE_NONE = 0,           /**< 기본 기능만 */
-    ET_HW_FEATURE_SIMD = 1 << 0,      /**< SIMD 지원 */
-    ET_HW_FEATURE_GPU = 1 << 1,       /**< GPU 가속 지원 */
-    ET_HW_FEATURE_AUDIO_HW = 1 << 2,  /**< 하드웨어 오디오 가속 */
-    ET_HW_FEATURE_HIGH_RES_TIMER = 1 << 3  /**< 고해상도 타이머 */
+    ET_FEATURE_NONE = 0,           /**< 기본 기능만 */
+    ET_FEATURE_SSE = 1 << 0,       /**< SSE 지원 */
+    ET_FEATURE_SSE2 = 1 << 1,      /**< SSE2 지원 */
+    ET_FEATURE_SSE3 = 1 << 2,      /**< SSE3 지원 */
+    ET_FEATURE_SSSE3 = 1 << 3,     /**< SSSE3 지원 */
+    ET_FEATURE_SSE4_1 = 1 << 4,    /**< SSE4.1 지원 */
+    ET_FEATURE_SSE4_2 = 1 << 5,    /**< SSE4.2 지원 */
+    ET_FEATURE_AVX = 1 << 6,       /**< AVX 지원 */
+    ET_FEATURE_AVX2 = 1 << 7,      /**< AVX2 지원 */
+    ET_FEATURE_AVX512 = 1 << 8,    /**< AVX512 지원 */
+    ET_FEATURE_NEON = 1 << 9,      /**< ARM NEON 지원 */
+    ET_FEATURE_FMA = 1 << 10,      /**< FMA 지원 */
+    ET_FEATURE_GPU = 1 << 11,      /**< GPU 가속 지원 */
+    ET_FEATURE_AUDIO_HW = 1 << 12, /**< 하드웨어 오디오 가속 */
+    ET_FEATURE_HIGH_RES_TIMER = 1 << 13  /**< 고해상도 타이머 */
 } ETHardwareFeature;
+
+// 하위 호환성을 위한 별칭
+typedef ETHardwareFeature ETFeatureFlags;
 
 /**
  * @brief 플랫폼 정보 구조체
@@ -66,6 +80,8 @@ typedef struct {
     char version[32];              /**< 플랫폼 버전 */
     ETArchitecture arch;           /**< 아키텍처 */
     uint32_t features;             /**< 지원 기능 플래그 */
+    uint32_t cpu_count;            /**< CPU 코어 수 */
+    uint64_t total_memory;         /**< 총 메모리 크기 (바이트) */
 } ETPlatformInfo;
 
 // ============================================================================
@@ -99,12 +115,54 @@ typedef struct {
 // 공통 함수 선언
 // ============================================================================
 
+// ============================================================================
+// 핵심 플랫폼 함수 선언
+// ============================================================================
+
+/**
+ * @brief 플랫폼 추상화 레이어를 초기화합니다
+ * @return 성공시 ET_SUCCESS, 실패시 오류 코드
+ */
+ETResult et_platform_initialize(void);
+
 /**
  * @brief 현재 플랫폼 정보를 가져옵니다
  * @param info 플랫폼 정보를 저장할 구조체 포인터
  * @return 성공시 ET_SUCCESS, 실패시 오류 코드
  */
-ETResult et_platform_get_info(ETPlatformInfo* info);
+ETResult et_get_platform_info(ETPlatformInfo* info);
+
+/**
+ * @brief 플랫폼 추상화 레이어를 정리합니다
+ */
+void et_platform_finalize(void);
+
+/**
+ * @brief 현재 플랫폼 타입을 가져옵니다
+ * @return 현재 플랫폼 타입
+ */
+ETPlatformType et_get_current_platform(void);
+
+/**
+ * @brief 현재 아키텍처를 가져옵니다
+ * @return 현재 아키텍처
+ */
+ETArchitecture et_get_current_architecture(void);
+
+/**
+ * @brief 하드웨어 기능 지원 여부를 확인합니다
+ * @param feature 확인할 하드웨어 기능
+ * @return 지원하면 true, 아니면 false
+ */
+bool et_has_hardware_feature(ETHardwareFeature feature);
+
+/**
+ * @brief 플랫폼별 오류를 공통 오류로 변환합니다 (기존 함수)
+ * @param platform 플랫폼 타입
+ * @param platform_error 플랫폼별 오류 코드
+ * @return 공통 오류 코드
+ */
+ETResult et_platform_error_to_common(ETPlatformType platform, int platform_error);
 
 /**
  * @brief 플랫폼별 오류를 공통 오류로 변환합니다
@@ -128,6 +186,37 @@ const char* et_get_platform_error_description(ETPlatformType platform, int platf
  * @return 지원하면 true, 아니면 false
  */
 bool et_platform_has_feature(ETHardwareFeature feature);
+
+// ============================================================================
+// 로깅 매크로 (간단한 구현)
+// ============================================================================
+
+#ifndef ET_LOG_INFO
+#define ET_LOG_INFO(msg) printf("[INFO] %s\n", msg)
+#endif
+
+#ifndef ET_LOG_ERROR
+#define ET_LOG_ERROR(msg) printf("[ERROR] %s\n", msg)
+#endif
+
+#ifndef ET_LOG_DEBUG
+#define ET_LOG_DEBUG(msg) printf("[DEBUG] %s\n", msg)
+#endif
+
+// ============================================================================
+// 오류 처리 매크로
+// ============================================================================
+
+/**
+ * @brief 상세 오류 정보를 설정합니다
+ */
+void et_set_detailed_error(void* context, ETResult code, int platform_code,
+                          const char* message, const char* file, int line, const char* function);
+
+/**
+ * @brief 오류를 초기화합니다
+ */
+void et_clear_error(void);
 
 #ifdef __cplusplus
 }

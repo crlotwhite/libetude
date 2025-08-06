@@ -14,10 +14,72 @@
 #include "libetude/platform/audio.h"
 #include "libetude/types.h"
 #include "libetude/error.h"
+#include <stdint.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+// ============================================================================
+// 인터페이스 타입 및 메타데이터 정의
+// ============================================================================
+
+/**
+ * @brief 인터페이스 타입 열거형
+ */
+typedef enum {
+    ET_INTERFACE_AUDIO = 0,        /**< 오디오 인터페이스 */
+    ET_INTERFACE_SYSTEM = 1,       /**< 시스템 정보 인터페이스 */
+    ET_INTERFACE_THREAD = 2,       /**< 스레딩 인터페이스 */
+    ET_INTERFACE_MEMORY = 3,       /**< 메모리 관리 인터페이스 */
+    ET_INTERFACE_FILESYSTEM = 4,   /**< 파일시스템 인터페이스 */
+    ET_INTERFACE_NETWORK = 5,      /**< 네트워크 인터페이스 */
+    ET_INTERFACE_DYNLIB = 6,       /**< 동적 라이브러리 인터페이스 */
+    ET_INTERFACE_COUNT             /**< 인터페이스 타입 수 */
+} ETInterfaceType;
+
+/**
+ * @brief 인터페이스 플래그
+ */
+typedef enum {
+    ET_INTERFACE_FLAG_NONE = 0,           /**< 기본 플래그 */
+    ET_INTERFACE_FLAG_THREAD_SAFE = 1,    /**< 스레드 안전 */
+    ET_INTERFACE_FLAG_SINGLETON = 2       /**< 싱글톤 */
+} ETInterfaceFlags;
+
+/**
+ * @brief 인터페이스 버전 정보
+ */
+typedef struct {
+    uint8_t major;
+    uint8_t minor;
+    uint8_t patch;
+    uint8_t revision;
+} ETInterfaceVersion;
+
+/**
+ * @brief 인터페이스 메타데이터
+ */
+typedef struct {
+    ETInterfaceType type;          /**< 인터페이스 타입 */
+    ETInterfaceVersion version;    /**< 인터페이스 버전 */
+    char name[64];                 /**< 인터페이스 이름 */
+    char description[128];         /**< 인터페이스 설명 */
+    ETPlatformType platform;       /**< 대상 플랫폼 */
+    size_t size;                   /**< 인터페이스 구조체 크기 */
+    uint32_t flags;                /**< 인터페이스 플래그 */
+} ETInterfaceMetadata;
+
+/**
+ * @brief 인터페이스 팩토리 함수 타입
+ */
+typedef ETResult (*ETInterfaceCreateFunc)(void** interface, const ETInterfaceMetadata* metadata);
+
+/**
+ * @brief 인터페이스 소멸자 함수 타입
+ */
+typedef void (*ETInterfaceDestroyFunc)(void* interface);
 
 // ============================================================================
 // 플랫폼 팩토리 인터페이스
@@ -126,6 +188,41 @@ ETPlatformType et_platform_type_from_string(const char* platform_name);
  * @return 성공시 ET_SUCCESS, 실패시 오류 코드
  */
 ETResult et_platform_factory_register(const ETPlatformFactory* factory);
+
+/**
+ * @brief 인터페이스 팩토리를 등록합니다
+ * @param type 인터페이스 타입
+ * @param platform 플랫폼 타입
+ * @param create_func 생성 함수
+ * @param destroy_func 소멸자 함수
+ * @param metadata 메타데이터
+ * @return 성공시 ET_SUCCESS, 실패시 오류 코드
+ */
+ETResult et_register_interface_factory(ETInterfaceType type, ETPlatformType platform,
+                                       ETInterfaceCreateFunc create_func,
+                                       ETInterfaceDestroyFunc destroy_func,
+                                       const ETInterfaceMetadata* metadata);
+
+/**
+ * @brief 인터페이스를 가져옵니다
+ * @param type 인터페이스 타입
+ * @return 인터페이스 포인터 (실패시 NULL)
+ */
+void* et_get_interface(ETInterfaceType type);
+
+/**
+ * @brief 인터페이스 가용성을 확인합니다
+ * @param type 인터페이스 타입
+ * @return 사용 가능하면 true, 아니면 false
+ */
+bool et_is_interface_available(ETInterfaceType type);
+
+/**
+ * @brief 인터페이스 타입을 문자열로 변환합니다
+ * @param type 인터페이스 타입
+ * @return 타입 이름 문자열
+ */
+const char* et_interface_type_to_string(ETInterfaceType type);
 
 /**
  * @brief 플랫폼 팩토리 등록을 해제합니다 (내부 사용)

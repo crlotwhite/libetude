@@ -9,10 +9,14 @@
 #include "libetude/platform/factory.h"
 #include "libetude/platform/common.h"
 
-/* Windows 오디오 인터페이스 선언 */
+/* Windows 인터페이스 선언 */
 extern ETAudioInterface* et_get_windows_audio_interface(void);
 extern ETResult et_windows_audio_initialize(void);
 extern void et_windows_audio_cleanup(void);
+
+extern ETSystemInterface* et_get_windows_system_interface(void);
+extern ETResult et_windows_system_initialize(void);
+extern void et_windows_system_cleanup(void);
 
 /* 오디오 인터페이스 팩토리 함수 */
 static ETResult windows_audio_factory(void** interface, const ETInterfaceMetadata* metadata) {
@@ -32,14 +36,21 @@ static void windows_audio_destructor(void* interface) {
     et_windows_audio_cleanup();
 }
 
-static ETResult stub_system_factory(void** interface, const ETInterfaceMetadata* metadata) {
-    (void)metadata;
-    *interface = NULL;
-    return ET_SUCCESS;
+static ETResult windows_system_factory(void** interface, const ETInterfaceMetadata* metadata) {
+    (void)metadata; /* 미사용 매개변수 경고 제거 */
+    
+    ETResult result = et_windows_system_initialize();
+    if (result != ET_SUCCESS) {
+        return result;
+    }
+    
+    *interface = et_get_windows_system_interface();
+    return (*interface != NULL) ? ET_SUCCESS : ET_ERROR_HARDWARE;
 }
 
-static void stub_system_destructor(void* interface) {
-    (void)interface;
+static void windows_system_destructor(void* interface) {
+    (void)interface; /* 미사용 매개변수 경고 제거 */
+    et_windows_system_cleanup();
 }
 
 static ETResult stub_thread_factory(void** interface, const ETInterfaceMetadata* metadata) {
@@ -126,7 +137,7 @@ ETResult et_register_windows_interfaces(void) {
         };
 
         result = et_register_interface_factory(ET_INTERFACE_SYSTEM, ET_PLATFORM_WINDOWS,
-                                              stub_system_factory, stub_system_destructor, &metadata);
+                                              windows_system_factory, windows_system_destructor, &metadata);
         if (result != ET_SUCCESS) return result;
     }
 
