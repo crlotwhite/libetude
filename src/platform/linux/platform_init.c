@@ -1,0 +1,138 @@
+/**
+ * @file platform_init.c
+ * @brief Linux 플랫폼 인터페이스 등록 및 초기화
+ * @author LibEtude Team
+ */
+
+#ifdef LIBETUDE_PLATFORM_LINUX
+
+#include "libetude/platform/factory.h"
+#include "libetude/platform/common.h"
+
+/* Linux 플랫폼 인터페이스 등록 */
+ETResult et_register_linux_interfaces(void) {
+    ETResult result = ET_SUCCESS;
+
+    /* 오디오 인터페이스 등록 (스텁) */
+    {
+        ETInterfaceMetadata metadata = {
+            .type = ET_INTERFACE_AUDIO,
+            .version = {1, 0, 0, 0},
+            .name = "Linux Audio Interface",
+            .description = "ALSA based audio interface",
+            .platform = ET_PLATFORM_LINUX,
+            .size = sizeof(void*), /* 실제 구조체 크기로 변경 예정 */
+            .flags = 0
+        };
+
+        result = et_register_interface_factory(ET_INTERFACE_AUDIO, ET_PLATFORM_LINUX,
+                                              NULL, NULL, &metadata);
+        if (result != ET_SUCCESS) return result;
+    }
+
+    /* 시스템 인터페이스 등록 (스텁) */
+    {
+        ETInterfaceMetadata metadata = {
+            .type = ET_INTERFACE_SYSTEM,
+            .version = {1, 0, 0, 0},
+            .name = "Linux System Interface",
+            .description = "Linux syscall based system interface",
+            .platform = ET_PLATFORM_LINUX,
+            .size = sizeof(void*), /* 실제 구조체 크기로 변경 예정 */
+            .flags = 0
+        };
+
+        result = et_register_interface_factory(ET_INTERFACE_SYSTEM, ET_PLATFORM_LINUX,
+                                              NULL, NULL, &metadata);
+        if (result != ET_SUCCESS) return result;
+    }
+
+    /* 스레딩 인터페이스 등록 (스텁) */
+    {
+        ETInterfaceMetadata metadata = {
+            .type = ET_INTERFACE_THREAD,
+            .version = {1, 0, 0, 0},
+            .name = "Linux Threading Interface",
+            .description = "POSIX pthread based threading interface",
+            .platform = ET_PLATFORM_LINUX,
+            .size = sizeof(void*), /* 실제 구조체 크기로 변경 예정 */
+            .flags = 0
+        };
+
+        result = et_register_interface_factory(ET_INTERFACE_THREAD, ET_PLATFORM_LINUX,
+                                              NULL, NULL, &metadata);
+        if (result != ET_SUCCESS) return result;
+    }
+
+    /* 메모리 인터페이스 등록 (스텁) */
+    {
+        ETInterfaceMetadata metadata = {
+            .type = ET_INTERFACE_MEMORY,
+            .version = {1, 0, 0, 0},
+            .name = "Linux Memory Interface",
+            .description = "POSIX mmap based memory interface",
+            .platform = ET_PLATFORM_LINUX,
+            .size = sizeof(void*), /* 실제 구조체 크기로 변경 예정 */
+            .flags = 0
+        };
+
+        result = et_register_interface_factory(ET_INTERFACE_MEMORY, ET_PLATFORM_LINUX,
+                                              NULL, NULL, &metadata);
+        if (result != ET_SUCCESS) return result;
+    }
+
+    /* 파일시스템 인터페이스 등록 (스텁) */
+    {
+        ETInterfaceMetadata metadata = {
+            .type = ET_INTERFACE_FILESYSTEM,
+            .version = {1, 0, 0, 0},
+            .name = "Linux Filesystem Interface",
+            .description = "POSIX file API based filesystem interface",
+            .platform = ET_PLATFORM_LINUX,
+            .size = sizeof(void*), /* 실제 구조체 크기로 변경 예정 */
+            .flags = 0
+        };
+
+        result = et_register_interface_factory(ET_INTERFACE_FILESYSTEM, ET_PLATFORM_LINUX,
+                                              NULL, NULL, &metadata);
+        if (result != ET_SUCCESS) return result;
+    }
+
+    /* 네트워크 인터페이스 등록 (스텁) */
+    {
+        ETInterfaceMetadata metadata = {
+            .type = ET_INTERFACE_NETWORK,
+            .version = {1, 0, 0, 0},
+            .name = "Linux Network Interface",
+            .description = "Linux socket/epoll based network interface",
+            .platform = ET_PLATFORM_LINUX,
+            .size = sizeof(void*), /* 실제 구조체 크기로 변경 예정 */
+            .flags = 0
+        };
+
+        result = et_register_interface_factory(ET_INTERFACE_NETWORK, ET_PLATFORM_LINUX,
+                                              NULL, NULL, &metadata);
+        if (result != ET_SUCCESS) return result;
+    }
+
+    /* 동적 라이브러리 인터페이스 등록 (스텁) */
+    {
+        ETInterfaceMetadata metadata = {
+            .type = ET_INTERFACE_DYNLIB,
+            .version = {1, 0, 0, 0},
+            .name = "Linux Dynamic Library Interface",
+            .description = "dlopen/dlsym based dynamic library interface",
+            .platform = ET_PLATFORM_LINUX,
+            .size = sizeof(void*), /* 실제 구조체 크기로 변경 예정 */
+            .flags = 0
+        };
+
+        result = et_register_interface_factory(ET_INTERFACE_DYNLIB, ET_PLATFORM_LINUX,
+                                              NULL, NULL, &metadata);
+        if (result != ET_SUCCESS) return result;
+    }
+
+    return ET_SUCCESS;
+}
+
+#endif /* LIBETUDE_PLATFORM_LINUX */

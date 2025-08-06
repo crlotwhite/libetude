@@ -62,6 +62,11 @@ set(LIBETUDE_CORE_SOURCES
     audio/effects/delay_plugin.c
     audio/effects/compressor_plugin.c
 
+    # 플랫폼 추상화 레이어
+    platform/common.c
+    platform/factory.c
+    platform/platform.c
+
     # 플랫폼별 구현
     platform/platform_utils.c
     platform/desktop_optimization.c
@@ -111,21 +116,33 @@ endif()
 # 플랫폼별 소스 파일
 if(WIN32)
     list(APPEND LIBETUDE_CORE_SOURCES
+        platform/windows/platform_init.c
         platform/windows/windows_audio.c
         platform/windows/windows_utils.c
     )
 elseif(APPLE)
-    list(APPEND LIBETUDE_CORE_SOURCES
-        platform/macos/macos_audio.c
-        platform/macos/macos_utils.c
-    )
+    if(IOS)
+        list(APPEND LIBETUDE_CORE_SOURCES
+            platform/ios/platform_init.c
+            platform/ios/ios_audio.c
+            platform/ios/ios_utils.c
+        )
+    else()
+        list(APPEND LIBETUDE_CORE_SOURCES
+            platform/macos/platform_init.c
+            platform/macos/macos_audio.c
+            platform/macos/macos_utils.c
+        )
+    endif()
 elseif(ANDROID)
     list(APPEND LIBETUDE_CORE_SOURCES
+        platform/android/platform_init.c
         platform/android/android_audio.c
         platform/android/android_utils.c
     )
 elseif(UNIX)
     list(APPEND LIBETUDE_CORE_SOURCES
+        platform/linux/platform_init.c
         platform/linux/linux_audio.c
         platform/linux/linux_utils.c
     )

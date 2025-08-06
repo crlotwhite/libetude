@@ -38,13 +38,22 @@ endif()
 
 # 플랫폼별 설정
 if(WIN32)
-    add_definitions(-DLIBETUDE_PLATFORM_WINDOWS)
+    add_definitions(-DLIBETUDE_PLATFORM_WINDOWS=1)
 elseif(APPLE)
-    add_definitions(-DLIBETUDE_PLATFORM_MACOS)
+    if(IOS)
+        add_definitions(-DLIBETUDE_PLATFORM_IOS=1)
+    else()
+        add_definitions(-DLIBETUDE_PLATFORM_MACOS=1)
+    endif()
 elseif(ANDROID)
-    add_definitions(-DLIBETUDE_PLATFORM_ANDROID)
+    add_definitions(-DLIBETUDE_PLATFORM_ANDROID=1)
 elseif(UNIX)
-    add_definitions(-DLIBETUDE_PLATFORM_LINUX)
+    add_definitions(-DLIBETUDE_PLATFORM_LINUX=1)
+endif()
+
+# 디버그 모드에서 플랫폼 디버그 정보 활성화
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_definitions(-DLIBETUDE_DEBUG=1)
 endif()
 
 # 하드웨어 최적화 옵션

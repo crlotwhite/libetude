@@ -169,6 +169,16 @@ if(NOT WIN32)
     target_link_libraries(fast_math_minimal_test m)
 endif()
 
+# 플랫폼 추상화 레이어 테스트 (독립적으로 실행 가능)
+add_executable(platform_test platform_test.c)
+target_link_libraries(platform_test libetude_static)
+target_include_directories(platform_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+if(NOT WIN32)
+    target_link_libraries(platform_test pthread m)
+endif()
+
 # 개별 테스트 실행 파일들 (독립적으로 실행 가능)
 create_unity_test(fast_math_test "unit/test_fast_math.c")
 # SIMD 커널 테스트는 SIMD 활성화 시에만 빌드
@@ -229,6 +239,7 @@ create_unity_test(integration_platform_test "integration/test_platform.c")
 include(CTest)
 
 # 테스트 등록
+add_test(NAME PlatformTest COMMAND platform_test)
 add_test(NAME TensorTest COMMAND tensor_test)
 # SIMD 테스트는 SIMD 활성화 시에만 등록
 if(LIBETUDE_ENABLE_SIMD)
