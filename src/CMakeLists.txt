@@ -67,6 +67,7 @@ set(LIBETUDE_CORE_SOURCES
     platform/factory.c
     platform/platform.c
     platform/audio_common.c
+    platform/system_common.c
 
     # 플랫폼별 구현
     platform/platform_utils.c
@@ -120,6 +121,7 @@ if(WIN32)
         platform/windows/platform_init.c
         platform/windows/windows_audio.c
         platform/windows/windows_utils.c
+        platform/windows/windows_system.c
     )
 elseif(APPLE)
     if(IOS)
@@ -134,6 +136,7 @@ elseif(APPLE)
             platform/macos/macos_audio.c
             platform/macos/macos_utils.c
             platform/macos/macos_compat.c
+            platform/macos/macos_system.c
         )
     endif()
 elseif(ANDROID)
@@ -147,6 +150,7 @@ elseif(UNIX)
         platform/linux/platform_init.c
         platform/linux/linux_audio.c
         platform/linux/linux_utils.c
+        platform/linux/linux_system.c
     )
 endif()
 
@@ -197,9 +201,9 @@ endif()
 
 # 링크 라이브러리
 if(WIN32)
-    target_link_libraries(libetude_static PRIVATE winmm dsound psapi)
+    target_link_libraries(libetude_static PRIVATE winmm dsound psapi pdh)
     if(NOT LIBETUDE_MINIMAL)
-        target_link_libraries(libetude_shared PRIVATE winmm dsound psapi)
+        target_link_libraries(libetude_shared PRIVATE winmm dsound psapi pdh)
     endif()
 elseif(APPLE)
     target_link_libraries(libetude_static PRIVATE "-framework AudioToolbox" "-framework CoreAudio" dl)
