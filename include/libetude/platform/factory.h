@@ -1,139 +1,176 @@
 /**
  * @file factory.h
- * @brief 플랫폼 추상화 레이어의 팩토리 패턴 기반 인터페이스 생성
- * @author LibEtude Team
+ * @brief 플랫폼 추상화 팩토리 인터페이스
+ * @author LibEtude Project
+ * @version 1.0.0
+ *
+ * 플랫폼별 구현체를 생성하고 관리하는 팩토리 패턴을 제공합니다.
  */
 
 #ifndef LIBETUDE_PLATFORM_FACTORY_H
 #define LIBETUDE_PLATFORM_FACTORY_H
 
-#include "common.h"
+#include "libetude/platform/common.h"
+#include "libetude/platform/audio.h"
+#include "libetude/types.h"
+#include "libetude/error.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* 전방 선언 */
-struct ETAudioInterface;
-struct ETSystemInterface;
-struct ETThreadInterface;
-struct ETMemoryInterface;
-struct ETFilesystemInterface;
-struct ETNetworkInterface;
-struct ETDynlibInterface;
+// ============================================================================
+// 플랫폼 팩토리 인터페이스
+// ============================================================================
 
-/* 인터페이스 타입 열거형 */
-typedef enum {
-    ET_INTERFACE_AUDIO = 0,
-    ET_INTERFACE_SYSTEM,
-    ET_INTERFACE_THREAD,
-    ET_INTERFACE_MEMORY,
-    ET_INTERFACE_FILESYSTEM,
-    ET_INTERFACE_NETWORK,
-    ET_INTERFACE_DYNLIB,
-    ET_INTERFACE_COUNT
-} ETInterfaceType;
+/**
+ * @brief 플랫폼 팩토리 구조체
+ */
+typedef struct ETPlatformFactory {
+    // 플랫폼 정보
+    ETPlatformType platform_type;
+    const char* platform_name;
 
-/* 인터페이스 버전 정보 */
-typedef struct {
-    uint32_t major;                /* 주 버전 */
-    uint32_t minor;                /* 부 버전 */
-    uint32_t patch;                /* 패치 버전 */
-    uint32_t build;                /* 빌드 번호 */
-} ETInterfaceVersion;
+    // 인터페이스 생성 함수들
+    ETResult (*create_audio_interface)(ETAudioInterface** interface);
+    void (*destroy_audio_interface)(ETAudioInterface* interface);
 
-/* 인터페이스 메타데이터 */
-typedef struct {
-    ETInterfaceType type;          /* 인터페이스 타입 */
-    ETInterfaceVersion version;    /* 인터페이스 버전 */
-    const char* name;              /* 인터페이스 이름 */
-    const char* description;       /* 인터페이스 설명 */
-    ETPlatformType platform;       /* 대상 플랫폼 */
-    uint32_t size;                 /* 구조체 크기 */
-    uint32_t flags;                /* 기능 플래그 */
-} ETInterfaceMetadata;
+    // 플랫폼 초기화/정리
+    ETResult (*initialize)(void);
+    void (*finalize)(void);
 
-/* 인터페이스 팩토리 함수 타입 */
-typedef ETResult (*ETInterfaceFactory)(void** interface, const ETInterfaceMetadata* metadata);
+    // 플랫폼별 확장 데이터
+    void* platform_data;
+} ETPlatformFactory;
 
-/* 인터페이스 소멸자 함수 타입 */
-typedef void (*ETInterfaceDestructor)(void* interface);
+// ============================================================================
+// 전역 팩토리 관리 함수
+// ============================================================================
 
-/* 플랫폼 인터페이스 레지스트리 */
-typedef struct {
-    ETInterfaceType type;          /* 인터페이스 타입 */
-    ETPlatformType platform;       /* 플랫폼 타입 */
-    ETInterfaceFactory factory;    /* 팩토리 함수 */
-    ETInterfaceDestructor destructor; /* 소멸자 함수 */
-    ETInterfaceMetadata metadata;  /* 메타데이터 */
-    bool is_available;             /* 사용 가능 여부 */
-} ETInterfaceRegistry;
+/**
+ * @brief 플랫폼 팩토리 시스템을 초기화합니다
+ * @return 성공시 ET_SUCCESS, 실패시 오류 코드
+ */
+ETResult et_platform_factory_init(void);
 
-/* 플랫폼 컨텍스트 구조체 */
-typedef struct {
-    ETPlatformInfo platform_info;                    /* 플랫폼 정보 */
-    ETInterfaceRegistry registry[ET_INTERFACE_COUNT]; /* 인터페이스 레지스트리 */
-    void* interfaces[ET_INTERFACE_COUNT];            /* 생성된 인터페이스들 */
-    bool initialized;                                /* 초기화 상태 */
-    ETDetailedError last_error;                      /* 마지막 오류 */
-} ETPlatformContext;
+/**
+ * @brief 플랫폼 팩토리 시스템을 정리합니다
+ */
+void et_platform_factory_cleanup(void);
 
-/* 전역 플랫폼 컨텍스트 */
-extern ETPlatformContext g_platform_context;
+/**
+ * @brief 현재 플랫폼에 맞는 팩토리를 가져옵니다
+ * @return 플랫폼 팩토리 포인터 (실패시 NULL)
+ */
+const ETPlatformFactory* et_platform_factory_get_current(void);
 
-/* 플랫폼 초기화 */
-ETResult et_platform_initialize(void);
+/**
+ * @brief 특정 플랫폼의 팩토리를 가져옵니다
+ * @param platform_type 플랫폼 타입
+ * @return 플랫폼 팩토리 포인터 (실패시 NULL)
+ */
+const ETPlatformFactory* et_platform_factory_get(ETPlatformType platform_type);
 
-/* 플랫폼 정리 */
-void et_platform_finalize(void);
+/**
+ * @brief 사용 가능한 플랫폼 목록을 가져옵니다
+ * @param platforms 플랫폼 타입 배열 (출력)
+ * @param count 배열 크기 (입력) / 실제 플랫폼 수 (출력)
+ * @return 성공시 ET_SUCCESS, 실패시 오류 코드
+ */
+ETResult et_platform_factory_list_available(ETPlatformType* platforms, int* count);
 
-/* 인터페이스 팩토리 등록 */
-ETResult et_register_interface_factory(ETInterfaceType type, ETPlatformType platform,
-                                      ETInterfaceFactory factory, ETInterfaceDestructor destructor,
-                                      const ETInterfaceMetadata* metadata);
+// ============================================================================
+// 편의 함수들
+// ============================================================================
 
-/* 인터페이스 생성 */
-ETResult et_create_interface(ETInterfaceType type, void** interface);
+/**
+ * @brief 현재 플랫폼의 오디오 인터페이스를 생성합니다
+ * @param interface 생성된 인터페이스 포인터 (출력)
+ * @return 성공시 ET_SUCCESS, 실패시 오류 코드
+ */
+ETResult et_create_audio_interface(ETAudioInterface** interface);
 
-/* 인터페이스 소멸 */
-void et_destroy_interface(ETInterfaceType type, void* interface);
+/**
+ * @brief 오디오 인터페이스를 해제합니다
+ * @param interface 해제할 인터페이스
+ */
+void et_destroy_audio_interface(ETAudioInterface* interface);
 
-/* 인터페이스 조회 */
-void* et_get_interface(ETInterfaceType type);
+/**
+ * @brief 현재 플랫폼을 자동 감지합니다
+ * @return 감지된 플랫폼 타입
+ */
+ETPlatformType et_platform_detect(void);
 
-/* 인터페이스 사용 가능 여부 확인 */
-bool et_is_interface_available(ETInterfaceType type);
+/**
+ * @brief 플랫폼 타입을 문자열로 변환합니다
+ * @param platform_type 플랫폼 타입
+ * @return 플랫폼 이름 문자열
+ */
+const char* et_platform_type_to_string(ETPlatformType platform_type);
 
-/* 인터페이스 메타데이터 조회 */
-const ETInterfaceMetadata* et_get_interface_metadata(ETInterfaceType type);
+/**
+ * @brief 문자열을 플랫폼 타입으로 변환합니다
+ * @param platform_name 플랫폼 이름 문자열
+ * @return 플랫폼 타입 (실패시 ET_PLATFORM_UNKNOWN)
+ */
+ETPlatformType et_platform_type_from_string(const char* platform_name);
 
-/* 버전 호환성 검사 */
-bool et_is_interface_compatible(const ETInterfaceVersion* required, const ETInterfaceVersion* provided);
+// ============================================================================
+// 플랫폼별 팩토리 등록 함수 (내부 사용)
+// ============================================================================
 
-/* 인터페이스 타입을 문자열로 변환 */
-const char* et_interface_type_to_string(ETInterfaceType type);
+/**
+ * @brief 플랫폼 팩토리를 등록합니다 (내부 사용)
+ * @param factory 등록할 팩토리
+ * @return 성공시 ET_SUCCESS, 실패시 오류 코드
+ */
+ETResult et_platform_factory_register(const ETPlatformFactory* factory);
 
-/* 플랫폼별 자동 등록 함수들 */
-#ifdef LIBETUDE_PLATFORM_WINDOWS
-ETResult et_register_windows_interfaces(void);
+/**
+ * @brief 플랫폼 팩토리 등록을 해제합니다 (내부 사용)
+ * @param platform_type 해제할 플랫폼 타입
+ */
+void et_platform_factory_unregister(ETPlatformType platform_type);
+
+// ============================================================================
+// 플랫폼별 팩토리 선언 (각 플랫폼에서 구현)
+// ============================================================================
+
+#ifdef _WIN32
+/**
+ * @brief Windows 플랫폼 팩토리를 가져옵니다
+ * @return Windows 팩토리 포인터
+ */
+const ETPlatformFactory* et_platform_factory_windows(void);
 #endif
 
-#ifdef LIBETUDE_PLATFORM_LINUX
-ETResult et_register_linux_interfaces(void);
+#ifdef __linux__
+/**
+ * @brief Linux 플랫폼 팩토리를 가져옵니다
+ * @return Linux 팩토리 포인터
+ */
+const ETPlatformFactory* et_platform_factory_linux(void);
 #endif
 
-#ifdef LIBETUDE_PLATFORM_MACOS
-ETResult et_register_macos_interfaces(void);
+#ifdef __APPLE__
+/**
+ * @brief macOS 플랫폼 팩토리를 가져옵니다
+ * @return macOS 팩토리 포인터
+ */
+const ETPlatformFactory* et_platform_factory_macos(void);
 #endif
 
-/* 디버그 및 진단 함수들 */
-#ifdef LIBETUDE_DEBUG
-void et_dump_platform_info(void);
-void et_dump_interface_registry(void);
+#ifdef __ANDROID__
+/**
+ * @brief Android 플랫폼 팩토리를 가져옵니다
+ * @return Android 팩토리 포인터
+ */
+const ETPlatformFactory* et_platform_factory_android(void);
 #endif
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* LIBETUDE_PLATFORM_FACTORY_H */
+#endif // LIBETUDE_PLATFORM_FACTORY_H

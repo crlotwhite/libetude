@@ -1,312 +1,319 @@
 /**
  * @file factory.c
- * @brief 플랫폼 추상화 레이어의 팩토리 패턴 구현
- * @author LibEtude Team
+ * @brief 플랫폼 추상화 팩토리 구현
+ * @author LibEtude Project
+ * @version 1.0.0
  */
 
 #include "libetude/platform/factory.h"
 #include "libetude/platform/common.h"
+#include "libetude/error.h"
 #include <string.h>
 #include <stdlib.h>
 
-/* 전역 플랫폼 컨텍스트 */
-ETPlatformContext g_platform_context = {0};
+// ============================================================================
+// 전역 변수
+// ============================================================================
 
-/* 인터페이스 타입 이름 배열 */
-static const char* interface_type_names[ET_INTERFACE_COUNT] = {
-    "Audio",
-    "System",
-    "Thread",
-    "Memory",
-    "Filesystem",
-    "Network",
-    "DynamicLibrary"
-};
+/** 등록된 팩토리들 */
+static const ETPlatformFactory* g_registered_factories[8] = { NULL };
+static int g_factory_count = 0;
+static bool g_factory_initialized = false;
 
-/* 플랫폼 초기화 */
-ETResult et_platform_initialize(void) {
-    if (g_platform_context.initialized) {
-        return ET_SUCCESS;
+// ============================================================================
+// 내부 함수
+// ============================================================================
+
+/**
+ * @brief 플랫폼 자동 감지
+ */
+ETPlatformType et_platform_detect(void) {
+    ETPlatformInfo info;
+    if (et_platform_get_info(&info) == ET_SUCCESS) {
+        return info.type;
     }
-
-    /* 플랫폼 정보 수집 */
-    ETResult result = et_get_platform_info(&g_platform_context.platform_info);
-    if (result != ET_SUCCESS) {
-        et_set_detailed_error(&g_platform_context.last_error, result, 0,
-                             "Failed to get platform information", __FILE__, __LINE__, __func__);
-        return result;
-    }
-
-    /* 레지스트리 초기화 */
-    memset(g_platform_context.registry, 0, sizeof(g_platform_context.registry));
-    memset(g_platform_context.interfaces, 0, sizeof(g_platform_context.interfaces));
-
-    /* 플랫폼별 인터페이스 등록 */
-    ETPlatformType platform = g_platform_context.platform_info.type;
-
-    switch (platform) {
-#ifdef LIBETUDE_PLATFORM_WINDOWS
-        case ET_PLATFORM_WINDOWS:
-            result = et_register_windows_interfaces();
-            break;
-#endif
-#ifdef LIBETUDE_PLATFORM_LINUX
-        case ET_PLATFORM_LINUX:
-            result = et_register_linux_interfaces();
-            break;
-#endif
-#ifdef LIBETUDE_PLATFORM_MACOS
-        case ET_PLATFORM_MACOS:
-            result = et_register_macos_interfaces();
-            break;
-#endif
-        default:
-            result = ET_ERROR_NOT_SUPPORTED;
-            et_set_detailed_error(&g_platform_context.last_error, result, 0,
-                                 "Unsupported platform", __FILE__, __LINE__, __func__);
-            return result;
-    }
-
-    if (result != ET_SUCCESS) {
-        et_set_detailed_error(&g_platform_context.last_error, result, 0,
-                             "Failed to register platform interfaces", __FILE__, __LINE__, __func__);
-        return result;
-    }
-
-    g_platform_context.initialized = true;
-    return ET_SUCCESS;
+    return ET_PLATFORM_UNKNOWN;
 }
 
-/* 플랫폼 정리 */
-void et_platform_finalize(void) {
-    if (!g_platform_context.initialized) {
-        return;
+/**
+ * @brief 플랫폼 타입을 문자열로 변환
+ */
+const char* et_platform_type_to_string(ETPlatformType platform_type) {
+    switch (platform_type) {
+        case ET_PLATFORM_WINDOWS: return "Windows";
+        case ET_PLATFORM_LINUX: return "Linux";
+        case ET_PLATFORM_MACOS: return "macOS";
+        case ET_PLATFORM_ANDROID: return "Android";
+        case ET_PLATFORM_IOS: return "iOS";
+        default: return "Unknown";
+    }
+}
+
+/**
+ * @brief 문자열을 플랫폼 타입으로 변환
+ */
+ETPlatformType et_platform_type_from_string(const char* platform_name) {
+    if (!platform_name) return ET_PLATFORM_UNKNOWN;
+
+    if (strcmp(platform_name, "Windows") == 0) return ET_PLATFORM_WINDOWS;
+    if (strcmp(platform_name, "Linux") == 0) return ET_PLATFORM_LINUX;
+    if (strcmp(platform_name, "macOS") == 0) return ET_PLATFORM_MACOS;
+    if (strcmp(platform_name, "Android") == 0) return ET_PLATFORM_ANDROID;
+    if (strcmp(platform_name, "iOS") == 0) return ET_PLATFORM_IOS;
+
+    return ET_PLATFORM_UNKNOWN;
+}
+
+// ============================================================================
+// 팩토리 등록 및 관리
+// ============================================================================
+
+/**
+ * @brief 플랫폼 팩토리를 등록합니다
+ */
+ETResult et_platform_factory_register(const ETPlatformFactory* factory) {
+    if (!factory) {
+        ET_SET_ERROR(ET_ERROR_INVALID_ARGUMENT, "factory 포인터가 NULL입니다");
+        return ET_ERROR_INVALID_ARGUMENT;
     }
 
-    /* 생성된 인터페이스들 정리 */
-    for (int i = 0; i < ET_INTERFACE_COUNT; i++) {
-        if (g_platform_context.interfaces[i]) {
-            et_destroy_interface((ETInterfaceType)i, g_platform_context.interfaces[i]);
+    if (g_factory_count >= 8) {
+        ET_SET_ERROR(ET_ERROR_BUFFER_FULL, "등록 가능한 팩토리 수를 초과했습니다");
+        return ET_ERROR_BUFFER_FULL;
+    }
+
+    // 중복 등록 확인
+    for (int i = 0; i < g_factory_count; i++) {
+        if (g_registered_factories[i] &&
+            g_registered_factories[i]->platform_type == factory->platform_type) {
+            ET_SET_ERROR(ET_ERROR_ALREADY_INITIALIZED, "이미 등록된 플랫폼입니다: %s",
+                        et_platform_type_to_string(factory->platform_type));
+            return ET_ERROR_ALREADY_INITIALIZED;
         }
     }
 
-    /* 컨텍스트 초기화 */
-    memset(&g_platform_context, 0, sizeof(g_platform_context));
-}
+    g_registered_factories[g_factory_count] = factory;
+    g_factory_count++;
 
-/* 인터페이스 팩토리 등록 */
-ETResult et_register_interface_factory(ETInterfaceType type, ETPlatformType platform,
-                                      ETInterfaceFactory factory, ETInterfaceDestructor destructor,
-                                      const ETInterfaceMetadata* metadata) {
-    if (type >= ET_INTERFACE_COUNT || !factory || !metadata) {
-        return ET_ERROR_INVALID_PARAMETER;
-    }
-
-    ETInterfaceRegistry* registry = &g_platform_context.registry[type];
-
-    registry->type = type;
-    registry->platform = platform;
-    registry->factory = factory;
-    registry->destructor = destructor;
-    registry->metadata = *metadata;
-    registry->is_available = true;
-
+    ET_LOG_INFO("플랫폼 팩토리 등록됨: %s", factory->platform_name);
     return ET_SUCCESS;
 }
 
-/* 인터페이스 생성 */
-ETResult et_create_interface(ETInterfaceType type, void** interface) {
-    if (type >= ET_INTERFACE_COUNT || !interface) {
-        return ET_ERROR_INVALID_PARAMETER;
+/**
+ * @brief 플랫폼 팩토리 등록을 해제합니다
+ */
+void et_platform_factory_unregister(ETPlatformType platform_type) {
+    for (int i = 0; i < g_factory_count; i++) {
+        if (g_registered_factories[i] &&
+            g_registered_factories[i]->platform_type == platform_type) {
+
+            // 배열에서 제거 (뒤의 요소들을 앞으로 이동)
+            for (int j = i; j < g_factory_count - 1; j++) {
+                g_registered_factories[j] = g_registered_factories[j + 1];
+            }
+            g_registered_factories[g_factory_count - 1] = NULL;
+            g_factory_count--;
+
+            ET_LOG_INFO("플랫폼 팩토리 등록 해제됨: %s",
+                       et_platform_type_to_string(platform_type));
+            break;
+        }
+    }
+}
+
+/**
+ * @brief 플랫폼 팩토리 시스템을 초기화합니다
+ */
+ETResult et_platform_factory_init(void) {
+    if (g_factory_initialized) {
+        return ET_SUCCESS;
     }
 
-    if (!g_platform_context.initialized) {
-        ETResult result = et_platform_initialize();
+    // 배열 초기화
+    memset(g_registered_factories, 0, sizeof(g_registered_factories));
+    g_factory_count = 0;
+
+    // 플랫폼별 팩토리 등록
+    ETResult result = ET_SUCCESS;
+
+#ifdef _WIN32
+    const ETPlatformFactory* windows_factory = et_platform_factory_windows();
+    if (windows_factory) {
+        result = et_platform_factory_register(windows_factory);
         if (result != ET_SUCCESS) {
+            ET_LOG_ERROR("Windows 팩토리 등록 실패");
             return result;
         }
     }
-
-    ETInterfaceRegistry* registry = &g_platform_context.registry[type];
-
-    if (!registry->is_available || !registry->factory) {
-        et_set_detailed_error(&g_platform_context.last_error, ET_ERROR_NOT_SUPPORTED, 0,
-                             "Interface not available", __FILE__, __LINE__, __func__);
-        return ET_ERROR_NOT_SUPPORTED;
-    }
-
-    /* 이미 생성된 인터페이스가 있으면 반환 */
-    if (g_platform_context.interfaces[type]) {
-        *interface = g_platform_context.interfaces[type];
-        return ET_SUCCESS;
-    }
-
-    /* 새 인터페이스 생성 */
-    ETResult result = registry->factory(interface, &registry->metadata);
-    if (result == ET_SUCCESS) {
-        g_platform_context.interfaces[type] = *interface;
-    } else {
-        et_set_detailed_error(&g_platform_context.last_error, result, 0,
-                             "Failed to create interface", __FILE__, __LINE__, __func__);
-    }
-
-    return result;
-}
-
-/* 인터페이스 소멸 */
-void et_destroy_interface(ETInterfaceType type, void* interface) {
-    if (type >= ET_INTERFACE_COUNT || !interface) {
-        return;
-    }
-
-    ETInterfaceRegistry* registry = &g_platform_context.registry[type];
-
-    if (registry->destructor) {
-        registry->destructor(interface);
-    }
-
-    if (g_platform_context.interfaces[type] == interface) {
-        g_platform_context.interfaces[type] = NULL;
-    }
-}
-
-/* 인터페이스 조회 */
-void* et_get_interface(ETInterfaceType type) {
-    if (type >= ET_INTERFACE_COUNT) {
-        return NULL;
-    }
-
-    /* 인터페이스가 없으면 생성 시도 */
-    if (!g_platform_context.interfaces[type]) {
-        void* interface = NULL;
-        if (et_create_interface(type, &interface) != ET_SUCCESS) {
-            return NULL;
-        }
-    }
-
-    return g_platform_context.interfaces[type];
-}
-
-/* 인터페이스 사용 가능 여부 확인 */
-bool et_is_interface_available(ETInterfaceType type) {
-    if (type >= ET_INTERFACE_COUNT) {
-        return false;
-    }
-
-    if (!g_platform_context.initialized) {
-        if (et_platform_initialize() != ET_SUCCESS) {
-            return false;
-        }
-    }
-
-    return g_platform_context.registry[type].is_available;
-}
-
-/* 인터페이스 메타데이터 조회 */
-const ETInterfaceMetadata* et_get_interface_metadata(ETInterfaceType type) {
-    if (type >= ET_INTERFACE_COUNT) {
-        return NULL;
-    }
-
-    if (!g_platform_context.initialized) {
-        if (et_platform_initialize() != ET_SUCCESS) {
-            return NULL;
-        }
-    }
-
-    return &g_platform_context.registry[type].metadata;
-}
-
-/* 버전 호환성 검사 */
-bool et_is_interface_compatible(const ETInterfaceVersion* required, const ETInterfaceVersion* provided) {
-    if (!required || !provided) {
-        return false;
-    }
-
-    /* 주 버전이 다르면 호환되지 않음 */
-    if (required->major != provided->major) {
-        return false;
-    }
-
-    /* 제공된 부 버전이 요구된 것보다 낮으면 호환되지 않음 */
-    if (provided->minor < required->minor) {
-        return false;
-    }
-
-    /* 부 버전이 같으면 패치 버전도 확인 */
-    if (provided->minor == required->minor && provided->patch < required->patch) {
-        return false;
-    }
-
-    return true;
-}
-
-/* 인터페이스 타입을 문자열로 변환 */
-const char* et_interface_type_to_string(ETInterfaceType type) {
-    if (type >= ET_INTERFACE_COUNT) {
-        return "Unknown";
-    }
-
-    return interface_type_names[type];
-}
-
-/* 디버그 및 진단 함수들 */
-#ifdef LIBETUDE_DEBUG
-#include <stdio.h>
-
-void et_dump_platform_info(void) {
-    if (!g_platform_context.initialized) {
-        printf("Platform not initialized\n");
-        return;
-    }
-
-    ETPlatformInfo* info = &g_platform_context.platform_info;
-
-    printf("=== Platform Information ===\n");
-    printf("Platform: %s (%d)\n", info->name, info->type);
-    printf("Version: %s\n", info->version);
-    printf("Architecture: %d\n", info->arch);
-    printf("CPU Count: %u\n", info->cpu_count);
-    printf("Total Memory: %llu bytes\n", (unsigned long long)info->total_memory);
-    printf("Hardware Features: 0x%08X\n", info->features);
-
-    /* 지원 기능 상세 출력 */
-    printf("Supported Features:\n");
-    if (info->features & ET_FEATURE_SSE) printf("  - SSE\n");
-    if (info->features & ET_FEATURE_SSE2) printf("  - SSE2\n");
-    if (info->features & ET_FEATURE_SSE3) printf("  - SSE3\n");
-    if (info->features & ET_FEATURE_SSSE3) printf("  - SSSE3\n");
-    if (info->features & ET_FEATURE_SSE4_1) printf("  - SSE4.1\n");
-    if (info->features & ET_FEATURE_SSE4_2) printf("  - SSE4.2\n");
-    if (info->features & ET_FEATURE_AVX) printf("  - AVX\n");
-    if (info->features & ET_FEATURE_AVX2) printf("  - AVX2\n");
-    if (info->features & ET_FEATURE_AVX512) printf("  - AVX512\n");
-    if (info->features & ET_FEATURE_NEON) printf("  - NEON\n");
-    if (info->features & ET_FEATURE_FMA) printf("  - FMA\n");
-    printf("\n");
-}
-
-void et_dump_interface_registry(void) {
-    if (!g_platform_context.initialized) {
-        printf("Platform not initialized\n");
-        return;
-    }
-
-    printf("=== Interface Registry ===\n");
-    for (int i = 0; i < ET_INTERFACE_COUNT; i++) {
-        ETInterfaceRegistry* registry = &g_platform_context.registry[i];
-
-        printf("Interface: %s\n", et_interface_type_to_string((ETInterfaceType)i));
-        printf("  Available: %s\n", registry->is_available ? "Yes" : "No");
-        printf("  Platform: %d\n", registry->platform);
-        printf("  Version: %u.%u.%u.%u\n",
-               registry->metadata.version.major,
-               registry->metadata.version.minor,
-               registry->metadata.version.patch,
-               registry->metadata.version.build);
-        printf("  Size: %u bytes\n", registry->metadata.size);
-        printf("  Created: %s\n", g_platform_context.interfaces[i] ? "Yes" : "No");
-        printf("\n");
-    }
-}
 #endif
+
+#ifdef __linux__
+    const ETPlatformFactory* linux_factory = et_platform_factory_linux();
+    if (linux_factory) {
+        result = et_platform_factory_register(linux_factory);
+        if (result != ET_SUCCESS) {
+            ET_LOG_ERROR("Linux 팩토리 등록 실패");
+            return result;
+        }
+    }
+#endif
+
+#ifdef __APPLE__
+    const ETPlatformFactory* macos_factory = et_platform_factory_macos();
+    if (macos_factory) {
+        result = et_platform_factory_register(macos_factory);
+        if (result != ET_SUCCESS) {
+            ET_LOG_ERROR("macOS 팩토리 등록 실패");
+            return result;
+        }
+    }
+#endif
+
+#ifdef __ANDROID__
+    const ETPlatformFactory* android_factory = et_platform_factory_android();
+    if (android_factory) {
+        result = et_platform_factory_register(android_factory);
+        if (result != ET_SUCCESS) {
+            ET_LOG_ERROR("Android 팩토리 등록 실패");
+            return result;
+        }
+    }
+#endif
+
+    g_factory_initialized = true;
+    ET_LOG_INFO("플랫폼 팩토리 시스템 초기화 완료 (%d개 팩토리 등록)", g_factory_count);
+
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief 플랫폼 팩토리 시스템을 정리합니다
+ */
+void et_platform_factory_cleanup(void) {
+    if (!g_factory_initialized) {
+        return;
+    }
+
+    // 등록된 팩토리들 정리
+    for (int i = 0; i < g_factory_count; i++) {
+        if (g_registered_factories[i] && g_registered_factories[i]->finalize) {
+            g_registered_factories[i]->finalize();
+        }
+    }
+
+    memset(g_registered_factories, 0, sizeof(g_registered_factories));
+    g_factory_count = 0;
+    g_factory_initialized = false;
+
+    ET_LOG_INFO("플랫폼 팩토리 시스템 정리 완료");
+}
+
+// ============================================================================
+// 팩토리 조회 함수
+// ============================================================================
+
+/**
+ * @brief 현재 플랫폼에 맞는 팩토리를 가져옵니다
+ */
+const ETPlatformFactory* et_platform_factory_get_current(void) {
+    if (!g_factory_initialized) {
+        if (et_platform_factory_init() != ET_SUCCESS) {
+            return NULL;
+        }
+    }
+
+    ETPlatformType current_platform = et_platform_detect();
+    return et_platform_factory_get(current_platform);
+}
+
+/**
+ * @brief 특정 플랫폼의 팩토리를 가져옵니다
+ */
+const ETPlatformFactory* et_platform_factory_get(ETPlatformType platform_type) {
+    if (!g_factory_initialized) {
+        if (et_platform_factory_init() != ET_SUCCESS) {
+            return NULL;
+        }
+    }
+
+    for (int i = 0; i < g_factory_count; i++) {
+        if (g_registered_factories[i] &&
+            g_registered_factories[i]->platform_type == platform_type) {
+            return g_registered_factories[i];
+        }
+    }
+
+    ET_SET_ERROR(ET_ERROR_NOT_FOUND, "플랫폼 팩토리를 찾을 수 없습니다: %s",
+                et_platform_type_to_string(platform_type));
+    return NULL;
+}
+
+/**
+ * @brief 사용 가능한 플랫폼 목록을 가져옵니다
+ */
+ETResult et_platform_factory_list_available(ETPlatformType* platforms, int* count) {
+    if (!platforms || !count) {
+        ET_SET_ERROR(ET_ERROR_INVALID_ARGUMENT, "platforms 또는 count 포인터가 NULL입니다");
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!g_factory_initialized) {
+        if (et_platform_factory_init() != ET_SUCCESS) {
+            return ET_ERROR_NOT_INITIALIZED;
+        }
+    }
+
+    int available_count = 0;
+    int max_count = *count;
+
+    for (int i = 0; i < g_factory_count && available_count < max_count; i++) {
+        if (g_registered_factories[i]) {
+            platforms[available_count] = g_registered_factories[i]->platform_type;
+            available_count++;
+        }
+    }
+
+    *count = available_count;
+    return ET_SUCCESS;
+}
+
+// ============================================================================
+// 편의 함수들
+// ============================================================================
+
+/**
+ * @brief 현재 플랫폼의 오디오 인터페이스를 생성합니다
+ */
+ETResult et_create_audio_interface(ETAudioInterface** interface) {
+    if (!interface) {
+        ET_SET_ERROR(ET_ERROR_INVALID_ARGUMENT, "interface 포인터가 NULL입니다");
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    const ETPlatformFactory* factory = et_platform_factory_get_current();
+    if (!factory) {
+        ET_SET_ERROR(ET_ERROR_NOT_FOUND, "현재 플랫폼의 팩토리를 찾을 수 없습니다");
+        return ET_ERROR_NOT_FOUND;
+    }
+
+    if (!factory->create_audio_interface) {
+        ET_SET_ERROR(ET_ERROR_NOT_IMPLEMENTED, "오디오 인터페이스 생성이 구현되지 않았습니다");
+        return ET_ERROR_NOT_IMPLEMENTED;
+    }
+
+    return factory->create_audio_interface(interface);
+}
+
+/**
+ * @brief 오디오 인터페이스를 해제합니다
+ */
+void et_destroy_audio_interface(ETAudioInterface* interface) {
+    if (!interface) {
+        return;
+    }
+
+    const ETPlatformFactory* factory = et_platform_factory_get_current();
+    if (factory && factory->destroy_audio_interface) {
+        factory->destroy_audio_interface(interface);
+    }
+}
