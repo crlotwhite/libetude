@@ -79,7 +79,7 @@ cmake --build build --parallel
 
 **macOS 컴파일러 최적화:**
 - **Universal Binary**: x86_64 + arm64 지원
-- **Apple Silicon 네이티브**: -mcpu=apple-m1 최적화
+- **Apple Silicon 네이티브**: -march=armv8-a 최적화
 - **Metal GPU 가속**: 활성화됨
 
 #### 기타 플랫폼
@@ -136,7 +136,7 @@ cmake -B build -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icx -DCMAKE_BUILD_TYP
 ### macOS Apple Silicon 최적화
 ```bash
 # Apple Silicon 네이티브 빌드
-cmake -B build -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_C_FLAGS="-mcpu=apple-m1 -mtune=native -O3" -DCMAKE_CXX_FLAGS="-mcpu=apple-m1 -mtune=native -O3" -DCMAKE_BUILD_TYPE=Release
+cmake -B build -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_C_FLAGS="-march=armv8-a -mtune=native -O3" -DCMAKE_CXX_FLAGS="-march=armv8-a -mtune=native -O3" -DCMAKE_BUILD_TYPE=Release
 
 # Universal Binary (Intel + Apple Silicon)
 cmake -B build -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -DCMAKE_BUILD_TYPE=Release

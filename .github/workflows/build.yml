@@ -123,8 +123,6 @@ jobs:
           -DCMAKE_CXX_COMPILER=clang++ \
           -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" \
           -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
-          -DCMAKE_C_FLAGS="-march=native -mtune=native" \
-          -DCMAKE_CXX_FLAGS="-march=native -mtune=native" \
           -DLIBETUDE_BUILD_TESTS=ON \
           -DLIBETUDE_BUILD_EXAMPLES=OFF \
           -DLIBETUDE_BUILD_TOOLS=OFF \
@@ -136,17 +134,17 @@ jobs:
     - name: CMake 구성 (Windows MSVC)
       if: runner.os == 'Windows' && matrix.compiler == 'msvc'
       run: |
-        cmake -B build \
-          -G "Visual Studio 17 2022" \
-          -A x64 \
-          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
-          -DCMAKE_C_FLAGS="/arch:AVX2 /O2" \
-          -DCMAKE_CXX_FLAGS="/arch:AVX2 /O2" \
-          -DLIBETUDE_BUILD_TESTS=ON \
-          -DLIBETUDE_BUILD_EXAMPLES=OFF \
-          -DLIBETUDE_BUILD_TOOLS=OFF \
-          -DLIBETUDE_BUILD_BINDINGS=OFF \
-          -DLIBETUDE_ENABLE_SIMD=ON \
+        cmake -B build `
+          -G "Visual Studio 17 2022" `
+          -A x64 `
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
+          -DCMAKE_C_FLAGS="/arch:AVX2 /O2" `
+          -DCMAKE_CXX_FLAGS="/arch:AVX2 /O2" `
+          -DLIBETUDE_BUILD_TESTS=ON `
+          -DLIBETUDE_BUILD_EXAMPLES=OFF `
+          -DLIBETUDE_BUILD_TOOLS=OFF `
+          -DLIBETUDE_BUILD_BINDINGS=OFF `
+          -DLIBETUDE_ENABLE_SIMD=ON `
           -DLIBETUDE_ENABLE_GPU=OFF
 
     # CMake 구성 (Windows MinGW - 호환성)
@@ -318,17 +316,17 @@ jobs:
     - name: Intel C++ 컴파일러로 CMake 구성
       run: |
         call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
-        cmake -B build-intel \
-          -G "Visual Studio 17 2022" \
-          -A x64 \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_C_COMPILER=icx \
-          -DCMAKE_CXX_COMPILER=icx \
-          -DCMAKE_C_FLAGS="/arch:AVX2 /O3 /Qipo" \
-          -DCMAKE_CXX_FLAGS="/arch:AVX2 /O3 /Qipo" \
-          -DLIBETUDE_BUILD_TESTS=ON \
-          -DLIBETUDE_BUILD_TOOLS=ON \
-          -DLIBETUDE_ENABLE_SIMD=ON \
+        cmake -B build-intel ^
+          -G "Visual Studio 17 2022" ^
+          -A x64 ^
+          -DCMAKE_BUILD_TYPE=Release ^
+          -DCMAKE_C_COMPILER=icx ^
+          -DCMAKE_CXX_COMPILER=icx ^
+          -DCMAKE_C_FLAGS="/arch:AVX2 /O3 /Qipo" ^
+          -DCMAKE_CXX_FLAGS="/arch:AVX2 /O3 /Qipo" ^
+          -DLIBETUDE_BUILD_TESTS=ON ^
+          -DLIBETUDE_BUILD_TOOLS=ON ^
+          -DLIBETUDE_ENABLE_SIMD=ON ^
           -DLIBETUDE_ENABLE_GPU=OFF
       shell: cmd
 
@@ -418,9 +416,9 @@ jobs:
     - name: Apple Silicon 최적화 의존성 설치
       run: |
         brew install cmake lz4 zstd
-        # Apple Silicon 전용 최적화 플래그 설정
-        echo "CFLAGS=-mcpu=apple-m1 -mtune=native" >> $GITHUB_ENV
-        echo "CXXFLAGS=-mcpu=apple-m1 -mtune=native" >> $GITHUB_ENV
+        # Apple Silicon 전용 최적화 플래그 설정 (안전한 ARM64 최적화)
+        echo "CFLAGS=-march=armv8-a -mtune=native" >> $GITHUB_ENV
+        echo "CXXFLAGS=-march=armv8-a -mtune=native" >> $GITHUB_ENV
 
     - name: Apple Silicon 네이티브 빌드 구성
       run: |
@@ -430,8 +428,8 @@ jobs:
           -DCMAKE_CXX_COMPILER=clang++ \
           -DCMAKE_OSX_ARCHITECTURES=arm64 \
           -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
-          -DCMAKE_C_FLAGS="-mcpu=apple-m1 -mtune=native -O3" \
-          -DCMAKE_CXX_FLAGS="-mcpu=apple-m1 -mtune=native -O3" \
+          -DCMAKE_C_FLAGS="-march=armv8-a -mtune=native -O3" \
+          -DCMAKE_CXX_FLAGS="-march=armv8-a -mtune=native -O3" \
           -DLIBETUDE_BUILD_TESTS=ON \
           -DLIBETUDE_BUILD_TOOLS=ON \
           -DLIBETUDE_ENABLE_SIMD=ON \
@@ -520,7 +518,7 @@ jobs:
         echo "- **Windows Intel C++**: /arch:AVX2 /O3 /Qipo (Intel 최적화)" >> performance_summary.md
         echo "- **Windows MinGW**: -march=native -mtune=native (호환성)" >> performance_summary.md
         echo "- **macOS Clang**: -march=native -mtune=native (Apple 최적화)" >> performance_summary.md
-        echo "- **macOS Apple Silicon**: -mcpu=apple-m1 -mtune=native (네이티브)" >> performance_summary.md
+        echo "- **macOS Apple Silicon**: -march=armv8-a -mtune=native (네이티브)" >> performance_summary.md
         echo "- **Linux GCC**: -march=native -mtune=native (표준)" >> performance_summary.md
         echo "" >> performance_summary.md
         echo "### 권장 사용 시나리오" >> performance_summary.md
