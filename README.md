@@ -1,6 +1,18 @@
 # LibEtude
 
+[![Build Status](https://github.com/your-org/libetude/workflows/Build/badge.svg)](https://github.com/your-org/libetude/actions)
+[![Windows MSVC](https://github.com/your-org/libetude/workflows/Build/badge.svg?event=push&branch=main)](https://github.com/your-org/libetude/actions)
+[![macOS Apple Silicon](https://github.com/your-org/libetude/workflows/Build/badge.svg?event=push&branch=main)](https://github.com/your-org/libetude/actions)
+
 LibEtude는 음성 합성(voice synthesis)에 특화된 고성능 AI 추론 엔진입니다. 범용 AI 프레임워크와 달리, 음성 합성 도메인에 최적화되어 실시간 처리와 크로스 플랫폼 지원을 위한 모듈러 아키텍처와 하드웨어 최적화를 제공합니다.
+
+## 컴파일러별 성능 최적화
+
+LibEtude는 각 플랫폼에 최적화된 컴파일러를 사용하여 최고의 성능을 제공합니다:
+
+- **Windows**: MSVC (Visual Studio) - AVX2 최적화, Intel C++ Compiler 지원
+- **macOS**: Clang - Apple Silicon 네이티브 빌드, Universal Binary 지원
+- **Linux**: GCC - 표준 최적화, ARM64 크로스 컴파일 지원
 
 ## 주요 특징
 

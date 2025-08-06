@@ -64,14 +64,23 @@ cmake --build build --parallel
 **Windows 컴파일러 선택 가이드:**
 - **MSBuild (MSVC) 사용 시기:**
   - 최고 성능이 필요한 상용 배포
-  - Windows 전용 최적화 활용
+  - Windows 전용 최적화 활용 (/arch:AVX2)
   - Visual Studio 디버깅 도구 사용
-  - Intel C++ Compiler 연동 필요
+  - CI에서 자동으로 빌드 및 테스트됨
+- **Intel C++ Compiler 사용 시기:**
+  - 극한 성능 최적화 필요 (/O3 /Qipo)
+  - Intel 프로세서 전용 최적화
+  - 상용 배포용 특별 빌드
 - **MinGW-GCC 사용 시기:**
   - 크로스 플랫폼 개발팀
   - 오픈소스 배포 우선
   - CI/CD 자동화
   - 런타임 의존성 최소화
+
+**macOS 컴파일러 최적화:**
+- **Universal Binary**: x86_64 + arm64 지원
+- **Apple Silicon 네이티브**: -mcpu=apple-m1 최적화
+- **Metal GPU 가속**: 활성화됨
 
 #### 기타 플랫폼
 
@@ -120,7 +129,17 @@ cmake -B build -DLIBETUDE_ENABLE_SIMD=ON -DCMAKE_BUILD_TYPE=Release
 ### Intel C++ Compiler 사용 (MSVC 환경)
 ```cmd
 # Intel oneAPI 설치 후
-cmake -B build -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icx -DCMAKE_BUILD_TYPE=Release
+call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+cmake -B build -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icx -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS="/arch:AVX2 /O3 /Qipo" -DCMAKE_CXX_FLAGS="/arch:AVX2 /O3 /Qipo"
+```
+
+### macOS Apple Silicon 최적화
+```bash
+# Apple Silicon 네이티브 빌드
+cmake -B build -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_C_FLAGS="-mcpu=apple-m1 -mtune=native -O3" -DCMAKE_CXX_FLAGS="-mcpu=apple-m1 -mtune=native -O3" -DCMAKE_BUILD_TYPE=Release
+
+# Universal Binary (Intel + Apple Silicon)
+cmake -B build -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -DCMAKE_BUILD_TYPE=Release
 ```
 
 ### 정적 링킹 (MinGW 환경)

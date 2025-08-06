@@ -12,14 +12,44 @@ env:
 
 jobs:
   build:
-    name: ${{ matrix.os }} - ${{ matrix.build_type }}
+    name: ${{ matrix.os }} - ${{ matrix.compiler }} - ${{ matrix.build_type }}
     runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        build_type: [Debug, Release]
+        include:
+          # Linux 빌드 (GCC)
+          - os: ubuntu-latest
+            build_type: Debug
+            compiler: gcc
+          - os: ubuntu-latest
+            build_type: Release
+            compiler: gcc
+
+          # Windows 빌드 (MSBuild/MSVC - 최적화)
+          - os: windows-latest
+            build_type: Debug
+            compiler: msvc
+          - os: windows-latest
+            build_type: Release
+            compiler: msvc
+
+          # Windows 빌드 (MinGW - 호환성)
+          - os: windows-latest
+            build_type: Debug
+            compiler: mingw
+          - os: windows-latest
+            build_type: Release
+            compiler: mingw
+
+          # macOS 빌드 (Clang - Apple 최적화)
+          - os: macos-latest
+            build_type: Debug
+            compiler: clang
+          - os: macos-latest
+            build_type: Release
+            compiler: clang
 
     steps:
     - name: 코드 체크아웃
@@ -39,9 +69,14 @@ jobs:
           liblz4-dev \
           libzstd-dev
 
+    # Windows MSVC 설정 (Visual Studio)
+    - name: Windows MSVC 설정
+      if: runner.os == 'Windows' && matrix.compiler == 'msvc'
+      uses: microsoft/setup-msbuild@v2
+
     # Windows MinGW 설정
     - name: Windows MinGW 설정
-      if: runner.os == 'Windows'
+      if: runner.os == 'Windows' && matrix.compiler == 'mingw'
       uses: msys2/setup-msys2@v2
       with:
         msystem: MINGW64
@@ -52,32 +87,21 @@ jobs:
           mingw-w64-x86_64-ninja
           mingw-w64-x86_64-pkg-config
 
-    # macOS 의존성 설치
+    # macOS 의존성 설치 및 Clang 최적화 설정
     - name: macOS 의존성 설치
       if: runner.os == 'macOS'
       run: |
         brew install cmake lz4 zstd
+        # Xcode Command Line Tools 최신 버전 확인
+        xcode-select --install || true
+        # Apple Silicon 최적화를 위한 환경 변수 설정
+        echo "MACOSX_DEPLOYMENT_TARGET=11.0" >> $GITHUB_ENV
 
-    # CMake 구성 (Unix 계열)
-    - name: CMake 구성 (Unix)
-      if: runner.os != 'Windows'
+    # CMake 구성 (Linux GCC)
+    - name: CMake 구성 (Linux GCC)
+      if: runner.os == 'Linux'
       run: |
         cmake -B build \
-          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
-          -DLIBETUDE_BUILD_TESTS=ON \
-          -DLIBETUDE_BUILD_EXAMPLES=OFF \
-          -DLIBETUDE_BUILD_TOOLS=OFF \
-          -DLIBETUDE_BUILD_BINDINGS=OFF \
-          -DLIBETUDE_ENABLE_SIMD=OFF \
-          -DLIBETUDE_ENABLE_GPU=OFF
-
-    # CMake 구성 (Windows MinGW)
-    - name: CMake 구성 (Windows MinGW)
-      if: runner.os == 'Windows'
-      shell: msys2 {0}
-      run: |
-        cmake -B build \
-          -G "Ninja" \
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
           -DCMAKE_C_COMPILER=gcc \
           -DCMAKE_CXX_COMPILER=g++ \
@@ -85,32 +109,101 @@ jobs:
           -DLIBETUDE_BUILD_EXAMPLES=OFF \
           -DLIBETUDE_BUILD_TOOLS=OFF \
           -DLIBETUDE_BUILD_BINDINGS=OFF \
-          -DLIBETUDE_ENABLE_SIMD=OFF \
+          -DLIBETUDE_ENABLE_SIMD=ON \
           -DLIBETUDE_ENABLE_GPU=OFF
 
-    # 빌드 실행
-    - name: 빌드
+    # CMake 구성 (macOS Clang - Apple 최적화)
+    - name: CMake 구성 (macOS Clang)
+      if: runner.os == 'macOS'
+      run: |
+        # Apple Silicon과 Intel 모두 지원하는 Universal Binary 설정
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+          -DCMAKE_C_COMPILER=clang \
+          -DCMAKE_CXX_COMPILER=clang++ \
+          -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" \
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+          -DCMAKE_C_FLAGS="-march=native -mtune=native" \
+          -DCMAKE_CXX_FLAGS="-march=native -mtune=native" \
+          -DLIBETUDE_BUILD_TESTS=ON \
+          -DLIBETUDE_BUILD_EXAMPLES=OFF \
+          -DLIBETUDE_BUILD_TOOLS=OFF \
+          -DLIBETUDE_BUILD_BINDINGS=OFF \
+          -DLIBETUDE_ENABLE_SIMD=ON \
+          -DLIBETUDE_ENABLE_GPU=ON
+
+    # CMake 구성 (Windows MSVC - 최고 성능)
+    - name: CMake 구성 (Windows MSVC)
+      if: runner.os == 'Windows' && matrix.compiler == 'msvc'
+      run: |
+        cmake -B build \
+          -G "Visual Studio 17 2022" \
+          -A x64 \
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+          -DCMAKE_C_FLAGS="/arch:AVX2 /O2" \
+          -DCMAKE_CXX_FLAGS="/arch:AVX2 /O2" \
+          -DLIBETUDE_BUILD_TESTS=ON \
+          -DLIBETUDE_BUILD_EXAMPLES=OFF \
+          -DLIBETUDE_BUILD_TOOLS=OFF \
+          -DLIBETUDE_BUILD_BINDINGS=OFF \
+          -DLIBETUDE_ENABLE_SIMD=ON \
+          -DLIBETUDE_ENABLE_GPU=OFF
+
+    # CMake 구성 (Windows MinGW - 호환성)
+    - name: CMake 구성 (Windows MinGW)
+      if: runner.os == 'Windows' && matrix.compiler == 'mingw'
+      shell: msys2 {0}
+      run: |
+        cmake -B build \
+          -G "Ninja" \
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+          -DCMAKE_C_COMPILER=gcc \
+          -DCMAKE_CXX_COMPILER=g++ \
+          -DCMAKE_C_FLAGS="-march=native -mtune=native" \
+          -DCMAKE_CXX_FLAGS="-march=native -mtune=native" \
+          -DLIBETUDE_BUILD_TESTS=ON \
+          -DLIBETUDE_BUILD_EXAMPLES=OFF \
+          -DLIBETUDE_BUILD_TOOLS=OFF \
+          -DLIBETUDE_BUILD_BINDINGS=OFF \
+          -DLIBETUDE_ENABLE_SIMD=ON \
+          -DLIBETUDE_ENABLE_GPU=OFF
+
+    # 빌드 실행 (Linux, macOS)
+    - name: 빌드 (Unix)
       if: runner.os != 'Windows'
+      run: |
+        cmake --build build --config ${{ matrix.build_type }} --parallel
+
+    # Windows MSVC 빌드 실행
+    - name: 빌드 (Windows MSVC)
+      if: runner.os == 'Windows' && matrix.compiler == 'msvc'
       run: |
         cmake --build build --config ${{ matrix.build_type }} --parallel
 
     # Windows MinGW 빌드 실행
     - name: 빌드 (Windows MinGW)
-      if: runner.os == 'Windows'
+      if: runner.os == 'Windows' && matrix.compiler == 'mingw'
       shell: msys2 {0}
       run: |
         cmake --build build --config ${{ matrix.build_type }} --parallel
 
-    # 테스트 실행 (Unix 계열)
+    # 테스트 실행 (Linux, macOS)
     - name: 테스트 실행 (Unix)
       if: runner.os != 'Windows'
       run: |
         cd build
         ctest --output-on-failure --parallel 4 -C ${{ matrix.build_type }}
 
+    # 테스트 실행 (Windows MSVC)
+    - name: 테스트 실행 (Windows MSVC)
+      if: runner.os == 'Windows' && matrix.compiler == 'msvc'
+      run: |
+        cd build
+        ctest --output-on-failure --parallel 4 -C ${{ matrix.build_type }}
+
     # 테스트 실행 (Windows MinGW)
     - name: 테스트 실행 (Windows MinGW)
-      if: runner.os == 'Windows'
+      if: runner.os == 'Windows' && matrix.compiler == 'mingw'
       shell: msys2 {0}
       run: |
         cd build
@@ -121,7 +214,7 @@ jobs:
       if: matrix.build_type == 'Release'
       uses: actions/upload-artifact@v4
       with:
-        name: libetude-${{ runner.os }}-${{ matrix.build_type }}
+        name: libetude-${{ runner.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}
         path: |
           build/src/liblibetude*
           build/bin/*
@@ -206,6 +299,54 @@ jobs:
         valgrind --tool=memcheck --leak-check=full --error-exitcode=1 \
           ./tests/unit/test_api
 
+  # Windows MSVC 최적화 빌드 (Intel C++ Compiler 지원)
+  windows-optimized:
+    name: Windows 최적화 빌드 (Intel C++)
+    runs-on: windows-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+
+    - name: Intel oneAPI 설치
+      uses: rscohn2/setup-oneapi@v0
+      with:
+        components: |
+          intel.oneapi.win.cpp-compiler
+
+    - name: Intel C++ 컴파일러로 CMake 구성
+      run: |
+        call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+        cmake -B build-intel \
+          -G "Visual Studio 17 2022" \
+          -A x64 \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_C_COMPILER=icx \
+          -DCMAKE_CXX_COMPILER=icx \
+          -DCMAKE_C_FLAGS="/arch:AVX2 /O3 /Qipo" \
+          -DCMAKE_CXX_FLAGS="/arch:AVX2 /O3 /Qipo" \
+          -DLIBETUDE_BUILD_TESTS=ON \
+          -DLIBETUDE_BUILD_TOOLS=ON \
+          -DLIBETUDE_ENABLE_SIMD=ON \
+          -DLIBETUDE_ENABLE_GPU=OFF
+      shell: cmd
+
+    - name: Intel C++ 빌드
+      run: |
+        call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+        cmake --build build-intel --config Release --parallel
+      shell: cmd
+
+    - name: Intel 최적화 빌드 아티팩트 업로드
+      uses: actions/upload-artifact@v4
+      with:
+        name: libetude-windows-intel-optimized
+        path: |
+          build-intel/src/liblibetude*
+          build-intel/bin/*
+        retention-days: 30
+
   # 성능 벤치마크 (Release 빌드)
   benchmark:
     name: 성능 벤치마크
@@ -249,6 +390,70 @@ jobs:
         if [ -f "./bin/libetude_benchmarks" ]; then
           ./bin/libetude_benchmarks --quick
         fi
+        # 컴파일러별 성능 비교 결과 저장
+        echo "## Linux GCC 성능 벤치마크 결과" > benchmark_results.md
+        if [ -f "./bin/libetude_benchmarks" ]; then
+          ./bin/libetude_benchmarks --output=json > gcc_benchmark.json
+        fi
+
+    - name: 벤치마크 결과 업로드
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results-linux-gcc
+        path: |
+          build/benchmark_results.md
+          build/gcc_benchmark.json
+        retention-days: 30
+
+  # macOS Apple Silicon 네이티브 빌드
+  macos-native:
+    name: macOS Apple Silicon 네이티브 빌드
+    runs-on: macos-14  # Apple Silicon runner
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+
+    - name: Apple Silicon 최적화 의존성 설치
+      run: |
+        brew install cmake lz4 zstd
+        # Apple Silicon 전용 최적화 플래그 설정
+        echo "CFLAGS=-mcpu=apple-m1 -mtune=native" >> $GITHUB_ENV
+        echo "CXXFLAGS=-mcpu=apple-m1 -mtune=native" >> $GITHUB_ENV
+
+    - name: Apple Silicon 네이티브 빌드 구성
+      run: |
+        cmake -B build-native \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_C_COMPILER=clang \
+          -DCMAKE_CXX_COMPILER=clang++ \
+          -DCMAKE_OSX_ARCHITECTURES=arm64 \
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+          -DCMAKE_C_FLAGS="-mcpu=apple-m1 -mtune=native -O3" \
+          -DCMAKE_CXX_FLAGS="-mcpu=apple-m1 -mtune=native -O3" \
+          -DLIBETUDE_BUILD_TESTS=ON \
+          -DLIBETUDE_BUILD_TOOLS=ON \
+          -DLIBETUDE_ENABLE_SIMD=ON \
+          -DLIBETUDE_ENABLE_GPU=ON
+
+    - name: Apple Silicon 네이티브 빌드
+      run: |
+        cmake --build build-native --config Release --parallel
+
+    - name: Apple Silicon 성능 테스트
+      run: |
+        cd build-native
+        ctest --output-on-failure -R performance
+
+    - name: Apple Silicon 빌드 아티팩트 업로드
+      uses: actions/upload-artifact@v4
+      with:
+        name: libetude-macos-apple-silicon-native
+        path: |
+          build-native/src/liblibetude*
+          build-native/bin/*
+        retention-days: 30
 
   # 크로스 컴파일 테스트 (ARM64)
   cross-compile:
@@ -289,3 +494,44 @@ jobs:
           build-arm64/src/liblibetude*
           build-arm64/bin/*
         retention-days: 7
+
+  # 컴파일러 성능 비교 요약
+  performance-summary:
+    name: 컴파일러 성능 비교 요약
+    runs-on: ubuntu-latest
+    needs: [build, windows-optimized, macos-native, benchmark]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+    - name: 모든 벤치마크 결과 다운로드
+      uses: actions/download-artifact@v4
+      with:
+        pattern: "*benchmark*"
+        merge-multiple: true
+
+    - name: 성능 비교 요약 생성
+      run: |
+        echo "# LibEtude 컴파일러별 성능 비교 요약" > performance_summary.md
+        echo "" >> performance_summary.md
+        echo "## 빌드 날짜: $(date)" >> performance_summary.md
+        echo "" >> performance_summary.md
+        echo "### 컴파일러별 최적화 설정" >> performance_summary.md
+        echo "- **Windows MSVC**: /arch:AVX2 /O2 (최고 성능)" >> performance_summary.md
+        echo "- **Windows Intel C++**: /arch:AVX2 /O3 /Qipo (Intel 최적화)" >> performance_summary.md
+        echo "- **Windows MinGW**: -march=native -mtune=native (호환성)" >> performance_summary.md
+        echo "- **macOS Clang**: -march=native -mtune=native (Apple 최적화)" >> performance_summary.md
+        echo "- **macOS Apple Silicon**: -mcpu=apple-m1 -mtune=native (네이티브)" >> performance_summary.md
+        echo "- **Linux GCC**: -march=native -mtune=native (표준)" >> performance_summary.md
+        echo "" >> performance_summary.md
+        echo "### 권장 사용 시나리오" >> performance_summary.md
+        echo "- **상용 Windows 배포**: MSVC 또는 Intel C++ 사용" >> performance_summary.md
+        echo "- **크로스 플랫폼 개발**: MinGW 사용" >> performance_summary.md
+        echo "- **macOS 배포**: Apple Silicon 네이티브 빌드 권장" >> performance_summary.md
+        echo "- **Linux 서버**: GCC 사용" >> performance_summary.md
+
+    - name: 성능 요약 업로드
+      uses: actions/upload-artifact@v4
+      with:
+        name: performance-comparison-summary
+        path: performance_summary.md
+        retention-days: 90
