@@ -214,6 +214,24 @@ create_unity_test(stft_test "unit/test_stft.c")
 create_unity_test(mel_scale_test "unit/test_mel_scale.c")
 create_unity_test(vocoder_test "unit/test_vocoder.c")
 
+# Linux ALSA 오디오 테스트 (Linux에서만 빌드)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(linux_audio_test unit/test_linux_audio.c)
+    target_link_libraries(linux_audio_test
+        libetude_static
+        pthread
+        m
+        asound  # ALSA 라이브러리
+    )
+    target_include_directories(linux_audio_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+    target_compile_definitions(linux_audio_test PRIVATE
+        _GNU_SOURCE
+    )
+endif()
+
 # 모바일 최적화 테스트
 create_unity_test(mobile_optimization_test "unit/test_mobile_optimization.c")
 
@@ -273,6 +291,11 @@ add_test(NAME AudioIOTest COMMAND audio_io_test)
 add_test(NAME STFTTest COMMAND stft_test)
 add_test(NAME MelScaleTest COMMAND mel_scale_test)
 add_test(NAME VocoderTest COMMAND vocoder_test)
+
+# Linux ALSA 오디오 테스트 등록 (Linux에서만)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_test(NAME LinuxAudioTest COMMAND linux_audio_test)
+endif()
 
 # 모바일 최적화 테스트
 add_test(NAME MobileOptimizationTest COMMAND mobile_optimization_test)
@@ -425,6 +448,15 @@ set_tests_properties(VocoderTest PROPERTIES
     LABELS "audio;vocoder;graph;realtime;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
+
+# Linux ALSA 오디오 테스트 속성 설정 (Linux에서만)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set_tests_properties(LinuxAudioTest PROPERTIES
+        TIMEOUT 180
+        LABELS "audio;linux;alsa;platform;integration;core;libetude"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+endif()
 
 # 모바일 최적화 테스트 속성 설정
 set_tests_properties(MobileOptimizationTest PROPERTIES

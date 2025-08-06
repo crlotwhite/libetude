@@ -26,14 +26,14 @@
   - Windows 오디오 디바이스 열거 기능 구현
   - _요구사항: 1.1, 1.2, 1.3, 1.4_
 
-- [ ] 2.3 Linux ALSA 구현체 통합 및 개선
+- [x] 2.3 Linux ALSA 구현체 통합 및 개선
   - 기존 linux_audio.c를 새로운 인터페이스에 맞게 리팩토링
   - ALSA PCM 설정을 추상화된 인터페이스로 래핑
   - Linux 특화 오류 코드를 공통 오류 코드로 매핑
   - ALSA 디바이스 열거 및 정보 조회 기능 구현
   - _요구사항: 1.1, 1.2, 1.3, 1.4_
 
-- [ ] 2.4 macOS CoreAudio 구현체 통합 및 개선
+- [-] 2.4 macOS CoreAudio 구현체 통합 및 개선
   - 기존 macos_audio.c를 새로운 인터페이스에 맞게 리팩토링
   - CoreAudio와 AudioUnit을 추상화된 인터페이스로 래핑
   - macOS 특화 오류 코드를 공통 오류 코드로 매핑
