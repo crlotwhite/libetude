@@ -133,6 +133,7 @@ elseif(APPLE)
             platform/macos/platform_init.c
             platform/macos/macos_audio.c
             platform/macos/macos_utils.c
+            platform/macos/macos_compat.c
         )
     endif()
 elseif(ANDROID)

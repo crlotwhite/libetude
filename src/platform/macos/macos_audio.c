@@ -9,16 +9,15 @@
 #include "libetude/types.h"
 #include "libetude/platform/audio.h"
 #include "libetude/platform/common.h"
+#include "libetude/platform/macos_compat.h"
 #include "libetude/error.h"
 #include <stdlib.h>
 #include <string.h>
 
 #ifdef __APPLE__
-// 블록 문법 비활성화
-#define __BLOCKS__ 0
-#define __block
-#define _Nullable
-#define _Nonnull
+
+// macOS 호환성 설정 적용
+LIBETUDE_SUPPRESS_BLOCK_WARNINGS
 
 #include <CoreAudio/CoreAudio.h>
 #include <AudioUnit/AudioUnit.h>
@@ -796,9 +795,10 @@ static uint32_t macos_get_latency(const ETAudioDevice* device) {
 
     // 프레임을 밀리초로 변환
     return (uint32_t)((double)latency * 1000.0 / macos_device->format.sample_rate);
-}/**
- * @b
-rief 디바이스 열거
+}
+
+/**
+ * @brief 디바이스 열거
  */
 static ETResult macos_enumerate_devices(ETAudioDeviceType type, ETAudioDeviceInfo* devices, int* count) {
     if (!count) {
@@ -1090,4 +1090,8 @@ ETAudioInterface* et_create_macos_audio_interface(void) {
 void et_destroy_macos_audio_interface(ETAudioInterface* interface) {
     (void)interface;
 }
-#endif
+
+// 경고 복원
+LIBETUDE_RESTORE_WARNINGS
+
+#endif // __APPLE__

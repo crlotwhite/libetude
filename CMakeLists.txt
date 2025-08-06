@@ -44,6 +44,24 @@ elseif(APPLE)
         add_definitions(-DLIBETUDE_PLATFORM_IOS=1)
     else()
         add_definitions(-DLIBETUDE_PLATFORM_MACOS=1)
+
+        # macOS 15 SDK 호환성 설정
+        if(CMAKE_SYSTEM_VERSION VERSION_GREATER_EQUAL "15.0")
+            message(STATUS "macOS 15+ SDK 감지됨 - 블록 문법 호환성 설정 적용")
+
+            # 블록 문법 비활성화 플래그
+            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__BLOCKS__=0 -Wno-nullability-completeness")
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__BLOCKS__=0 -Wno-nullability-completeness")
+
+            # Objective-C 호환성 매크로 정의
+            add_definitions(-DLIBETUDE_MACOS_BLOCKS_DISABLED=1)
+
+            # 최소 배포 타겟 설정 (호환성 보장)
+            if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+                set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0")
+                message(STATUS "macOS 배포 타겟을 12.0으로 설정 (호환성)")
+            endif()
+        endif()
     endif()
 elseif(ANDROID)
     add_definitions(-DLIBETUDE_PLATFORM_ANDROID=1)
