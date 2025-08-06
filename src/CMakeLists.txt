@@ -66,6 +66,7 @@ set(LIBETUDE_CORE_SOURCES
     platform/common.c
     platform/factory.c
     platform/platform.c
+    platform/audio_common.c
 
     # 플랫폼별 구현
     platform/platform_utils.c

@@ -13,7 +13,7 @@
 ETResult et_register_macos_interfaces(void) {
     ETResult result = ET_SUCCESS;
 
-    /* 오디오 인터페이스 등록 (스텁) */
+    /* 오디오 인터페이스 등록 */
     {
         ETInterfaceMetadata metadata = {
             .type = ET_INTERFACE_AUDIO,
@@ -21,12 +21,18 @@ ETResult et_register_macos_interfaces(void) {
             .name = "macOS Audio Interface",
             .description = "CoreAudio based audio interface",
             .platform = ET_PLATFORM_MACOS,
-            .size = sizeof(void*), /* 실제 구조체 크기로 변경 예정 */
+            .size = sizeof(ETAudioInterface),
             .flags = 0
         };
 
+        // 외부 함수 선언 (헤더에서 가져올 예정)
+        extern ETAudioInterface* et_create_macos_audio_interface(void);
+        extern void et_destroy_macos_audio_interface(ETAudioInterface* interface);
+
         result = et_register_interface_factory(ET_INTERFACE_AUDIO, ET_PLATFORM_MACOS,
-                                              NULL, NULL, &metadata);
+                                              (ETInterfaceCreateFunc)et_create_macos_audio_interface,
+                                              (ETInterfaceDestroyFunc)et_destroy_macos_audio_interface,
+                                              &metadata);
         if (result != ET_SUCCESS) return result;
     }
 

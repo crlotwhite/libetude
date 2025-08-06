@@ -232,6 +232,22 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     )
 endif()
 
+# macOS CoreAudio 오디오 테스트 (macOS에서만 빌드)
+if(APPLE AND NOT IOS)
+    add_executable(macos_audio_test unit/test_macos_audio.c)
+    target_link_libraries(macos_audio_test
+        libetude_static
+        pthread
+        m
+        "-framework AudioToolbox"
+        "-framework CoreAudio"
+    )
+    target_include_directories(macos_audio_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+endif()
+
 # 모바일 최적화 테스트
 create_unity_test(mobile_optimization_test "unit/test_mobile_optimization.c")
 
@@ -295,6 +311,11 @@ add_test(NAME VocoderTest COMMAND vocoder_test)
 # Linux ALSA 오디오 테스트 등록 (Linux에서만)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_test(NAME LinuxAudioTest COMMAND linux_audio_test)
+endif()
+
+# macOS CoreAudio 오디오 테스트 등록 (macOS에서만)
+if(APPLE AND NOT IOS)
+    add_test(NAME MacOSAudioTest COMMAND macos_audio_test)
 endif()
 
 # 모바일 최적화 테스트
@@ -454,6 +475,15 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set_tests_properties(LinuxAudioTest PROPERTIES
         TIMEOUT 180
         LABELS "audio;linux;alsa;platform;integration;core;libetude"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+endif()
+
+# macOS CoreAudio 오디오 테스트 속성 설정 (macOS에서만)
+if(APPLE AND NOT IOS)
+    set_tests_properties(MacOSAudioTest PROPERTIES
+        TIMEOUT 180
+        LABELS "audio;macos;coreaudio;platform;integration;core;libetude"
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     )
 endif()
