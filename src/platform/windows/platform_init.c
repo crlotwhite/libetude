@@ -9,16 +9,27 @@
 #include "libetude/platform/factory.h"
 #include "libetude/platform/common.h"
 
-/* 스텁 팩토리 함수들 */
-static ETResult stub_audio_factory(void** interface, const ETInterfaceMetadata* metadata) {
+/* Windows 오디오 인터페이스 선언 */
+extern ETAudioInterface* et_get_windows_audio_interface(void);
+extern ETResult et_windows_audio_initialize(void);
+extern void et_windows_audio_cleanup(void);
+
+/* 오디오 인터페이스 팩토리 함수 */
+static ETResult windows_audio_factory(void** interface, const ETInterfaceMetadata* metadata) {
     (void)metadata; /* 미사용 매개변수 경고 제거 */
-    *interface = NULL; /* 스텁 구현 */
-    return ET_SUCCESS;
+
+    ETResult result = et_windows_audio_initialize();
+    if (result != ET_SUCCESS) {
+        return result;
+    }
+
+    *interface = et_get_windows_audio_interface();
+    return (*interface != NULL) ? ET_SUCCESS : ET_ERROR_HARDWARE;
 }
 
-static void stub_audio_destructor(void* interface) {
+static void windows_audio_destructor(void* interface) {
     (void)interface; /* 미사용 매개변수 경고 제거 */
-    /* 스텁 구현 - 아무것도 하지 않음 */
+    et_windows_audio_cleanup();
 }
 
 static ETResult stub_system_factory(void** interface, const ETInterfaceMetadata* metadata) {
@@ -98,7 +109,7 @@ ETResult et_register_windows_interfaces(void) {
         };
 
         result = et_register_interface_factory(ET_INTERFACE_AUDIO, ET_PLATFORM_WINDOWS,
-                                              stub_audio_factory, stub_audio_destructor, &metadata);
+                                              windows_audio_factory, windows_audio_destructor, &metadata);
         if (result != ET_SUCCESS) return result;
     }
 
