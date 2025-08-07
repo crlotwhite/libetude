@@ -1,0 +1,48 @@
+# LibEtude 언인스톨 스크립트
+# Copyright (c) 2025 LibEtude Project
+
+if(NOT EXISTS "@CMAKE_BINARY_DIR@/install_manifest.txt")
+    message(FATAL_ERROR "설치 매니페스트 파일을 찾을 수 없습니다: @CMAKE_BINARY_DIR@/install_manifest.txt")
+endif()
+
+file(READ "@CMAKE_BINARY_DIR@/install_manifest.txt" files)
+string(REGEX REPLACE "\n" ";" files "${files}")
+
+foreach(file ${files})
+    message(STATUS "언인스톨: $ENV{DESTDIR}${file}")
+    if(IS_SYMLINK "$ENV{DESTDIR}${file}" OR EXISTS "$ENV{DESTDIR}${file}")
+        exec_program(
+            "@CMAKE_COMMAND@" ARGS "-E remove \"$ENV{DESTDIR}${file}\""
+            OUTPUT_VARIABLE rm_out
+            RETURN_VALUE rm_retval
+        )
+        if(NOT "${rm_retval}" STREQUAL 0)
+            message(FATAL_ERROR "파일 삭제 실패: $ENV{DESTDIR}${file}")
+        endif()
+    else()
+        message(STATUS "파일이 존재하지 않음: $ENV{DESTDIR}${file}")
+    endif()
+endforeach()
+
+# 빈 디렉토리 정리
+set(INSTALL_DIRS
+    "@CMAKE_INSTALL_PREFIX@/include/libetude/platform"
+    "@CMAKE_INSTALL_PREFIX@/include/libetude"
+    "@CMAKE_INSTALL_PREFIX@/lib/cmake/LibEtude"
+    "@CMAKE_INSTALL_PREFIX@/share/libetude/doc/platform"
+    "@CMAKE_INSTALL_PREFIX@/share/libetude/doc"
+    "@CMAKE_INSTALL_PREFIX@/share/libetude/examples"
+    "@CMAKE_INSTALL_PREFIX@/share/libetude"
+)
+
+foreach(dir ${INSTALL_DIRS})
+    if(EXISTS "${dir}")
+        file(GLOB dir_contents "${dir}/*")
+        if(NOT dir_contents)
+            message(STATUS "빈 디렉토리 제거: ${dir}")
+            exec_program("@CMAKE_COMMAND@" ARGS "-E remove_directory \"${dir}\"")
+        endif()
+    endif()
+endforeach()
+
+message(STATUS "LibEtude 언인스톨 완료")

@@ -163,8 +163,26 @@ if(LIBETUDE_ENABLE_SIMD)
     endif()
 endif()
 
+# 플랫폼 추상화 레이어 설정
+include(cmake/PlatformAbstraction.cmake)
+configure_platform_abstraction()
+
+# 크로스 컴파일 지원
+include(cmake/CrossCompile.cmake)
+setup_cross_compilation()
+
 # 의존성 관리 모듈 포함
 include(cmake/Dependencies.cmake)
+
+# 설치 설정 모듈 포함
+include(cmake/Install.cmake)
+
+# 버전 관리 시스템 설정
+include(cmake/Version.cmake)
+setup_version_management()
+
+# 릴리스 빌드 검증
+validate_release_build()
 
 # 포함 디렉토리 설정
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)

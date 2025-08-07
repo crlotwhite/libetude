@@ -1,3 +1,6 @@
+# LibEtude pkg-config 파일
+# Copyright (c) 2025 LibEtude Project
+
 prefix=@CMAKE_INSTALL_PREFIX@
 exec_prefix=${prefix}
 libdir=${exec_prefix}/lib
@@ -7,6 +10,28 @@ Name: LibEtude
 Description: @PROJECT_DESCRIPTION@
 Version: @PROJECT_VERSION@
 URL: https://github.com/libetude/libetude
-Libs: -L${libdir} -letude
-Libs.private: @LIBETUDE_PRIVATE_LIBS@
+
+# 컴파일러 플래그
 Cflags: -I${includedir}
+
+# 링커 플래그 (정적 라이브러리)
+Libs: -L${libdir} -letude
+
+# 플랫폼별 의존성 라이브러리
+@PKGCONFIG_PLATFORM_LIBS@
+
+# 플랫폼 추상화 레이어 기능 정보
+platform_abstraction=@LIBETUDE_ENABLE_PLATFORM_ABSTRACTION@
+audio_abstraction=@LIBETUDE_ENABLE_AUDIO_ABSTRACTION@
+system_abstraction=@LIBETUDE_ENABLE_SYSTEM_ABSTRACTION@
+threading_abstraction=@LIBETUDE_ENABLE_THREADING_ABSTRACTION@
+memory_abstraction=@LIBETUDE_ENABLE_MEMORY_ABSTRACTION@
+filesystem_abstraction=@LIBETUDE_ENABLE_FILESYSTEM_ABSTRACTION@
+network_abstraction=@LIBETUDE_ENABLE_NETWORK_ABSTRACTION@
+dynlib_abstraction=@LIBETUDE_ENABLE_DYNLIB_ABSTRACTION@
+
+# 빌드 설정 정보
+simd_enabled=@LIBETUDE_ENABLE_SIMD@
+gpu_enabled=@LIBETUDE_ENABLE_GPU@
+minimal_build=@LIBETUDE_MINIMAL@
+static_dispatch=@LIBETUDE_PLATFORM_STATIC_DISPATCH@

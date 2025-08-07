@@ -1,5 +1,8 @@
 # LibEtude 소스 디렉토리 CMake 설정
 
+# 플랫폼 추상화 레이어 소스 수집
+collect_platform_sources(PLATFORM_SOURCES)
+
 # 소스 파일 수집
 set(LIBETUDE_CORE_SOURCES
     # 코어 엔진
@@ -61,30 +64,18 @@ set(LIBETUDE_CORE_SOURCES
     audio/effects/equalizer_plugin.c
     audio/effects/delay_plugin.c
     audio/effects/compressor_plugin.c
+)
 
-    # 플랫폼 추상화 레이어
-    platform/common.c
-    platform/factory.c
-    platform/platform.c
-    platform/audio_common.c
-    platform/system_common.c
-    platform/optimization.c
-    platform/runtime_adaptation.c
+# 플랫폼 추상화 레이어 소스 추가
+list(APPEND LIBETUDE_CORE_SOURCES ${PLATFORM_SOURCES})
 
-    # 플랫폼별 구현
-    platform/platform_core.c
-    platform/platform_utils.c
-    platform/desktop_optimization.c
-    platform/embedded_optimization.c
-    platform/mobile_optimization.c
-    platform/mobile_power_management.c
-    platform/thermal_management.c
-    platform/memory_common.c
-    platform/threading_common.c
-    platform/filesystem_common.c
-    platform/network_common.c
-    platform/dynlib_common.c
-    platform/dynlib_error_mapping.c
+# 버전 소스 파일 추가
+if(LIBETUDE_VERSION_SOURCE)
+    list(APPEND LIBETUDE_CORE_SOURCES ${LIBETUDE_VERSION_SOURCE})
+endif()
+
+# 추가 소스 파일들
+list(APPEND LIBETUDE_CORE_SOURCES
 )
 
 # SIMD 커널 소스 (조건부 컴파일)
@@ -124,64 +115,7 @@ if(LIBETUDE_ENABLE_GPU)
     )
 endif()
 
-# 플랫폼별 소스 파일
-if(WIN32)
-    list(APPEND LIBETUDE_CORE_SOURCES
-        platform/windows/platform_init.c
-        platform/windows/windows_audio.c
-        platform/windows/windows_utils.c
-        platform/windows/windows_system.c
-        platform/windows/dynlib_windows.c
-        platform/windows/filesystem_windows.c
-        platform/windows/memory_windows.c
-        platform/windows/network_windows.c
-        platform/windows/threading_windows.c
-        platform/windows/factory_windows.c
-    )
-elseif(APPLE)
-    if(IOS)
-        list(APPEND LIBETUDE_CORE_SOURCES
-            platform/ios/platform_init.c
-            platform/ios/ios_audio.c
-            platform/ios/ios_utils.c
-        )
-    else()
-        list(APPEND LIBETUDE_CORE_SOURCES
-            platform/macos/platform_init.c
-            platform/macos/macos_audio.c
-            platform/macos/macos_utils.c
-            platform/macos/macos_compat.c
-            platform/macos/macos_system.c
-            platform/macos/network_macos.c
-            platform/macos/factory_macos.c
-        )
-    endif()
-elseif(ANDROID)
-    list(APPEND LIBETUDE_CORE_SOURCES
-        platform/android/platform_init.c
-        platform/android/android_audio.c
-        platform/android/android_utils.c
-    )
-elseif(UNIX)
-    list(APPEND LIBETUDE_CORE_SOURCES
-        platform/linux/platform_init.c
-        platform/linux/linux_audio.c
-        platform/linux/linux_utils.c
-        platform/linux/linux_system.c
-        platform/linux/network_linux.c
-        platform/linux/factory_linux.c
-    )
-endif()
-
-# POSIX 공통 파일들 (Unix 계열 플랫폼에서 사용)
-if(UNIX)
-    list(APPEND LIBETUDE_CORE_SOURCES
-        platform/posix/dynlib_posix.c
-        platform/posix/filesystem_posix.c
-        platform/posix/memory_posix.c
-        platform/posix/threading_posix.c
-    )
-endif()
+# 플랫폼별 소스 파일은 이미 collect_platform_sources()에서 처리됨
 
 # 정적 라이브러리 생성
 find_package(Threads REQUIRED)
@@ -189,7 +123,12 @@ add_library(libetude_static STATIC ${LIBETUDE_CORE_SOURCES})
 target_include_directories(libetude_static PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
-# Ensure -mavx2 is applied to avx_kernels.c for libetude_static
+
+# 플랫폼 추상화 레이어 설정 적용
+set_platform_compile_options(libetude_static)
+link_platform_libraries(libetude_static)
+
+# SIMD 최적화 적용
 if(LIBETUDE_ENABLE_SIMD AND HAVE_AVX2)
     target_compile_options(libetude_static PRIVATE $<$<COMPILE_LANGUAGE:C>:-mavx2>)
 endif()
@@ -201,10 +140,16 @@ if(NOT LIBETUDE_MINIMAL)
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
     )
     target_compile_definitions(libetude_shared PRIVATE LIBETUDE_EXPORTS)
-    # Ensure -mavx2 is applied to avx_kernels.c for libetude_shared
+
+    # 플랫폼 추상화 레이어 설정 적용
+    set_platform_compile_options(libetude_shared)
+    link_platform_libraries(libetude_shared)
+
+    # SIMD 최적화 적용
     if(LIBETUDE_ENABLE_SIMD AND HAVE_AVX2)
         target_compile_options(libetude_shared PRIVATE $<$<COMPILE_LANGUAGE:C>:-mavx2>)
     endif()
+
     # 라이브러리 이름 설정
     set_target_properties(libetude_shared PROPERTIES
         OUTPUT_NAME "libetude"
@@ -228,22 +173,11 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     endif()
 endif()
 
-# 링크 라이브러리
-if(WIN32)
-    target_link_libraries(libetude_static PRIVATE winmm dsound psapi pdh)
-    if(NOT LIBETUDE_MINIMAL)
-        target_link_libraries(libetude_shared PRIVATE winmm dsound psapi pdh)
-    endif()
-elseif(APPLE)
-    target_link_libraries(libetude_static PRIVATE "-framework AudioToolbox" "-framework CoreAudio" dl)
-    if(NOT LIBETUDE_MINIMAL)
-        target_link_libraries(libetude_shared PRIVATE "-framework AudioToolbox" "-framework CoreAudio" dl)
-    endif()
-elseif(UNIX)
-    target_link_libraries(libetude_static PUBLIC asound Threads::Threads m dl uuid)
-    if(NOT LIBETUDE_MINIMAL)
-        target_link_libraries(libetude_shared PRIVATE asound pthread m dl uuid)
-    endif()
+# 플랫폼별 라이브러리 링크는 link_platform_libraries()에서 처리됨
+# 추가 라이브러리 링크
+target_link_libraries(libetude_static PRIVATE Threads::Threads)
+if(NOT LIBETUDE_MINIMAL)
+    target_link_libraries(libetude_shared PRIVATE Threads::Threads)
 endif()
 
 # OpenMP 지원
@@ -254,8 +188,16 @@ if(LIBETUDE_ENABLE_SIMD AND OpenMP_FOUND)
     endif()
 endif()
 
-# 설치 설정 (컴포넌트별)
+# 라이브러리 별칭 생성 (CMake 타겟 네임스페이스)
+add_library(LibEtude::libetude ALIAS libetude_static)
+if(NOT LIBETUDE_MINIMAL)
+    add_library(LibEtude::libetude_shared ALIAS libetude_shared)
+endif()
+
+# 설치 설정은 configure_libetude_install()에서 처리됨
+# 타겟 내보내기를 위한 설치 설정
 install(TARGETS libetude_static
+    EXPORT LibEtudeTargets
     ARCHIVE DESTINATION lib COMPONENT Development
     LIBRARY DESTINATION lib COMPONENT Runtime
     RUNTIME DESTINATION bin COMPONENT Runtime
@@ -263,26 +205,48 @@ install(TARGETS libetude_static
 
 if(NOT LIBETUDE_MINIMAL)
     install(TARGETS libetude_shared
+        EXPORT LibEtudeTargets
         ARCHIVE DESTINATION lib COMPONENT Development
         LIBRARY DESTINATION lib COMPONENT Runtime
         RUNTIME DESTINATION bin COMPONENT Runtime
     )
 endif()
 
-# 헤더 파일 설치
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../include/libetude
-    DESTINATION include
-    COMPONENT Development
-    FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp"
-)
+# pkg-config 플랫폼별 라이브러리 설정
+if(WIN32)
+    set(PKGCONFIG_PLATFORM_LIBS "Libs.private: -lkernel32 -luser32 -lwinmm -lpsapi -lpdh")
+    if(LIBETUDE_ENABLE_AUDIO_ABSTRACTION)
+        set(PKGCONFIG_PLATFORM_LIBS "${PKGCONFIG_PLATFORM_LIBS} -ldsound -lole32 -loleaut32")
+    endif()
+    if(LIBETUDE_ENABLE_NETWORK_ABSTRACTION)
+        set(PKGCONFIG_PLATFORM_LIBS "${PKGCONFIG_PLATFORM_LIBS} -lws2_32")
+    endif()
+elseif(APPLE)
+    set(PKGCONFIG_PLATFORM_LIBS "Libs.private: -framework CoreFoundation")
+    if(LIBETUDE_ENABLE_AUDIO_ABSTRACTION)
+        set(PKGCONFIG_PLATFORM_LIBS "${PKGCONFIG_PLATFORM_LIBS} -framework CoreAudio -framework AudioUnit -framework AudioToolbox")
+    endif()
+    if(LIBETUDE_ENABLE_THREADING_ABSTRACTION)
+        set(PKGCONFIG_PLATFORM_LIBS "${PKGCONFIG_PLATFORM_LIBS} -lpthread")
+    endif()
+    if(LIBETUDE_ENABLE_DYNLIB_ABSTRACTION)
+        set(PKGCONFIG_PLATFORM_LIBS "${PKGCONFIG_PLATFORM_LIBS} -ldl")
+    endif()
+elseif(UNIX)
+    set(PKGCONFIG_PLATFORM_LIBS "Libs.private: -lm")
+    if(LIBETUDE_ENABLE_AUDIO_ABSTRACTION AND ALSA_FOUND)
+        set(PKGCONFIG_PLATFORM_LIBS "${PKGCONFIG_PLATFORM_LIBS} -lasound")
+    endif()
+    if(LIBETUDE_ENABLE_THREADING_ABSTRACTION)
+        set(PKGCONFIG_PLATFORM_LIBS "${PKGCONFIG_PLATFORM_LIBS} -lpthread")
+    endif()
+    if(LIBETUDE_ENABLE_DYNLIB_ABSTRACTION)
+        set(PKGCONFIG_PLATFORM_LIBS "${PKGCONFIG_PLATFORM_LIBS} -ldl")
+    endif()
+    if(LIBETUDE_ENABLE_NETWORK_ABSTRACTION)
+        set(PKGCONFIG_PLATFORM_LIBS "${PKGCONFIG_PLATFORM_LIBS} -lrt")
+    endif()
+endif()
 
-# pkg-config 파일 설치
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../cmake/libetude.pc.in
-    ${CMAKE_CURRENT_BINARY_DIR}/libetude.pc
-    @ONLY
-)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/libetude.pc
-    DESTINATION lib/pkgconfig
-    COMPONENT Development
-)
+# 전체 설치 설정 적용
+configure_libetude_install(libetude_static)

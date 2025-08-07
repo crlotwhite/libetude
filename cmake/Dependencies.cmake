@@ -1,9 +1,101 @@
 # LibEtude 의존성 관리
 # Copyright (c) 2025 LibEtude Project
 
+# 플랫폼 추상화 레이어 의존성 자동 감지
+function(detect_platform_dependencies)
+    message(STATUS "플랫폼 추상화 레이어 의존성 자동 감지 중...")
+
+    # 플랫폼별 필수 의존성 감지
+    if(WIN32)
+        # Windows API 라이브러리 확인
+        find_library(KERNEL32_LIB kernel32 REQUIRED)
+        find_library(USER32_LIB user32 REQUIRED)
+        find_library(ADVAPI32_LIB advapi32 REQUIRED)
+        find_library(PSAPI_LIB psapi REQUIRED)
+        find_library(PDH_LIB pdh REQUIRED)
+
+        # 오디오 관련 라이브러리
+        if(LIBETUDE_ENABLE_AUDIO_ABSTRACTION)
+            find_library(WINMM_LIB winmm REQUIRED)
+            find_library(DSOUND_LIB dsound)
+            find_library(OLE32_LIB ole32 REQUIRED)
+            find_library(OLEAUT32_LIB oleaut32 REQUIRED)
+        endif()
+
+        # 네트워크 관련 라이브러리
+        if(LIBETUDE_ENABLE_NETWORK_ABSTRACTION)
+            find_library(WS2_32_LIB ws2_32 REQUIRED)
+            find_library(WSOCK32_LIB wsock32)
+        endif()
+
+        message(STATUS "Windows 의존성 감지 완료")
+
+    elseif(APPLE)
+        # macOS/iOS 프레임워크 확인
+        find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
+        find_library(COREGRAPHICS_FRAMEWORK CoreGraphics)
+        find_library(IOKIT_FRAMEWORK IOKit)
+
+        if(LIBETUDE_ENABLE_AUDIO_ABSTRACTION)
+            find_library(COREAUDIO_FRAMEWORK CoreAudio REQUIRED)
+            find_library(AUDIOUNIT_FRAMEWORK AudioUnit REQUIRED)
+            find_library(AUDIOTOOLBOX_FRAMEWORK AudioToolbox REQUIRED)
+        endif()
+
+        if(LIBETUDE_ENABLE_SYSTEM_ABSTRACTION)
+            find_library(SYSTEMCONFIGURATION_FRAMEWORK SystemConfiguration)
+        endif()
+
+        message(STATUS "macOS/iOS 의존성 감지 완료")
+
+    elseif(UNIX)
+        # Linux 시스템 라이브러리 확인
+        find_library(RT_LIB rt)
+        find_library(DL_LIB dl REQUIRED)
+        find_library(M_LIB m REQUIRED)
+
+        # 오디오 관련 라이브러리
+        if(LIBETUDE_ENABLE_AUDIO_ABSTRACTION)
+            find_package(PkgConfig QUIET)
+            if(PKG_CONFIG_FOUND)
+                pkg_check_modules(ALSA alsa)
+                pkg_check_modules(PULSE libpulse)
+                pkg_check_modules(JACK jack)
+            endif()
+
+            if(NOT ALSA_FOUND AND NOT PULSE_FOUND AND NOT JACK_FOUND)
+                message(WARNING "오디오 라이브러리(ALSA/PulseAudio/JACK)를 찾을 수 없습니다")
+            endif()
+        endif()
+
+        # 시스템 정보 관련
+        if(LIBETUDE_ENABLE_SYSTEM_ABSTRACTION)
+            find_library(PROCFS_LIB proc)  # /proc 파일시스템 접근용
+        endif()
+
+        message(STATUS "Linux 의존성 감지 완료")
+    endif()
+
+    # 공통 의존성
+    find_package(Threads REQUIRED)
+
+    # 크로스 컴파일 환경 감지
+    if(CMAKE_CROSSCOMPILING)
+        message(STATUS "크로스 컴파일 환경 감지됨")
+        message(STATUS "타겟 시스템: ${CMAKE_SYSTEM_NAME}")
+        message(STATUS "타겟 프로세서: ${CMAKE_SYSTEM_PROCESSOR}")
+
+        # 크로스 컴파일용 의존성 조정
+        set(LIBETUDE_CROSS_COMPILING ON PARENT_SCOPE)
+    endif()
+endfunction()
+
 # 의존성 찾기 함수
 function(find_libetude_dependencies)
     message(STATUS "LibEtude 의존성 확인 중...")
+
+    # 플랫폼 추상화 레이어 의존성 감지
+    detect_platform_dependencies()
 
     # 필수 의존성
     find_package(Threads REQUIRED)

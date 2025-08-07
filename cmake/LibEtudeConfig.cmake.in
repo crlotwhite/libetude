@@ -1,0 +1,122 @@
+# LibEtude CMake 설정 파일
+# Copyright (c) 2025 LibEtude Project
+
+@PACKAGE_INIT@
+
+# LibEtude 버전 정보
+set(LibEtude_VERSION @PROJECT_VERSION@)
+set(LibEtude_VERSION_MAJOR @PROJECT_VERSION_MAJOR@)
+set(LibEtude_VERSION_MINOR @PROJECT_VERSION_MINOR@)
+set(LibEtude_VERSION_PATCH @PROJECT_VERSION_PATCH@)
+
+# 설치 경로
+set_and_check(LibEtude_INCLUDE_DIR "@PACKAGE_CMAKE_INSTALL_PREFIX@/include")
+set_and_check(LibEtude_LIB_DIR "@PACKAGE_CMAKE_INSTALL_PREFIX@/lib")
+set_and_check(LibEtude_BIN_DIR "@PACKAGE_CMAKE_INSTALL_PREFIX@/bin")
+
+# 플랫폼 추상화 레이어 기능 정보
+set(LibEtude_PLATFORM_ABSTRACTION_ENABLED @LIBETUDE_ENABLE_PLATFORM_ABSTRACTION@)
+set(LibEtude_AUDIO_ABSTRACTION_ENABLED @LIBETUDE_ENABLE_AUDIO_ABSTRACTION@)
+set(LibEtude_SYSTEM_ABSTRACTION_ENABLED @LIBETUDE_ENABLE_SYSTEM_ABSTRACTION@)
+set(LibEtude_THREADING_ABSTRACTION_ENABLED @LIBETUDE_ENABLE_THREADING_ABSTRACTION@)
+set(LibEtude_MEMORY_ABSTRACTION_ENABLED @LIBETUDE_ENABLE_MEMORY_ABSTRACTION@)
+set(LibEtude_FILESYSTEM_ABSTRACTION_ENABLED @LIBETUDE_ENABLE_FILESYSTEM_ABSTRACTION@)
+set(LibEtude_NETWORK_ABSTRACTION_ENABLED @LIBETUDE_ENABLE_NETWORK_ABSTRACTION@)
+set(LibEtude_DYNLIB_ABSTRACTION_ENABLED @LIBETUDE_ENABLE_DYNLIB_ABSTRACTION@)
+
+# 빌드 설정 정보
+set(LibEtude_SIMD_ENABLED @LIBETUDE_ENABLE_SIMD@)
+set(LibEtude_GPU_ENABLED @LIBETUDE_ENABLE_GPU@)
+set(LibEtude_MINIMAL_BUILD @LIBETUDE_MINIMAL@)
+set(LibEtude_STATIC_DISPATCH @LIBETUDE_PLATFORM_STATIC_DISPATCH@)
+
+# 플랫폼 정보
+set(LibEtude_TARGET_PLATFORM "@CMAKE_SYSTEM_NAME@")
+set(LibEtude_TARGET_PROCESSOR "@CMAKE_SYSTEM_PROCESSOR@")
+
+# 의존성 찾기
+include(CMakeFindDependencyMacro)
+
+# 필수 의존성
+find_dependency(Threads REQUIRED)
+
+# 플랫폼별 의존성
+if(WIN32)
+    # Windows 의존성은 시스템에 내장되어 있음
+elseif(APPLE)
+    # macOS 프레임워크
+    if(LibEtude_AUDIO_ABSTRACTION_ENABLED)
+        find_library(COREAUDIO_FRAMEWORK CoreAudio REQUIRED)
+        find_library(AUDIOUNIT_FRAMEWORK AudioUnit REQUIRED)
+        find_library(AUDIOTOOLBOX_FRAMEWORK AudioToolbox REQUIRED)
+    endif()
+elseif(UNIX)
+    # Linux 의존성
+    if(LibEtude_AUDIO_ABSTRACTION_ENABLED)
+        find_package(PkgConfig QUIET)
+        if(PKG_CONFIG_FOUND)
+            pkg_check_modules(ALSA alsa)
+        endif()
+    endif()
+endif()
+
+# GPU 의존성 (선택적)
+if(LibEtude_GPU_ENABLED)
+    find_dependency(CUDAToolkit QUIET)
+    find_dependency(OpenCL QUIET)
+endif()
+
+# LibEtude 타겟 포함
+include("${CMAKE_CURRENT_LIST_DIR}/LibEtudeTargets.cmake")
+
+# 편의 변수 설정
+set(LibEtude_LIBRARIES LibEtude::libetude)
+set(LibEtude_INCLUDE_DIRS ${LibEtude_INCLUDE_DIR})
+
+# 사용법 검증
+check_required_components(LibEtude)
+
+# 헬퍼 함수들
+function(libetude_add_executable TARGET_NAME)
+    cmake_parse_arguments(LIBETUDE "" "" "SOURCES" ${ARGN})
+
+    add_executable(${TARGET_NAME} ${LIBETUDE_SOURCES})
+    target_link_libraries(${TARGET_NAME} PRIVATE LibEtude::libetude)
+
+    # 플랫폼별 설정 적용
+    if(WIN32)
+        set_target_properties(${TARGET_NAME} PROPERTIES
+            WIN32_EXECUTABLE TRUE
+        )
+    endif()
+endfunction()
+
+function(libetude_add_library TARGET_NAME)
+    cmake_parse_arguments(LIBETUDE "STATIC;SHARED" "" "SOURCES" ${ARGN})
+
+    if(LIBETUDE_STATIC)
+        add_library(${TARGET_NAME} STATIC ${LIBETUDE_SOURCES})
+    elseif(LIBETUDE_SHARED)
+        add_library(${TARGET_NAME} SHARED ${LIBETUDE_SOURCES})
+    else()
+        add_library(${TARGET_NAME} ${LIBETUDE_SOURCES})
+    endif()
+
+    target_link_libraries(${TARGET_NAME} PRIVATE LibEtude::libetude)
+endfunction()
+
+# 플랫폼 추상화 레이어 기능 확인 매크로
+macro(libetude_require_platform_feature FEATURE_NAME)
+    if(NOT LibEtude_${FEATURE_NAME}_ENABLED)
+        message(FATAL_ERROR "LibEtude가 ${FEATURE_NAME} 기능 없이 빌드되었습니다. 이 기능이 필요합니다.")
+    endif()
+endmacro()
+
+# 사용 예시 출력
+if(NOT LibEtude_FIND_QUIETLY)
+    message(STATUS "LibEtude ${LibEtude_VERSION} 발견")
+    message(STATUS "  포함 디렉토리: ${LibEtude_INCLUDE_DIRS}")
+    message(STATUS "  라이브러리: ${LibEtude_LIBRARIES}")
+    message(STATUS "  플랫폼 추상화: ${LibEtude_PLATFORM_ABSTRACTION_ENABLED}")
+    message(STATUS "  타겟 플랫폼: ${LibEtude_TARGET_PLATFORM}")
+endif()
