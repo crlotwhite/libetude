@@ -1,0 +1,33 @@
+LibEtude 플랫폼 추상화 레이어 예제 데이터
+
+이 파일은 파일시스템 예제에서 사용되는 샘플 데이터입니다.
+
+=== 테스트 데이터 ===
+숫자: 1, 2, 3, 4, 5
+문자열: Hello, World!
+한글: 안녕하세요, 세계!
+특수문자: !@#$%^&*()
+
+=== 멀티라인 데이터 ===
+첫 번째 줄
+두 번째 줄
+세 번째 줄
+
+=== JSON 형태 데이터 ===
+{
+  "name": "LibEtude",
+  "version": "1.0.0",
+  "platform": "cross-platform",
+  "features": [
+    "audio processing",
+    "system abstraction",
+    "threading",
+    "memory management"
+  ]
+}
+
+=== 바이너리 데이터 시뮬레이션 ===
+0x00 0x01 0x02 0x03 0x04 0x05 0x06 0x07
+0x08 0x09 0x0A 0x0B 0x0C 0x0D 0x0E 0x0F
+
+파일 끝
