@@ -9,6 +9,7 @@
 
 #include "libetude/platform/factory.h"
 #include "libetude/platform/threading.h"
+#include "libetude/platform/network.h"
 #include "libetude/platform/common.h"
 #include "libetude/error.h"
 
@@ -31,6 +32,9 @@ extern void et_destroy_windows_memory_interface(ETMemoryInterface* interface);
 // 파일시스템 인터페이스
 extern ETResult et_create_windows_filesystem_interface(struct ETFilesystemInterface** interface);
 extern void et_destroy_windows_filesystem_interface(struct ETFilesystemInterface* interface);
+
+// 네트워크 인터페이스
+extern const ETNetworkInterface* et_get_windows_network_interface(void);
 
 // ============================================================================
 // Windows 팩토리 함수들
@@ -93,6 +97,31 @@ static void windows_destroy_filesystem_interface(struct ETFilesystemInterface* i
 }
 
 /**
+ * @brief Windows 네트워크 인터페이스를 생성합니다
+ */
+static ETResult windows_create_network_interface(void** interface) {
+    if (!interface) {
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    const ETNetworkInterface* net_interface = et_get_windows_network_interface();
+    if (!net_interface) {
+        return ET_ERROR_NOT_IMPLEMENTED;
+    }
+
+    *interface = (void*)net_interface;
+    return ET_SUCCESS;
+}
+
+/**
+ * @brief Windows 네트워크 인터페이스를 해제합니다
+ */
+static void windows_destroy_network_interface(void* interface) {
+    // Windows 네트워크 인터페이스는 정적 구조체이므로 해제할 필요 없음
+    (void)interface;
+}
+
+/**
  * @brief Windows 플랫폼을 초기화합니다
  */
 static ETResult windows_initialize(void) {
@@ -126,6 +155,8 @@ static ETPlatformFactory g_windows_factory = {
     .destroy_memory_interface = windows_destroy_memory_interface,
     .create_filesystem_interface = windows_create_filesystem_interface,
     .destroy_filesystem_interface = windows_destroy_filesystem_interface,
+    .create_network_interface = windows_create_network_interface,
+    .destroy_network_interface = windows_destroy_network_interface,
 
     // 플랫폼 초기화/정리
     .initialize = windows_initialize,

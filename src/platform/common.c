@@ -6,6 +6,7 @@
  */
 
 #include "libetude/platform/common.h"
+#include "libetude/platform/factory.h"
 #include "libetude/error.h"
 #include <string.h>
 #include <time.h>
@@ -237,4 +238,15 @@ bool et_platform_has_feature(ETHardwareFeature feature) {
     }
 
     return (info.features & feature) != 0;
+}
+
+// ============================================================================
+// 팩토리 접근 함수
+// ============================================================================
+
+/**
+ * @brief 현재 플랫폼의 팩토리를 가져옵니다
+ */
+const ETPlatformFactory* et_get_platform_factory(void) {
+    return et_platform_factory_get_current();
 }

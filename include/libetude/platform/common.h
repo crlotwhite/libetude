@@ -187,6 +187,12 @@ const char* et_get_platform_error_description(ETPlatformType platform, int platf
  */
 bool et_platform_has_feature(ETHardwareFeature feature);
 
+/**
+ * @brief 현재 플랫폼의 팩토리를 가져옵니다
+ * @return 플랫폼 팩토리 포인터
+ */
+const struct ETPlatformFactory* et_get_platform_factory(void);
+
 // ============================================================================
 // 로깅 매크로 (간단한 구현)
 // ============================================================================

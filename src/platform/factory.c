@@ -7,6 +7,7 @@
 
 #include "libetude/platform/factory.h"
 #include "libetude/platform/common.h"
+#include "libetude/platform/network.h"
 #include "libetude/error.h"
 #include <string.h>
 #include <stdlib.h>
@@ -426,5 +427,42 @@ void et_destroy_filesystem_interface(struct ETFilesystemInterface* interface) {
     const ETPlatformFactory* factory = et_platform_factory_get_current();
     if (factory && factory->destroy_filesystem_interface) {
         factory->destroy_filesystem_interface(interface);
+    }
+}
+
+/**
+ * @brief 현재 플랫폼의 네트워크 인터페이스를 생성합니다
+ */
+ETResult et_create_network_interface(struct ETNetworkInterface** interface) {
+    if (!interface) {
+        ET_SET_ERROR(ET_ERROR_INVALID_ARGUMENT, "interface 포인터가 NULL입니다");
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    const ETPlatformFactory* factory = et_platform_factory_get_current();
+    if (!factory) {
+        ET_SET_ERROR(ET_ERROR_NOT_FOUND, "현재 플랫폼의 팩토리를 찾을 수 없습니다");
+        return ET_ERROR_NOT_FOUND;
+    }
+
+    if (!factory->create_network_interface) {
+        ET_SET_ERROR(ET_ERROR_NOT_IMPLEMENTED, "네트워크 인터페이스 생성이 구현되지 않았습니다");
+        return ET_ERROR_NOT_IMPLEMENTED;
+    }
+
+    return factory->create_network_interface((void**)interface);
+}
+
+/**
+ * @brief 네트워크 인터페이스를 해제합니다
+ */
+void et_destroy_network_interface(struct ETNetworkInterface* interface) {
+    if (!interface) {
+        return;
+    }
+
+    const ETPlatformFactory* factory = et_platform_factory_get_current();
+    if (factory && factory->destroy_network_interface) {
+        factory->destroy_network_interface((void*)interface);
     }
 }
