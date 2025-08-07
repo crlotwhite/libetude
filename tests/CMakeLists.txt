@@ -263,6 +263,12 @@ create_unity_test(plugin_dependency_test "unit/test_plugin_dependency.c")
 # 오디오 효과 플러그인 테스트
 create_unity_test(audio_effects_test "unit/test_audio_effects.c")
 
+# 컴파일 타임 최적화 시스템 테스트
+create_unity_test(optimization_test "unit/test_optimization.c")
+
+# 런타임 적응 시스템 테스트
+create_unity_test(runtime_adaptation_test "unit/test_runtime_adaptation.c")
+
 # 통합 테스트 (16번 작업)
 create_unity_test(integration_pipeline_test "integration/test_pipeline.c")
 create_unity_test(integration_streaming_test "integration/test_streaming.c")
@@ -332,6 +338,12 @@ add_test(NAME PluginDependencyTest COMMAND plugin_dependency_test)
 
 # 오디오 효과 플러그인 테스트
 add_test(NAME AudioEffectsTest COMMAND audio_effects_test)
+
+# 컴파일 타임 최적화 시스템 테스트
+add_test(NAME OptimizationTest COMMAND optimization_test)
+
+# 런타임 적응 시스템 테스트
+add_test(NAME RuntimeAdaptationTest COMMAND runtime_adaptation_test)
 
 # 통합 테스트 등록 (16번 작업)
 add_test(NAME IntegrationPipelineTest COMMAND integration_pipeline_test)
@@ -520,6 +532,20 @@ set_tests_properties(PluginDependencyTest PROPERTIES
 set_tests_properties(AudioEffectsTest PROPERTIES
     TIMEOUT 180
     LABELS "audio;effects;plugin;reverb;equalizer;pipeline;realtime;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# 컴파일 타임 최적화 시스템 테스트 속성 설정
+set_tests_properties(OptimizationTest PROPERTIES
+    TIMEOUT 120
+    LABELS "optimization;compile;platform;simd;performance;core;libetude"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# 런타임 적응 시스템 테스트 속성 설정
+set_tests_properties(RuntimeAdaptationTest PROPERTIES
+    TIMEOUT 180
+    LABELS "runtime;adaptation;hardware;dispatch;profiling;thermal;power;core;libetude"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 

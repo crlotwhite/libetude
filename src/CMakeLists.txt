@@ -68,6 +68,8 @@ set(LIBETUDE_CORE_SOURCES
     platform/platform.c
     platform/audio_common.c
     platform/system_common.c
+    platform/optimization.c
+    platform/runtime_adaptation.c
 
     # 플랫폼별 구현
     platform/platform_core.c
@@ -77,6 +79,12 @@ set(LIBETUDE_CORE_SOURCES
     platform/mobile_optimization.c
     platform/mobile_power_management.c
     platform/thermal_management.c
+    platform/memory_common.c
+    platform/threading_common.c
+    platform/filesystem_common.c
+    platform/network_common.c
+    platform/dynlib_common.c
+    platform/dynlib_error_mapping.c
 )
 
 # SIMD 커널 소스 (조건부 컴파일)
@@ -123,6 +131,12 @@ if(WIN32)
         platform/windows/windows_audio.c
         platform/windows/windows_utils.c
         platform/windows/windows_system.c
+        platform/windows/dynlib_windows.c
+        platform/windows/filesystem_windows.c
+        platform/windows/memory_windows.c
+        platform/windows/network_windows.c
+        platform/windows/threading_windows.c
+        platform/windows/factory_windows.c
     )
 elseif(APPLE)
     if(IOS)
@@ -138,6 +152,8 @@ elseif(APPLE)
             platform/macos/macos_utils.c
             platform/macos/macos_compat.c
             platform/macos/macos_system.c
+            platform/macos/network_macos.c
+            platform/macos/factory_macos.c
         )
     endif()
 elseif(ANDROID)
@@ -152,6 +168,18 @@ elseif(UNIX)
         platform/linux/linux_audio.c
         platform/linux/linux_utils.c
         platform/linux/linux_system.c
+        platform/linux/network_linux.c
+        platform/linux/factory_linux.c
+    )
+endif()
+
+# POSIX 공통 파일들 (Unix 계열 플랫폼에서 사용)
+if(UNIX)
+    list(APPEND LIBETUDE_CORE_SOURCES
+        platform/posix/dynlib_posix.c
+        platform/posix/filesystem_posix.c
+        platform/posix/memory_posix.c
+        platform/posix/threading_posix.c
     )
 endif()
 
