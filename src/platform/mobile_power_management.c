@@ -543,7 +543,11 @@ static void* power_monitoring_thread(void* arg) {
         update_battery_status();
 
         // 1초마다 업데이트
-        sleep(1);
+#ifdef _WIN32
+        Sleep(1000);  // Windows: 밀리초 단위
+#else
+        sleep(1);     // POSIX: 초 단위
+#endif
     }
 
     return NULL;

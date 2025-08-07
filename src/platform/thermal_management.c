@@ -675,7 +675,11 @@ int thermal_wait_for_cooling(float target_temperature, int timeout_ms) {
             return LIBETUDE_SUCCESS;  // 목표 온도 달성
         }
 
-        usleep(1000000);  // 1초 대기
+#ifdef _WIN32
+        Sleep(1000);  // 1초 대기 (Windows)
+#else
+        usleep(1000000);  // 1초 대기 (POSIX)
+#endif
     }
 
     return LIBETUDE_ERROR_TIMEOUT;  // 타임아웃
@@ -817,7 +821,11 @@ static void* thermal_monitoring_thread(void* arg) {
             // thermal_predictive_throttling(engine, predicted_temp);  // engine 필요
         }
 
-        usleep(interval_ms * 1000);
+#ifdef _WIN32
+        Sleep(interval_ms);  // Windows: Sleep은 밀리초 단위
+#else
+        usleep(interval_ms * 1000);  // POSIX: usleep은 마이크로초 단위
+#endif
     }
 
     return NULL;
@@ -938,9 +946,16 @@ static float predict_temperature(float current_temp, float trend) {
 }
 
 static int64_t get_current_time_ms() {
+#ifdef _WIN32
+    LARGE_INTEGER frequency, counter;
+    QueryPerformanceFrequency(&frequency);
+    QueryPerformanceCounter(&counter);
+    return (int64_t)((counter.QuadPart * 1000) / frequency.QuadPart);
+#else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+#endif
 }
 
 // ============================================================================

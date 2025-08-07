@@ -121,8 +121,10 @@ endif()
 find_package(Threads REQUIRED)
 add_library(libetude_static STATIC ${LIBETUDE_CORE_SOURCES})
 target_include_directories(libetude_static PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
 )
+target_compile_definitions(libetude_static PUBLIC LIBETUDE_STATIC_LIB)
 
 # 플랫폼 추상화 레이어 설정 적용
 set_platform_compile_options(libetude_static)
@@ -137,7 +139,8 @@ endif()
 if(NOT LIBETUDE_MINIMAL)
     add_library(libetude_shared SHARED ${LIBETUDE_CORE_SOURCES})
     target_include_directories(libetude_shared PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
     )
     target_compile_definitions(libetude_shared PRIVATE LIBETUDE_EXPORTS)
 

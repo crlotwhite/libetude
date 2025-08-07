@@ -21,10 +21,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
 #include <stdarg.h>
-#include <unistd.h>
 #include <math.h>
+
+#ifndef _WIN32
+#include <pthread.h>
+#include <unistd.h>
+#endif
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

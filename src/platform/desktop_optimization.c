@@ -23,7 +23,10 @@
 #endif
 #include <math.h>
 #include <time.h>
+
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 #ifdef _WIN32
     #include <windows.h>

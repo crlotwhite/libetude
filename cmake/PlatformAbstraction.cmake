@@ -144,42 +144,42 @@ function(collect_platform_sources OUTPUT_VAR)
 
     # 공통 플랫폼 소스
     list(APPEND PLATFORM_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/platform/common.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/platform/factory.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/platform/platform.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/platform/platform_core.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/platform/platform_utils.c
+        platform/common.c
+        platform/factory.c
+        platform/platform.c
+        platform/platform_core.c
+        platform/platform_utils.c
     )
 
     # 기능별 공통 소스
     if(LIBETUDE_ENABLE_AUDIO_ABSTRACTION)
-        list(APPEND PLATFORM_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/platform/audio_common.c)
+        list(APPEND PLATFORM_SOURCES platform/audio_common.c)
     endif()
 
     if(LIBETUDE_ENABLE_SYSTEM_ABSTRACTION)
-        list(APPEND PLATFORM_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/platform/system_common.c)
+        list(APPEND PLATFORM_SOURCES platform/system_common.c)
     endif()
 
     if(LIBETUDE_ENABLE_THREADING_ABSTRACTION)
-        list(APPEND PLATFORM_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/platform/threading_common.c)
+        list(APPEND PLATFORM_SOURCES platform/threading_common.c)
     endif()
 
     if(LIBETUDE_ENABLE_MEMORY_ABSTRACTION)
-        list(APPEND PLATFORM_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/platform/memory_common.c)
+        list(APPEND PLATFORM_SOURCES platform/memory_common.c)
     endif()
 
     if(LIBETUDE_ENABLE_FILESYSTEM_ABSTRACTION)
-        list(APPEND PLATFORM_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/platform/filesystem_common.c)
+        list(APPEND PLATFORM_SOURCES platform/filesystem_common.c)
     endif()
 
     if(LIBETUDE_ENABLE_NETWORK_ABSTRACTION)
-        list(APPEND PLATFORM_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/platform/network_common.c)
+        list(APPEND PLATFORM_SOURCES platform/network_common.c)
     endif()
 
     if(LIBETUDE_ENABLE_DYNLIB_ABSTRACTION)
         list(APPEND PLATFORM_SOURCES
-            src/platform/dynlib_common.c
-            src/platform/dynlib_error_mapping.c
+            platform/dynlib_common.c
+            platform/dynlib_error_mapping.c
         )
     endif()
 
@@ -187,124 +187,124 @@ function(collect_platform_sources OUTPUT_VAR)
     if(WIN32)
         # Windows 특화 소스
         list(APPEND PLATFORM_SOURCES
-            src/platform/windows/factory_windows.c
-            src/platform/windows/platform_init.c
-            src/platform/windows/windows_utils.c
+            platform/windows/factory_windows.c
+            platform/windows/platform_init.c
+            platform/windows/windows_utils.c
         )
 
         if(LIBETUDE_ENABLE_AUDIO_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/windows/windows_audio.c)
+            list(APPEND PLATFORM_SOURCES platform/windows/windows_audio.c)
         endif()
 
         if(LIBETUDE_ENABLE_SYSTEM_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/windows/windows_system.c)
+            list(APPEND PLATFORM_SOURCES platform/windows/windows_system.c)
         endif()
 
         if(LIBETUDE_ENABLE_THREADING_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/windows/threading_windows.c)
+            list(APPEND PLATFORM_SOURCES platform/windows/threading_windows.c)
         endif()
 
         if(LIBETUDE_ENABLE_MEMORY_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/windows/memory_windows.c)
+            list(APPEND PLATFORM_SOURCES platform/windows/memory_windows.c)
         endif()
 
         if(LIBETUDE_ENABLE_FILESYSTEM_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/windows/filesystem_windows.c)
+            list(APPEND PLATFORM_SOURCES platform/windows/filesystem_windows.c)
         endif()
 
         if(LIBETUDE_ENABLE_NETWORK_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/windows/network_windows.c)
+            list(APPEND PLATFORM_SOURCES platform/windows/network_windows.c)
         endif()
 
         if(LIBETUDE_ENABLE_DYNLIB_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/windows/dynlib_windows.c)
+            list(APPEND PLATFORM_SOURCES platform/windows/dynlib_windows.c)
         endif()
 
     elseif(APPLE)
         # macOS/iOS 특화 소스
         list(APPEND PLATFORM_SOURCES
-            src/platform/macos/factory_macos.c
-            src/platform/macos/platform_init.c
-            src/platform/macos/macos_utils.c
-            src/platform/macos/macos_compat.c
+            platform/macos/factory_macos.c
+            platform/macos/platform_init.c
+            platform/macos/macos_utils.c
+            platform/macos/macos_compat.c
         )
 
         if(LIBETUDE_ENABLE_AUDIO_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/macos/macos_audio.c)
+            list(APPEND PLATFORM_SOURCES platform/macos/macos_audio.c)
         endif()
 
         if(LIBETUDE_ENABLE_SYSTEM_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/macos/macos_system.c)
+            list(APPEND PLATFORM_SOURCES platform/macos/macos_system.c)
         endif()
 
         if(LIBETUDE_ENABLE_NETWORK_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/macos/network_macos.c)
+            list(APPEND PLATFORM_SOURCES platform/macos/network_macos.c)
         endif()
 
         # POSIX 공통 소스 추가
         if(LIBETUDE_ENABLE_THREADING_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/posix/threading_posix.c)
+            list(APPEND PLATFORM_SOURCES platform/posix/threading_posix.c)
         endif()
 
         if(LIBETUDE_ENABLE_MEMORY_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/posix/memory_posix.c)
+            list(APPEND PLATFORM_SOURCES platform/posix/memory_posix.c)
         endif()
 
         if(LIBETUDE_ENABLE_FILESYSTEM_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/posix/filesystem_posix.c)
+            list(APPEND PLATFORM_SOURCES platform/posix/filesystem_posix.c)
         endif()
 
         if(LIBETUDE_ENABLE_DYNLIB_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/posix/dynlib_posix.c)
+            list(APPEND PLATFORM_SOURCES platform/posix/dynlib_posix.c)
         endif()
 
     elseif(UNIX)
         # Linux 특화 소스
         list(APPEND PLATFORM_SOURCES
-            src/platform/linux/factory_linux.c
-            src/platform/linux/platform_init.c
-            src/platform/linux/linux_utils.c
+            platform/linux/factory_linux.c
+            platform/linux/platform_init.c
+            platform/linux/linux_utils.c
         )
 
         if(LIBETUDE_ENABLE_AUDIO_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/linux/linux_audio.c)
+            list(APPEND PLATFORM_SOURCES platform/linux/linux_audio.c)
         endif()
 
         if(LIBETUDE_ENABLE_SYSTEM_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/linux/linux_system.c)
+            list(APPEND PLATFORM_SOURCES platform/linux/linux_system.c)
         endif()
 
         if(LIBETUDE_ENABLE_NETWORK_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/linux/network_linux.c)
+            list(APPEND PLATFORM_SOURCES platform/linux/network_linux.c)
         endif()
 
         # POSIX 공통 소스 추가
         if(LIBETUDE_ENABLE_THREADING_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/posix/threading_posix.c)
+            list(APPEND PLATFORM_SOURCES platform/posix/threading_posix.c)
         endif()
 
         if(LIBETUDE_ENABLE_MEMORY_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/posix/memory_posix.c)
+            list(APPEND PLATFORM_SOURCES platform/posix/memory_posix.c)
         endif()
 
         if(LIBETUDE_ENABLE_FILESYSTEM_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/posix/filesystem_posix.c)
+            list(APPEND PLATFORM_SOURCES platform/posix/filesystem_posix.c)
         endif()
 
         if(LIBETUDE_ENABLE_DYNLIB_ABSTRACTION)
-            list(APPEND PLATFORM_SOURCES src/platform/posix/dynlib_posix.c)
+            list(APPEND PLATFORM_SOURCES platform/posix/dynlib_posix.c)
         endif()
     endif()
 
     # 최적화 및 고급 기능 소스
     list(APPEND PLATFORM_SOURCES
-        src/platform/optimization.c
-        src/platform/runtime_adaptation.c
-        src/platform/desktop_optimization.c
-        src/platform/embedded_optimization.c
-        src/platform/mobile_optimization.c
-        src/platform/mobile_power_management.c
-        src/platform/thermal_management.c
+        platform/optimization.c
+        platform/runtime_adaptation.c
+        platform/desktop_optimization.c
+        platform/embedded_optimization.c
+        platform/mobile_optimization.c
+        platform/mobile_power_management.c
+        platform/thermal_management.c
     )
 
     set(${OUTPUT_VAR} ${PLATFORM_SOURCES} PARENT_SCOPE)

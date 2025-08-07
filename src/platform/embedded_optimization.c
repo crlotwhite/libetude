@@ -48,9 +48,16 @@ static ETResult configure_cache_optimization(ETEmbeddedContext* ctx);
 
 // 현재 시간 가져오기 (밀리초)
 static uint64_t get_current_time_ms(void) {
+#ifdef _WIN32
+    LARGE_INTEGER frequency, counter;
+    QueryPerformanceFrequency(&frequency);
+    QueryPerformanceCounter(&counter);
+    return (uint64_t)((counter.QuadPart * 1000) / frequency.QuadPart);
+#else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+#endif
 }
 
 // 현재 CPU 주파수 가져오기 (플랫폼별 구현 필요)
@@ -728,7 +735,11 @@ static ETResult configure_cache_optimization(ETEmbeddedContext* ctx) {
 
         // 캐시 정렬 버퍼 할당
         ctx->cache_buffer_size = ctx->config.constraints.cache_size_kb * 1024 / 4; // 캐시의 1/4 사용
+#ifdef _WIN32
+        ctx->cache_aligned_buffer = _aligned_malloc(ctx->cache_buffer_size, ctx->config.cache_line_size);
+#else
         ctx->cache_aligned_buffer = aligned_alloc(ctx->config.cache_line_size, ctx->cache_buffer_size);
+#endif
 
         if (!ctx->cache_aligned_buffer) {
             return ET_ERROR_OUT_OF_MEMORY;
