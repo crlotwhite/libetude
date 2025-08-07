@@ -144,36 +144,36 @@ function(collect_platform_sources OUTPUT_VAR)
 
     # 공통 플랫폼 소스
     list(APPEND PLATFORM_SOURCES
-        src/platform/common.c
-        src/platform/factory.c
-        src/platform/platform.c
-        src/platform/platform_core.c
-        src/platform/platform_utils.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/platform/common.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/platform/factory.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/platform/platform.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/platform/platform_core.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/platform/platform_utils.c
     )
 
     # 기능별 공통 소스
     if(LIBETUDE_ENABLE_AUDIO_ABSTRACTION)
-        list(APPEND PLATFORM_SOURCES src/platform/audio_common.c)
+        list(APPEND PLATFORM_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/platform/audio_common.c)
     endif()
 
     if(LIBETUDE_ENABLE_SYSTEM_ABSTRACTION)
-        list(APPEND PLATFORM_SOURCES src/platform/system_common.c)
+        list(APPEND PLATFORM_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/platform/system_common.c)
     endif()
 
     if(LIBETUDE_ENABLE_THREADING_ABSTRACTION)
-        list(APPEND PLATFORM_SOURCES src/platform/threading_common.c)
+        list(APPEND PLATFORM_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/platform/threading_common.c)
     endif()
 
     if(LIBETUDE_ENABLE_MEMORY_ABSTRACTION)
-        list(APPEND PLATFORM_SOURCES src/platform/memory_common.c)
+        list(APPEND PLATFORM_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/platform/memory_common.c)
     endif()
 
     if(LIBETUDE_ENABLE_FILESYSTEM_ABSTRACTION)
-        list(APPEND PLATFORM_SOURCES src/platform/filesystem_common.c)
+        list(APPEND PLATFORM_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/platform/filesystem_common.c)
     endif()
 
     if(LIBETUDE_ENABLE_NETWORK_ABSTRACTION)
-        list(APPEND PLATFORM_SOURCES src/platform/network_common.c)
+        list(APPEND PLATFORM_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/platform/network_common.c)
     endif()
 
     if(LIBETUDE_ENABLE_DYNLIB_ABSTRACTION)
