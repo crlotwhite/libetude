@@ -8,6 +8,7 @@
 #include "libetude/platform/factory.h"
 #include "libetude/platform/common.h"
 #include "libetude/platform/network.h"
+#include "libetude/platform/dynlib.h"
 #include "libetude/error.h"
 #include <string.h>
 #include <stdlib.h>
@@ -464,5 +465,42 @@ void et_destroy_network_interface(struct ETNetworkInterface* interface) {
     const ETPlatformFactory* factory = et_platform_factory_get_current();
     if (factory && factory->destroy_network_interface) {
         factory->destroy_network_interface((void*)interface);
+    }
+}
+
+/**
+ * @brief 현재 플랫폼의 동적 라이브러리 인터페이스를 생성합니다
+ */
+ETResult et_create_dynlib_interface(struct ETDynlibInterface** interface) {
+    if (!interface) {
+        ET_SET_ERROR(ET_ERROR_INVALID_ARGUMENT, "interface 포인터가 NULL입니다");
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    const ETPlatformFactory* factory = et_platform_factory_get_current();
+    if (!factory) {
+        ET_SET_ERROR(ET_ERROR_NOT_FOUND, "현재 플랫폼의 팩토리를 찾을 수 없습니다");
+        return ET_ERROR_NOT_FOUND;
+    }
+
+    if (!factory->create_dynlib_interface) {
+        ET_SET_ERROR(ET_ERROR_NOT_IMPLEMENTED, "동적 라이브러리 인터페이스 생성이 구현되지 않았습니다");
+        return ET_ERROR_NOT_IMPLEMENTED;
+    }
+
+    return factory->create_dynlib_interface(interface);
+}
+
+/**
+ * @brief 동적 라이브러리 인터페이스를 해제합니다
+ */
+void et_destroy_dynlib_interface(struct ETDynlibInterface* interface) {
+    if (!interface) {
+        return;
+    }
+
+    const ETPlatformFactory* factory = et_platform_factory_get_current();
+    if (factory && factory->destroy_dynlib_interface) {
+        factory->destroy_dynlib_interface(interface);
     }
 }

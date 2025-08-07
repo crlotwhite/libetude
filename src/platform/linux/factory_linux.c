@@ -36,6 +36,10 @@ extern void et_destroy_posix_filesystem_interface(struct ETFilesystemInterface* 
 // 네트워크 인터페이스
 extern const ETNetworkInterface* et_get_linux_network_interface(void);
 
+// 동적 라이브러리 인터페이스
+extern ETResult et_create_posix_dynlib_interface(struct ETDynlibInterface** interface);
+extern void et_destroy_posix_dynlib_interface(struct ETDynlibInterface* interface);
+
 // ============================================================================
 // Linux 팩토리 함수들
 // ============================================================================
@@ -122,6 +126,20 @@ static void linux_destroy_network_interface(void* interface) {
 }
 
 /**
+ * @brief Linux 동적 라이브러리 인터페이스를 생성합니다
+ */
+static ETResult linux_create_dynlib_interface(struct ETDynlibInterface** interface) {
+    return et_create_posix_dynlib_interface(interface);
+}
+
+/**
+ * @brief Linux 동적 라이브러리 인터페이스를 해제합니다
+ */
+static void linux_destroy_dynlib_interface(struct ETDynlibInterface* interface) {
+    et_destroy_posix_dynlib_interface(interface);
+}
+
+/**
  * @brief Linux 플랫폼을 초기화합니다
  */
 static ETResult linux_initialize(void) {
@@ -157,6 +175,8 @@ static ETPlatformFactory g_linux_factory = {
     .destroy_filesystem_interface = linux_destroy_filesystem_interface,
     .create_network_interface = linux_create_network_interface,
     .destroy_network_interface = linux_destroy_network_interface,
+    .create_dynlib_interface = linux_create_dynlib_interface,
+    .destroy_dynlib_interface = linux_destroy_dynlib_interface,
 
     // 플랫폼 초기화/정리
     .initialize = linux_initialize,

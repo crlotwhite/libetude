@@ -36,6 +36,10 @@ extern void et_destroy_posix_filesystem_interface(struct ETFilesystemInterface* 
 // 네트워크 인터페이스
 extern const ETNetworkInterface* et_get_macos_network_interface(void);
 
+// 동적 라이브러리 인터페이스
+extern ETResult et_create_posix_dynlib_interface(struct ETDynlibInterface** interface);
+extern void et_destroy_posix_dynlib_interface(struct ETDynlibInterface* interface);
+
 // ============================================================================
 // macOS 팩토리 함수들
 // ============================================================================
@@ -122,6 +126,20 @@ static void macos_destroy_network_interface(void* interface) {
 }
 
 /**
+ * @brief macOS 동적 라이브러리 인터페이스를 생성합니다
+ */
+static ETResult macos_create_dynlib_interface(struct ETDynlibInterface** interface) {
+    return et_create_posix_dynlib_interface(interface);
+}
+
+/**
+ * @brief macOS 동적 라이브러리 인터페이스를 해제합니다
+ */
+static void macos_destroy_dynlib_interface(struct ETDynlibInterface* interface) {
+    et_destroy_posix_dynlib_interface(interface);
+}
+
+/**
  * @brief macOS 플랫폼을 초기화합니다
  */
 static ETResult macos_initialize(void) {
@@ -157,6 +175,8 @@ static ETPlatformFactory g_macos_factory = {
     .destroy_filesystem_interface = macos_destroy_filesystem_interface,
     .create_network_interface = macos_create_network_interface,
     .destroy_network_interface = macos_destroy_network_interface,
+    .create_dynlib_interface = macos_create_dynlib_interface,
+    .destroy_dynlib_interface = macos_destroy_dynlib_interface,
 
     // 플랫폼 초기화/정리
     .initialize = macos_initialize,

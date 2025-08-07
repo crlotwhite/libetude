@@ -36,6 +36,10 @@ extern void et_destroy_windows_filesystem_interface(struct ETFilesystemInterface
 // 네트워크 인터페이스
 extern const ETNetworkInterface* et_get_windows_network_interface(void);
 
+// 동적 라이브러리 인터페이스
+extern ETResult et_create_windows_dynlib_interface(struct ETDynlibInterface** interface);
+extern void et_destroy_windows_dynlib_interface(struct ETDynlibInterface* interface);
+
 // ============================================================================
 // Windows 팩토리 함수들
 // ============================================================================
@@ -122,6 +126,20 @@ static void windows_destroy_network_interface(void* interface) {
 }
 
 /**
+ * @brief Windows 동적 라이브러리 인터페이스를 생성합니다
+ */
+static ETResult windows_create_dynlib_interface(struct ETDynlibInterface** interface) {
+    return et_create_windows_dynlib_interface(interface);
+}
+
+/**
+ * @brief Windows 동적 라이브러리 인터페이스를 해제합니다
+ */
+static void windows_destroy_dynlib_interface(struct ETDynlibInterface* interface) {
+    et_destroy_windows_dynlib_interface(interface);
+}
+
+/**
  * @brief Windows 플랫폼을 초기화합니다
  */
 static ETResult windows_initialize(void) {
@@ -157,6 +175,8 @@ static ETPlatformFactory g_windows_factory = {
     .destroy_filesystem_interface = windows_destroy_filesystem_interface,
     .create_network_interface = windows_create_network_interface,
     .destroy_network_interface = windows_destroy_network_interface,
+    .create_dynlib_interface = windows_create_dynlib_interface,
+    .destroy_dynlib_interface = windows_destroy_dynlib_interface,
 
     // 플랫폼 초기화/정리
     .initialize = windows_initialize,

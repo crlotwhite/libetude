@@ -20,6 +20,7 @@
 // 전방 선언
 struct ETFilesystemInterface;
 struct ETNetworkInterface;
+struct ETDynlibInterface;
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -114,6 +115,9 @@ typedef struct ETPlatformFactory {
 
     ETResult (*create_network_interface)(void** interface);
     void (*destroy_network_interface)(void* interface);
+
+    ETResult (*create_dynlib_interface)(struct ETDynlibInterface** interface);
+    void (*destroy_dynlib_interface)(struct ETDynlibInterface* interface);
 
     // 플랫폼 초기화/정리
     ETResult (*initialize)(void);
@@ -227,6 +231,19 @@ ETResult et_create_network_interface(struct ETNetworkInterface** interface);
  * @param interface 해제할 인터페이스
  */
 void et_destroy_network_interface(struct ETNetworkInterface* interface);
+
+/**
+ * @brief 현재 플랫폼의 동적 라이브러리 인터페이스를 생성합니다
+ * @param interface 생성된 인터페이스 포인터 (출력)
+ * @return 성공시 ET_SUCCESS, 실패시 오류 코드
+ */
+ETResult et_create_dynlib_interface(struct ETDynlibInterface** interface);
+
+/**
+ * @brief 동적 라이브러리 인터페이스를 해제합니다
+ * @param interface 해제할 인터페이스
+ */
+void et_destroy_dynlib_interface(struct ETDynlibInterface* interface);
 
 /**
  * @brief 현재 플랫폼을 자동 감지합니다
