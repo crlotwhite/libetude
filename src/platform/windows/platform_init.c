@@ -18,6 +18,10 @@ extern ETSystemInterface* et_get_windows_system_interface(void);
 extern ETResult et_windows_system_initialize(void);
 extern void et_windows_system_cleanup(void);
 
+extern ETThreadInterface* et_get_windows_thread_interface(void);
+extern ETResult et_create_windows_thread_interface(ETThreadInterface** interface);
+extern void et_destroy_windows_thread_interface(ETThreadInterface* interface);
+
 /* 오디오 인터페이스 팩토리 함수 */
 static ETResult windows_audio_factory(void** interface, const ETInterfaceMetadata* metadata) {
     (void)metadata; /* 미사용 매개변수 경고 제거 */
@@ -38,12 +42,12 @@ static void windows_audio_destructor(void* interface) {
 
 static ETResult windows_system_factory(void** interface, const ETInterfaceMetadata* metadata) {
     (void)metadata; /* 미사용 매개변수 경고 제거 */
-    
+
     ETResult result = et_windows_system_initialize();
     if (result != ET_SUCCESS) {
         return result;
     }
-    
+
     *interface = et_get_windows_system_interface();
     return (*interface != NULL) ? ET_SUCCESS : ET_ERROR_HARDWARE;
 }
@@ -53,14 +57,17 @@ static void windows_system_destructor(void* interface) {
     et_windows_system_cleanup();
 }
 
-static ETResult stub_thread_factory(void** interface, const ETInterfaceMetadata* metadata) {
-    (void)metadata;
-    *interface = NULL;
-    return ET_SUCCESS;
+static ETResult windows_thread_factory(void** interface, const ETInterfaceMetadata* metadata) {
+    (void)metadata; /* 미사용 매개변수 경고 제거 */
+
+    ETResult result = et_create_windows_thread_interface((ETThreadInterface**)interface);
+    return result;
 }
 
-static void stub_thread_destructor(void* interface) {
-    (void)interface;
+static void windows_thread_destructor(void* interface) {
+    if (interface) {
+        et_destroy_windows_thread_interface((ETThreadInterface*)interface);
+    }
 }
 
 static ETResult stub_memory_factory(void** interface, const ETInterfaceMetadata* metadata) {
@@ -141,7 +148,7 @@ ETResult et_register_windows_interfaces(void) {
         if (result != ET_SUCCESS) return result;
     }
 
-    /* 스레딩 인터페이스 등록 (스텁) */
+    /* 스레딩 인터페이스 등록 */
     {
         ETInterfaceMetadata metadata = {
             .type = ET_INTERFACE_THREAD,
@@ -149,12 +156,12 @@ ETResult et_register_windows_interfaces(void) {
             .name = "Windows Threading Interface",
             .description = "Windows Thread API based threading interface",
             .platform = ET_PLATFORM_WINDOWS,
-            .size = sizeof(void*), /* 실제 구조체 크기로 변경 예정 */
+            .size = sizeof(ETThreadInterface),
             .flags = 0
         };
 
         result = et_register_interface_factory(ET_INTERFACE_THREAD, ET_PLATFORM_WINDOWS,
-                                              stub_thread_factory, stub_thread_destructor, &metadata);
+                                              windows_thread_factory, windows_thread_destructor, &metadata);
         if (result != ET_SUCCESS) return result;
     }
 

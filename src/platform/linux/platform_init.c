@@ -17,6 +17,10 @@ extern ETSystemInterface* et_get_linux_system_interface(void);
 extern ETResult et_linux_system_initialize(void);
 extern void et_linux_system_cleanup(void);
 
+extern ETThreadInterface* et_get_posix_thread_interface(void);
+extern ETResult et_create_posix_thread_interface(ETThreadInterface** interface);
+extern void et_destroy_posix_thread_interface(ETThreadInterface* interface);
+
 /**
  * @brief Linux 오디오 인터페이스 팩토리 함수
  * @param config 설정 (사용하지 않음)
@@ -42,12 +46,12 @@ static void linux_audio_destructor(const void* interface) {
  */
 static const void* linux_system_factory(const void* config) {
     (void)config; // 사용하지 않는 매개변수
-    
+
     ETResult result = et_linux_system_initialize();
     if (result != ET_SUCCESS) {
         return NULL;
     }
-    
+
     return et_get_linux_system_interface();
 }
 
@@ -58,6 +62,24 @@ static const void* linux_system_factory(const void* config) {
 static void linux_system_destructor(const void* interface) {
     (void)interface; // 정적 인터페이스이므로 해제할 것이 없음
     et_linux_system_cleanup();
+}
+
+/**
+ * @brief Linux 스레딩 인터페이스 팩토리 함수
+ * @param config 설정 (사용하지 않음)
+ * @return Linux 스레딩 인터페이스 포인터
+ */
+static const void* linux_thread_factory(const void* config) {
+    (void)config; // 사용하지 않는 매개변수
+    return et_get_posix_thread_interface();
+}
+
+/**
+ * @brief Linux 스레딩 인터페이스 해제 함수
+ * @param interface 인터페이스 포인터 (사용하지 않음)
+ */
+static void linux_thread_destructor(const void* interface) {
+    (void)interface; // 정적 인터페이스이므로 해제할 것이 없음
 }
 
 /* Linux 플랫폼 인터페이스 등록 */
@@ -108,7 +130,7 @@ ETResult et_register_linux_interfaces(void) {
         ET_LOG_INFO("Linux 시스템 인터페이스 등록 완료");
     }
 
-    /* 스레딩 인터페이스 등록 (스텁) */
+    /* 스레딩 인터페이스 등록 */
     {
         ETInterfaceMetadata metadata = {
             .type = ET_INTERFACE_THREAD,
@@ -116,13 +138,18 @@ ETResult et_register_linux_interfaces(void) {
             .name = "Linux Threading Interface",
             .description = "POSIX pthread based threading interface",
             .platform = ET_PLATFORM_LINUX,
-            .size = sizeof(void*), /* 실제 구조체 크기로 변경 예정 */
-            .flags = 0
+            .size = sizeof(ETThreadInterface),
+            .flags = ET_INTERFACE_FLAG_THREAD_SAFE
         };
 
         result = et_register_interface_factory(ET_INTERFACE_THREAD, ET_PLATFORM_LINUX,
-                                              NULL, NULL, &metadata);
-        if (result != ET_SUCCESS) return result;
+                                              linux_thread_factory, linux_thread_destructor, &metadata);
+        if (result != ET_SUCCESS) {
+            ET_LOG_ERROR("Linux 스레딩 인터페이스 등록 실패");
+            return result;
+        }
+
+        ET_LOG_INFO("Linux 스레딩 인터페이스 등록 완료");
     }
 
     /* 메모리 인터페이스 등록 (스텁) */

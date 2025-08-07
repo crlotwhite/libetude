@@ -12,6 +12,7 @@
 
 #include "libetude/platform/common.h"
 #include "libetude/platform/audio.h"
+#include "libetude/platform/threading.h"
 #include "libetude/types.h"
 #include "libetude/error.h"
 #include <stdint.h>
@@ -97,6 +98,9 @@ typedef struct ETPlatformFactory {
     ETResult (*create_audio_interface)(ETAudioInterface** interface);
     void (*destroy_audio_interface)(ETAudioInterface* interface);
 
+    ETResult (*create_thread_interface)(ETThreadInterface** interface);
+    void (*destroy_thread_interface)(ETThreadInterface* interface);
+
     // 플랫폼 초기화/정리
     ETResult (*initialize)(void);
     void (*finalize)(void);
@@ -157,6 +161,19 @@ ETResult et_create_audio_interface(ETAudioInterface** interface);
  * @param interface 해제할 인터페이스
  */
 void et_destroy_audio_interface(ETAudioInterface* interface);
+
+/**
+ * @brief 현재 플랫폼의 스레딩 인터페이스를 생성합니다
+ * @param interface 생성된 인터페이스 포인터 (출력)
+ * @return 성공시 ET_SUCCESS, 실패시 오류 코드
+ */
+ETResult et_create_thread_interface(ETThreadInterface** interface);
+
+/**
+ * @brief 스레딩 인터페이스를 해제합니다
+ * @param interface 해제할 인터페이스
+ */
+void et_destroy_thread_interface(ETThreadInterface* interface);
 
 /**
  * @brief 현재 플랫폼을 자동 감지합니다
