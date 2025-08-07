@@ -13,6 +13,7 @@
 #include "libetude/platform/common.h"
 #include "libetude/platform/audio.h"
 #include "libetude/platform/threading.h"
+#include "libetude/platform/memory.h"
 #include "libetude/types.h"
 #include "libetude/error.h"
 #include <stdint.h>
@@ -101,6 +102,9 @@ typedef struct ETPlatformFactory {
     ETResult (*create_thread_interface)(ETThreadInterface** interface);
     void (*destroy_thread_interface)(ETThreadInterface* interface);
 
+    ETResult (*create_memory_interface)(ETMemoryInterface** interface);
+    void (*destroy_memory_interface)(ETMemoryInterface* interface);
+
     // 플랫폼 초기화/정리
     ETResult (*initialize)(void);
     void (*finalize)(void);
@@ -174,6 +178,19 @@ ETResult et_create_thread_interface(ETThreadInterface** interface);
  * @param interface 해제할 인터페이스
  */
 void et_destroy_thread_interface(ETThreadInterface* interface);
+
+/**
+ * @brief 현재 플랫폼의 메모리 관리 인터페이스를 생성합니다
+ * @param interface 생성된 인터페이스 포인터 (출력)
+ * @return 성공시 ET_SUCCESS, 실패시 오류 코드
+ */
+ETResult et_create_memory_interface(ETMemoryInterface** interface);
+
+/**
+ * @brief 메모리 관리 인터페이스를 해제합니다
+ * @param interface 해제할 인터페이스
+ */
+void et_destroy_memory_interface(ETMemoryInterface* interface);
 
 /**
  * @brief 현재 플랫폼을 자동 감지합니다

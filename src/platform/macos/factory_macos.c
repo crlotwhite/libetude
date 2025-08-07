@@ -24,6 +24,10 @@ extern void et_destroy_macos_audio_interface(ETAudioInterface* interface);
 extern ETResult et_create_posix_thread_interface(ETThreadInterface** interface);
 extern void et_destroy_posix_thread_interface(ETThreadInterface* interface);
 
+// 메모리 관리 인터페이스
+extern ETResult et_create_posix_memory_interface(ETMemoryInterface** interface);
+extern void et_destroy_posix_memory_interface(ETMemoryInterface* interface);
+
 // ============================================================================
 // macOS 팩토리 함수들
 // ============================================================================
@@ -57,6 +61,20 @@ static void macos_destroy_thread_interface(ETThreadInterface* interface) {
 }
 
 /**
+ * @brief macOS 메모리 관리 인터페이스를 생성합니다
+ */
+static ETResult macos_create_memory_interface(ETMemoryInterface** interface) {
+    return et_create_posix_memory_interface(interface);
+}
+
+/**
+ * @brief macOS 메모리 관리 인터페이스를 해제합니다
+ */
+static void macos_destroy_memory_interface(ETMemoryInterface* interface) {
+    et_destroy_posix_memory_interface(interface);
+}
+
+/**
  * @brief macOS 플랫폼을 초기화합니다
  */
 static ETResult macos_initialize(void) {
@@ -86,6 +104,8 @@ static ETPlatformFactory g_macos_factory = {
     .destroy_audio_interface = macos_destroy_audio_interface,
     .create_thread_interface = macos_create_thread_interface,
     .destroy_thread_interface = macos_destroy_thread_interface,
+    .create_memory_interface = macos_create_memory_interface,
+    .destroy_memory_interface = macos_destroy_memory_interface,
 
     // 플랫폼 초기화/정리
     .initialize = macos_initialize,

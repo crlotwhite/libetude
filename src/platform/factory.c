@@ -354,3 +354,40 @@ void et_destroy_thread_interface(ETThreadInterface* interface) {
         factory->destroy_thread_interface(interface);
     }
 }
+
+/**
+ * @brief 현재 플랫폼의 메모리 관리 인터페이스를 생성합니다
+ */
+ETResult et_create_memory_interface(ETMemoryInterface** interface) {
+    if (!interface) {
+        ET_SET_ERROR(ET_ERROR_INVALID_ARGUMENT, "interface 포인터가 NULL입니다");
+        return ET_ERROR_INVALID_ARGUMENT;
+    }
+
+    const ETPlatformFactory* factory = et_platform_factory_get_current();
+    if (!factory) {
+        ET_SET_ERROR(ET_ERROR_NOT_FOUND, "현재 플랫폼의 팩토리를 찾을 수 없습니다");
+        return ET_ERROR_NOT_FOUND;
+    }
+
+    if (!factory->create_memory_interface) {
+        ET_SET_ERROR(ET_ERROR_NOT_IMPLEMENTED, "메모리 관리 인터페이스 생성이 구현되지 않았습니다");
+        return ET_ERROR_NOT_IMPLEMENTED;
+    }
+
+    return factory->create_memory_interface(interface);
+}
+
+/**
+ * @brief 메모리 관리 인터페이스를 해제합니다
+ */
+void et_destroy_memory_interface(ETMemoryInterface* interface) {
+    if (!interface) {
+        return;
+    }
+
+    const ETPlatformFactory* factory = et_platform_factory_get_current();
+    if (factory && factory->destroy_memory_interface) {
+        factory->destroy_memory_interface(interface);
+    }
+}

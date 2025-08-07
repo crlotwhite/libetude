@@ -24,6 +24,10 @@ extern void et_destroy_windows_audio_interface(ETAudioInterface* interface);
 extern ETResult et_create_windows_thread_interface(ETThreadInterface** interface);
 extern void et_destroy_windows_thread_interface(ETThreadInterface* interface);
 
+// 메모리 관리 인터페이스
+extern ETResult et_create_windows_memory_interface(ETMemoryInterface** interface);
+extern void et_destroy_windows_memory_interface(ETMemoryInterface* interface);
+
 // ============================================================================
 // Windows 팩토리 함수들
 // ============================================================================
@@ -57,6 +61,20 @@ static void windows_destroy_thread_interface(ETThreadInterface* interface) {
 }
 
 /**
+ * @brief Windows 메모리 관리 인터페이스를 생성합니다
+ */
+static ETResult windows_create_memory_interface(ETMemoryInterface** interface) {
+    return et_create_windows_memory_interface(interface);
+}
+
+/**
+ * @brief Windows 메모리 관리 인터페이스를 해제합니다
+ */
+static void windows_destroy_memory_interface(ETMemoryInterface* interface) {
+    et_destroy_windows_memory_interface(interface);
+}
+
+/**
  * @brief Windows 플랫폼을 초기화합니다
  */
 static ETResult windows_initialize(void) {
@@ -86,6 +104,8 @@ static ETPlatformFactory g_windows_factory = {
     .destroy_audio_interface = windows_destroy_audio_interface,
     .create_thread_interface = windows_create_thread_interface,
     .destroy_thread_interface = windows_destroy_thread_interface,
+    .create_memory_interface = windows_create_memory_interface,
+    .destroy_memory_interface = windows_destroy_memory_interface,
 
     // 플랫폼 초기화/정리
     .initialize = windows_initialize,

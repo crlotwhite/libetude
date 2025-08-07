@@ -101,22 +101,32 @@
   - POSIX 특화 스레드 오류 처리 구현
   - _요구사항: 3.1, 3.2, 3.3, 3.4_
 
-- [ ] 5. 메모리 관리 추상화 레이어 구현
-- [ ] 5.1 메모리 관리 인터페이스 정의 및 공통 구조 구현
+- [x] 5. 메모리 관리 추상화 레이어 구현
+
+
+
+
+- [x] 5.1 메모리 관리 인터페이스 정의 및 공통 구조 구현
+
+
   - ETMemoryInterface 구조체와 관련 타입 정의 작성
   - 정렬된 메모리 할당을 위한 공통 함수 구현
   - 메모리 페이지 관리 추상화 인터페이스 구현
   - 공유 메모리 및 메모리 매핑 파일 인터페이스 구현
   - _요구사항: 4.1, 4.2, 4.3, 4.4_
 
-- [ ] 5.2 Windows 메모리 관리 구현체 개발
+- [x] 5.2 Windows 메모리 관리 구현체 개발
+
+
   - Windows VirtualAlloc/VirtualFree를 통한 메모리 관리 구현
   - Windows _aligned_malloc을 통한 정렬된 메모리 할당 구현
   - Windows VirtualLock을 통한 메모리 페이지 잠금 구현
   - Windows CreateFileMapping을 통한 공유 메모리 구현
   - _요구사항: 4.1, 4.2, 4.3, 4.4_
 
-- [ ] 5.3 POSIX 메모리 관리 구현체 개발 (Linux/macOS 공통)
+- [x] 5.3 POSIX 메모리 관리 구현체 개발 (Linux/macOS 공통)
+
+
   - POSIX mmap/munmap을 통한 메모리 관리 구현
   - posix_memalign을 통한 정렬된 메모리 할당 구현
   - mlock/munlock을 통한 메모리 페이지 잠금 구현
