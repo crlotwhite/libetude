@@ -179,6 +179,52 @@ if(NOT WIN32)
     target_link_libraries(platform_test pthread m)
 endif()
 
+# 플랫폼 추상화 레이어 단위 테스트 프레임워크
+add_executable(test_platform_abstraction
+    unit/test_platform_abstraction.c
+    unit/test_platform_audio_contract.c
+    unit/test_platform_system_contract.c
+    unit/test_platform_threading_contract.c
+    unit/test_platform_contracts.c
+)
+target_link_libraries(test_platform_abstraction libetude_static)
+target_include_directories(test_platform_abstraction PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+if(NOT WIN32)
+    target_link_libraries(test_platform_abstraction pthread m)
+endif()
+
+# 플랫폼 추상화 레이어 통합 테스트
+add_executable(test_platform_integration
+    integration/test_platform_integration.c
+    integration/test_hardware_validation.c
+    integration/test_performance_benchmarks.c
+    integration/test_stress_tests.c
+)
+target_link_libraries(test_platform_integration libetude_static)
+target_include_directories(test_platform_integration PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+if(NOT WIN32)
+    target_link_libraries(test_platform_integration pthread m)
+endif()
+
+# 플랫폼 추상화 레이어 모킹 프레임워크 테스트
+add_executable(test_platform_mocking
+    unit/test_platform_mocking.c
+)
+target_link_libraries(test_platform_mocking libetude_static)
+target_include_directories(test_platform_mocking PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+if(NOT WIN32)
+    target_link_libraries(test_platform_mocking pthread m)
+endif()
+
 # 개별 테스트 실행 파일들 (독립적으로 실행 가능)
 create_unity_test(fast_math_test "unit/test_fast_math.c")
 # SIMD 커널 테스트는 SIMD 활성화 시에만 빌드
@@ -280,6 +326,9 @@ include(CTest)
 
 # 테스트 등록
 add_test(NAME PlatformTest COMMAND platform_test)
+add_test(NAME PlatformAbstractionTest COMMAND test_platform_abstraction)
+add_test(NAME PlatformIntegrationTest COMMAND test_platform_integration)
+add_test(NAME PlatformMockingTest COMMAND test_platform_mocking)
 add_test(NAME TensorTest COMMAND tensor_test)
 # SIMD 테스트는 SIMD 활성화 시에만 등록
 if(LIBETUDE_ENABLE_SIMD)
