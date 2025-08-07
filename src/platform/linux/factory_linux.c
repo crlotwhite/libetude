@@ -28,6 +28,10 @@ extern void et_destroy_posix_thread_interface(ETThreadInterface* interface);
 extern ETResult et_create_posix_memory_interface(ETMemoryInterface** interface);
 extern void et_destroy_posix_memory_interface(ETMemoryInterface* interface);
 
+// 파일시스템 인터페이스
+extern ETResult et_create_posix_filesystem_interface(struct ETFilesystemInterface** interface);
+extern void et_destroy_posix_filesystem_interface(struct ETFilesystemInterface* interface);
+
 // ============================================================================
 // Linux 팩토리 함수들
 // ============================================================================
@@ -75,6 +79,20 @@ static void linux_destroy_memory_interface(ETMemoryInterface* interface) {
 }
 
 /**
+ * @brief Linux 파일시스템 인터페이스를 생성합니다
+ */
+static ETResult linux_create_filesystem_interface(struct ETFilesystemInterface** interface) {
+    return et_create_posix_filesystem_interface(interface);
+}
+
+/**
+ * @brief Linux 파일시스템 인터페이스를 해제합니다
+ */
+static void linux_destroy_filesystem_interface(struct ETFilesystemInterface* interface) {
+    et_destroy_posix_filesystem_interface(interface);
+}
+
+/**
  * @brief Linux 플랫폼을 초기화합니다
  */
 static ETResult linux_initialize(void) {
@@ -106,6 +124,8 @@ static ETPlatformFactory g_linux_factory = {
     .destroy_thread_interface = linux_destroy_thread_interface,
     .create_memory_interface = linux_create_memory_interface,
     .destroy_memory_interface = linux_destroy_memory_interface,
+    .create_filesystem_interface = linux_create_filesystem_interface,
+    .destroy_filesystem_interface = linux_destroy_filesystem_interface,
 
     // 플랫폼 초기화/정리
     .initialize = linux_initialize,
